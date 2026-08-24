@@ -4,13 +4,16 @@ Bu dosya `CLAUDE.md`'deki kısa MVP listesinin genişletilmiş hâlidir. Her ana
 adımın altında somut alt adımlar var. Durum etiketleri: ✅ tamam,
 🟡 kısmen/MVP var-olgunlaştırılacak, ⬜ başlanmadı.
 
-## 1. Ears — Ses/Girdi Pipeline ✅ (olgunlaştırıldı, wake-word hariç)
+## 1. Ears — Ses/Girdi Pipeline ✅ (wake-word + latency profiling dahil, tamamlandı)
 
-Mevcut: `audio_handler.py` — `webrtcvad` ile VAD-tabanlı dinamik kayıt
-(sabit blok yok) → ndarray (disk'e yazmadan) → faster-whisper (`turbo` =
-large-v3-turbo, `language="tr"` sabit, `vad_filter=True` ile, CUDA/float16 +
-otomatik CPU/int8 fallback) → metin. `listen_loop()` ile sürekli dinleme;
-`main.py` bunu tüketiyor.
+Mevcut: `audio_handler.py:listen_loop()` bir **state machine**: IDLE
+(openWakeWord `hey_jarvis` ile "Hey Jarvis" dinlenir, transkripsiyon yok) ↔
+ACTIVE (wake-word sonrası `webrtcvad` ile VAD-tabanlı dinamik kayıt, sabit
+blok yok, disk'e yazmadan ndarray) → faster-whisper (`turbo` =
+large-v3-turbo, `multilingual=True` + TR/EN `initial_prompt` ile serbest dil
+algılama, `vad_filter=True`, CUDA/float16 + otomatik CPU/int8 fallback) →
+metin. Wake-word ve transkripsiyon gecikmeleri loglanıyor. `main.py`
+`listen_loop()`'u değişmeden tüketiyor.
 
 Alt adımlar:
 - [x] Sabit 5 sn blok yerine VAD/sessizlik-tabanlı kayıt — `webrtcvad-wheels`
@@ -20,8 +23,28 @@ Alt adımlar:
       ortadan kaldırdığı için ayrıca çözülmedi (adım 1'e "subsume" oldu);
       ek olarak `vad_filter=True` ile transkripsiyon öncesi temizlik açıldı.
 - [x] Sürekli dinleme modu — `listen_loop()` generator'ı, `main.py`'de
-      `for user_text in listen_loop():` ile tüketiliyor. **Wake-word
-      eklenmedi** (kullanıcı kararı: önce wake-word'süz test edilecek).
+      `for user_text in listen_loop():` ile tüketiliyor.
+- [x] Wake-word / State Machine — `ListenState` (IDLE/ACTIVE); IDLE'da
+      `openwakeword` `hey_jarvis` modeli (bundled ONNX, pip paketiyle
+      birlikte gelir — internet sadece `download_models()`'ın ilk
+      çalıştırmada ağırlıkları çekmesi için gerekir, sonrasında idempotent/
+      offline) her ~80ms'lik chunk'ı skorluyor; skor `WAKEWORD_THRESHOLD`
+      (0.5) üstüne çıkınca ACTIVE'e geçilip mevcut `_vad_record` aynen
+      kullanılıyor. IDLE ve ACTIVE **tek bir kalıcı `sd.InputStream`'i**
+      paylaşıyor (state geçişinde mikrofon aç/kapa gecikmesi/ses kaybı
+      olmasın diye).
+- [x] Latency profiling — wake-word: tetiklenene kadarki toplam süre +
+      ortalama chunk-başı inference gecikmesi (bu makinede ölçüldü: **~1.6ms
+      /80ms chunk**, gerçek zamanlı bütçenin çok altında); transkripsiyon:
+      `_transcribe()` başı-sonu süresi. İkisi de `logger.info` ile loglanıyor.
+      `pipeline-debugger` commit öncesi 2 gerçek bulgu verdi, ikisi de
+      düzeltildi: (a) wake-word'ü tetikleyen 80ms'lik chunk hiçbir yere
+      kaydedilmeden atılıyordu — "Hey Jarvis" sonrası duraksamasız gelen
+      komutun ilk hecesi kaybolabiliyordu; artık `_wait_for_wakeword` bu
+      chunk'ı döndürüp `_vad_record`'un pre-roll'üne ekleniyor. (b)
+      `stream.read()`'in `overflowed` bayrağı hiç loglanmıyordu (buffer
+      taşması sessizce ses kaybına yol açabilirdi); artık `logger.warning`
+      ile bildiriliyor.
 - [x] Hata yönetimi — mikrofon açılamazsa (`PortAudioError`) veya konuşma
       algılanmazsa (timeout) `None`/log, çökme yok; `print` yerine
       `logging` kullanılıyor. `model.transcribe()` çağrısı da try/except ile
@@ -47,21 +70,22 @@ Alt adımlar:
       `initial_prompt` ile serbest bırakıldı.
 
 Gelecek/opsiyonel (kapsam dışı bırakıldı):
-- [ ] Tetikleyici (wake-word ya da **çift alkış** gibi genlik/RMS tabanlı
-      bir tetikleyici) — kullanıcının önceliği, wake-word'süz sürüm
-      denendikten sonra değerlendirilecek. Sesli seçenek için
-      `openWakeWord` (ONNX, torch gerektirmez) düşünülebilir.
-- [ ] Latency profiling — `_vad_record` (yakalama) ile `model.transcribe`
-      (transkripsiyon) sürelerini ayrı ayrı ölçüp loglama; CPU/int8 fallback
-      modunda darboğaz muhtemelen transkripsiyon tarafında (`pipeline-debugger`
-      önerisi, henüz uygulanmadı).
+- [ ] **Çift alkış** gibi genlik/RMS tabanlı ikinci bir tetikleyici — kullanıcı
+      fikri, wake-word'e alternatif/ek olarak değerlendirilebilir.
+- [ ] `hey_jarvis` modelinin Türkçe aksanla güvenilirliği düşük çıkarsa:
+      `WAKEWORD_THRESHOLD` ayarı veya openWakeWord'ün custom-model eğitim
+      akışı (ayrı, daha büyük bir görev).
 
-**İnsan doğrulaması gerekiyor:** Bu ortam headless olduğu için gerçek
-konuşmayla test edilemedi — sadece sessizlik/ortam gürültüsüyle uçtan uca
-smoke test yapıldı. `_vad_record`'a artık kısa bir pre-roll buffer (tetik
-öncesi ~90ms) eklendi (VAD'ın tetiklenmeden hemen önceki ilk heceyi/yumuşak
-sesi kırpması klasik bir sorun), ama gerçek mikrofonla — özellikle yumuşak
-başlayan cümlelerle (örn. "Şey, merhaba") — doğrulanmalı.
+**İnsan doğrulaması gerekiyor (headless ortamda yapılamadı):**
+- Kullanıcı `python main.py` ile gerçek Türkçe/İngilizce konuşarak Ears→Brain
+  zincirini (wake-word öncesi) doğruladı — bu kısım çalışıyor.
+- **Henüz doğrulanmadı:** wake-word state machine'i gerçek "Hey Jarvis"
+  sesiyle (bkz. `.claude/skills/verify-wakeword-pipeline`) — Türkçe aksanla
+  tetiklenme güvenilirliği, wake-word söylemeden konuşmanın gerçekten
+  Brain'e gitmediği, IDLE↔ACTIVE geçişlerinin akıcılığı.
+- Pre-roll buffer (tetik öncesi ~90ms, ilk hecenin kırpılmaması için) gerçek
+  mikrofonla, özellikle yumuşak başlayan cümlelerle (örn. "Şey, merhaba")
+  doğrulanmalı.
 
 ## 2. Brain — LLM Katmanı 🟡
 

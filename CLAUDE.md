@@ -10,12 +10,14 @@ süreçlerinde destek vermek.
 Şu an düz kökte iki modül var (henüz `src/` paketlenmesi yok, bkz. "Depo
 Düzeni"):
 
-- **Ears** (`audio_handler.py`) — `webrtcvad` ile VAD-tabanlı dinamik kayıt
-  (sabit blok yok, disk'e yazmadan ndarray) → `faster-whisper` (`turbo`
-  model = large-v3-turbo, `multilingual=True` + TR/EN karışık
+- **Ears** (`audio_handler.py`) — `listen_loop()` bir **state machine**:
+  IDLE (openWakeWord `hey_jarvis` ile "Hey Jarvis" dinlenir, hiçbir şey
+  transkribe edilmez) ↔ ACTIVE (wake-word sonrası `webrtcvad` ile
+  VAD-tabanlı dinamik kayıt, disk'e yazmadan ndarray) → `faster-whisper`
+  (`turbo` model = large-v3-turbo, `multilingual=True` + TR/EN karışık
   `initial_prompt` ile serbest dil algılama, CUDA/float16 + otomatik
-  CPU/int8 fallback, `vad_filter=True`) ile transkripsiyon; `listen_loop()`
-  ile sürekli dinleme.
+  CPU/int8 fallback, `vad_filter=True`) ile transkripsiyon. Wake-word tespiti
+  ve transkripsiyon için latency loglanıyor (`logger.info`).
 - **Brain** (`main.py`) — transkripti `ollama` üzerinden yerel
   `llama3.1:8b` modeline gönderir (bkz. `SYSTEM_PROMPT`), yanıtı konsola
   yazdırır. `run_jarvis()` giriş noktası: Ears → Brain → (şimdilik) print.
@@ -35,8 +37,8 @@ Genel ilkeler:
 
 Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.**
 
-1. **Ears** — mikrofon → metin (durum: VAD-tabanlı sürekli dinleme + CPU
-   fallback tamam; wake-word/alkış tetikleyici bilinçli olarak ertelendi)
+1. **Ears** — mikrofon → metin (durum: IDLE/ACTIVE state machine + wake-word
+   `openWakeWord`/"Hey Jarvis" + CPU fallback + latency profiling tamam)
 2. **Brain** — transkript → LLM yanıtı (durum: MVP tamam, `main.py`'de)
 3. **Mouth / TTS** — yanıt → sesli çıktı (durum: başlanmadı, sıradaki)
 4. **Modüler Komut Yöneticisi** — intent parsing → ilgili modüle yönlendirme

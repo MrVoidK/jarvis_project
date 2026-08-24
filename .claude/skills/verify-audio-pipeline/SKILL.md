@@ -1,13 +1,16 @@
 ---
 name: verify-audio-pipeline
-description: Jarvis'in ses -> metin pipeline'ini calistirir ve kisa bir ornekle dogrular. Pipeline'da degisiklik yapildiktan sonra veya "pipeline'i dogrula/calistir" dendiginde kullan.
+description: Jarvis'in ses -> metin pipeline'ini WAKE-WORD OLMADAN, tek atimlik VAD kaydiyla calistirir ve kisa bir ornekle dogrular. Sadece Ears/VAD/whisper degisti mi diye bakmak icin kullan. Wake-word/state machine akisini test etmek icin `verify-wakeword-pipeline` skill'ini kullan.
 disable-model-invocation: false
 ---
 
 ## Pipeline'i calistir
 
-VAD-tabanli, dinamik sureli kayit tetikler (sabit 5sn blok yok, bkz.
-`audio_handler.py:_vad_record`):
+Bu skill **wake-word'u atlar** — `transcribe_once()` (bkz.
+`audio_handler.py`) kendi stream'ini acip dogrudan VAD-tabanli, dinamik
+sureli kayda gecer (sabit 5sn blok yok, bkz. `audio_handler.py:_vad_record`).
+`listen_loop()`'un IDLE/ACTIVE state machine'ini (wake-word dahil) test
+etmek icin bunun yerine `verify-wakeword-pipeline` skill'ini kullan.
 
 ```
 python audio_handler.py
