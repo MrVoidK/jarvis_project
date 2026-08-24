@@ -70,8 +70,12 @@ Alt adımlar:
       `initial_prompt` ile serbest bırakıldı.
 
 Gelecek/opsiyonel (kapsam dışı bırakıldı):
-- [ ] **Çift alkış** gibi genlik/RMS tabanlı ikinci bir tetikleyici — kullanıcı
-      fikri, wake-word'e alternatif/ek olarak değerlendirilebilir.
+- [x] **Çift alkış** — `_wait_for_wakeword` içine RMS-tabanlı, 0.2-0.8sn
+      pencereli çift-alkış tespiti eklendi (aynı chunk döngüsü, ekstra
+      thread yok); wake-word ile aynı `return chunk` sözleşmesini paylaştığı
+      için `listen_loop()` değişmedi. Kullanıcı gerçek mikrofonla doğruladı
+      ("gayet iyi çalışıyor"). `CLAP_THRESHOLD`/`CLAP_MIN_GAP_MS`/
+      `CLAP_MAX_GAP_MS` `audio_handler.py`'de ayarlanabilir sabitler.
 - [ ] `hey_jarvis` modelinin Türkçe aksanla güvenilirliği düşük çıkarsa:
       `WAKEWORD_THRESHOLD` ayarı veya openWakeWord'ün custom-model eğitim
       akışı (ayrı, daha büyük bir görev).
