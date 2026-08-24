@@ -134,7 +134,12 @@ def transcribe_once() -> Optional[str]:
         segments, _info = model.transcribe(
             audio,
             beam_size=5,
-            language="tr",
+            # No fixed `language=` - let the model detect it per utterance.
+            # `multilingual=True` re-runs language detection on every segment
+            # instead of once for the whole clip, so a sentence that switches
+            # between Turkish and English mid-way is still handled correctly.
+            multilingual=True,
+            initial_prompt="Merhaba Jarvis. Hello, system online. Nasılsın? Execute command.",
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
         )

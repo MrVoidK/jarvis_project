@@ -12,7 +12,8 @@ Düzeni"):
 
 - **Ears** (`audio_handler.py`) — `webrtcvad` ile VAD-tabanlı dinamik kayıt
   (sabit blok yok, disk'e yazmadan ndarray) → `faster-whisper` (`turbo`
-  model = large-v3-turbo, `language="tr"` sabit, CUDA/float16 + otomatik
+  model = large-v3-turbo, `multilingual=True` + TR/EN karışık
+  `initial_prompt` ile serbest dil algılama, CUDA/float16 + otomatik
   CPU/int8 fallback, `vad_filter=True`) ile transkripsiyon; `listen_loop()`
   ile sürekli dinleme.
 - **Brain** (`main.py`) — transkripti `ollama` üzerinden yerel

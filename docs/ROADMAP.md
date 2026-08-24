@@ -39,9 +39,12 @@ Alt adımlar:
       `os.add_dll_directory` ile PATH'e tanıtıyor) sonrası CUDA doğrulandı
       çalışıyor — "faster-whisper 'cuda' cihazinda yuklendi" logu görüldü.
       RTX 4070 hızlanması artık aktif.
-- [x] Türkçe doğruluk — model `base` yerine `turbo` (large-v3-turbo) yapıldı,
-      `transcribe()`'a `language="tr"` sabitlendi (otomatik dil algılama
-      kaldırıldı, yanlış dil tespiti riski önlendi).
+- [x] Türkçe doğruluk — model `base` yerine `turbo` (large-v3-turbo) yapıldı.
+      İlk denemede `language="tr"` sabitlenmişti; kullanıcı Türkçe/İngilizce
+      karışık kullanım isteyince (ör. "Merhaba Jarvis, execute command")
+      `language=` kaldırılıp `multilingual=True` (her segment için ayrı dil
+      algılama, tek seferlik değil) + iki dilde örnek cümleler içeren
+      `initial_prompt` ile serbest bırakıldı.
 
 Gelecek/opsiyonel (kapsam dışı bırakıldı):
 - [ ] Tetikleyici (wake-word ya da **çift alkış** gibi genlik/RMS tabanlı
