@@ -6,31 +6,36 @@ disable-model-invocation: false
 
 ## Pipeline'i calistir
 
-Su an dogrudan mikrofon kaydi tetikler (dosyadan input almiyor, bkz.
-`audio_handler.py:record_audio`):
+VAD-tabanli, dinamik sureli kayit tetikler (sabit 5sn blok yok, bkz.
+`audio_handler.py:_vad_record`):
 
 ```
 python audio_handler.py
 ```
 
-Konsolda "LISTENING" istemi geldiginde ~5 saniye konus; cikti "Jarvis Heard:
-<transkript>" seklinde gelmeli.
+Konsolda "Dinleniyor..." logu geldiginde konus; ~700ms sessizlik sonrasi
+kayit otomatik durur, cikti "Jarvis Heard: <transkript>" seklinde gelmeli.
 
 ## Dogrulama adimlari
 
-1. Komut hatasiz sonlanmali (exit code 0), CUDA/model yukleme hatasi
-   olmamali ("Initializing Jarvis systems (Ears online)..." satiri gorunmeli).
+1. Komut hatasiz sonlanmali (exit code 0). "faster-whisper 'cuda'/'cpu'
+   cihazinda yuklendi" logu gorulmeli; hangi cihaza dustugune dikkat et —
+   `_load_model_with_fallback()` CUDA hatasi durumunda otomatik CPU'ya
+   duser ve bunu `[WARNING]` seviyesinde loglar.
 2. Transkript soylenen cumleyle mantikli olcude ortusmeli (birebir esitlik
    sart degil, whisper ciktisi kucuk farkliliklar gosterebilir).
-3. Gecici `.wav` dosyasi kalmamali — Windows'ta `%TEMP%` altinda kontrol et:
-   `find "$TEMP" -maxdepth 1 -name '*.wav' -newer <calistirma-oncesi-dosya>`
-   (calistirmadan once `touch` ile bir zaman damgasi dosyasi olustur).
-4. GPU kullaniliyorsa `nvidia-smi` ile calisma sirasinda VRAM kullanimini
-   gozlemle; beklenmedik bir sekilde artmaya devam etmemeli (sizinti belirtisi).
+3. Konusmadan uzun sure sessiz kalinirsa (~20sn) "Konusma algilanmadi
+   (timeout)" logu ile `None` donmeli, hata firlatmamali.
+4. Gecici `.wav` dosyasi kontrolu **artik gerekmiyor** — `_vad_record()`
+   kaydi dogrudan bellekte (`np.ndarray`) tutup `WhisperModel.transcribe()`'a
+   disk'e hic yazmadan veriyor.
+5. GPU kullaniliyorsa (`cuda` logu gorulduyse) `nvidia-smi` ile calisma
+   sirasinda VRAM kullanimini gozlemle; beklenmedik sekilde artmaya devam
+   etmemeli (sizinti belirtisi).
 
 TODO: `tests/fixtures/sample.wav` + `sample.expected.txt` eklenip
-`record_audio`'ya opsiyonel bir `--input <dosya>` bayragi eklenince, bu skill
-mikrofon gerektirmeyen deterministik bir testle guncellenmeli.
+`transcribe_once`'a opsiyonel bir `--input <dosya>` bayragi eklenince, bu
+skill mikrofon gerektirmeyen deterministik bir testle guncellenmeli.
 
 Sonucu ozetle: gecti/kaldi, hangi adimda basarisiz oldu, varsa duzeltme
 onerisi.

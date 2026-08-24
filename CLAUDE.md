@@ -10,9 +10,10 @@ süreçlerinde destek vermek.
 Şu an düz kökte iki modül var (henüz `src/` paketlenmesi yok, bkz. "Depo
 Düzeni"):
 
-- **Ears** (`audio_handler.py`) — mikrofondan 5 sn kayıt (`sounddevice`) →
-  geçici `.wav` → `faster-whisper` (`base` model, CUDA/float16, RTX 4070)
-  ile transkripsiyon → geçici dosya temizliği.
+- **Ears** (`audio_handler.py`) — `webrtcvad` ile VAD-tabanlı dinamik kayıt
+  (sabit blok yok, disk'e yazmadan ndarray) → `faster-whisper` (`base`
+  model, CUDA/float16 + otomatik CPU/int8 fallback, `vad_filter=True`) ile
+  transkripsiyon; `listen_loop()` ile sürekli dinleme.
 - **Brain** (`main.py`) — transkripti `ollama` üzerinden yerel `llama3.1`
   modeline gönderir (bkz. `SYSTEM_PROMPT`), yanıtı konsola yazdırır.
   `run_jarvis()` giriş noktası: Ears → Brain → (şimdilik) print.
@@ -32,7 +33,8 @@ Genel ilkeler:
 
 Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.**
 
-1. **Ears** — mikrofon → metin (durum: MVP tamam, iyileştirme aşamasında)
+1. **Ears** — mikrofon → metin (durum: VAD-tabanlı sürekli dinleme + CPU
+   fallback tamam; wake-word/alkış tetikleyici bilinçli olarak ertelendi)
 2. **Brain** — transkript → LLM yanıtı (durum: MVP tamam, `main.py`'de)
 3. **Mouth / TTS** — yanıt → sesli çıktı (durum: başlanmadı, sıradaki)
 4. **Modüler Komut Yöneticisi** — intent parsing → ilgili modüle yönlendirme
@@ -53,9 +55,13 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
 - Python: PEP 8, type hints tercih edilir, fonksiyonlar tek sorumluluk
   prensibine uyar (bkz. `.claude/rules/python-style.md`).
 - CUDA/GPU'ya bağımlı kod, GPU olmayan ortamda da (CPU fallback) en azından
-  hata vermeden davranmalı — **mevcut `audio_handler.py`'de `device="cuda"`
-  sabit kodlanmış, bu kural henüz karşılanmıyor**, ilk fırsat modülerleşme/
-  Ears iyileştirmesinde düzeltilmeli.
+  hata vermeden davranmalı — `audio_handler.py:_load_model_with_fallback()`
+  bunu karşılıyor (CUDA'da sessiz bir warm-up transkripsiyonuyla gerçek bir
+  inference tetikleyip hata olursa CPU/int8'e düşüyor — salt `WhisperModel()`
+  constructor'ı CUDA hatasını yakalamaz, hata ilk gerçek çağrıda patlar).
+  **Bilinen durum:** bu geliştirme makinesinde `cublas64_12.dll` eksik,
+  sistem otomatik CPU'ya düşüyor — RTX 4070 hızlanması şu an aktif değil
+  (bkz. `docs/ROADMAP.md` §1 "Aksiyon gerekiyor").
 - Gizli bilgiler (API anahtarı, token) asla koda veya commit'e gömülmez;
   `.env` + `.gitignore` kullanılır (`.gitignore`'da `.env` ve `secrets/`
   zaten hariç tutulmuş durumda).
@@ -108,3 +114,5 @@ src/jarvis/
   çıkardığı ek kuralları bu dosyaya entegre edebilirsin.
 - TODO: `tests/fixtures/` altına gerçek bir örnek `.wav` + beklenen
   transkript eklenmeli (`verify-audio-pipeline` skill'i bunu kullanacak).
+- Kod yazarken, sıradan olmayan her mimari kararın yanına kısa bir yorum
+   satırı bırak: neden bu yaklaşım, hangi alternatif elendi.

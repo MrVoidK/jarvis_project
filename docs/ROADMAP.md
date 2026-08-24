@@ -4,23 +4,61 @@ Bu dosya `CLAUDE.md`'deki kısa MVP listesinin genişletilmiş hâlidir. Her ana
 adımın altında somut alt adımlar var. Durum etiketleri: ✅ tamam,
 🟡 kısmen/MVP var-olgunlaştırılacak, ⬜ başlanmadı.
 
-## 1. Ears — Ses/Girdi Pipeline 🟡
+## 1. Ears — Ses/Girdi Pipeline ✅ (olgunlaştırıldı, wake-word hariç)
 
-Mevcut: `audio_handler.py` — 5 sn sabit blok kayıt → geçici `.wav` →
-faster-whisper (CUDA/float16) → metin.
+Mevcut: `audio_handler.py` — `webrtcvad` ile VAD-tabanlı dinamik kayıt
+(sabit blok yok) → ndarray (disk'e yazmadan) → faster-whisper
+(`vad_filter=True` ile, CUDA/float16 + otomatik CPU/int8 fallback) → metin.
+`listen_loop()` ile sürekli dinleme; `main.py` bunu tüketiyor.
 
 Alt adımlar:
-- [ ] Sabit 5 sn blok yerine VAD/sessizlik-tabanlı kayıt (konuşma bitince
-      otomatik durma) — `webrtcvad` veya benzeri bir kütüphane değerlendir.
-- [ ] Cümle sınırı bölünmesi sorunu: uzun cümleler blok sınırında kesiliyor
-      mu, ölç ve gerekirse üst üste binen (overlapping) blok stratejisi dene.
-- [ ] Sürekli dinleme modu: tek atımlık `transcribe()` yerine bir döngü/
-      wake-word ("Jarvis") ile tetiklenen dinleme.
-- [ ] Hata yönetimi: mikrofon bulunamadı, boş/sessiz kayıt, `sounddevice`
-      istisnaları — şu an hiç try/except yok, `record_audio`/`transcribe`
-      bu durumlarda sessizce patlıyor.
-- [ ] CPU fallback: `device="cuda"` sabit kodlu; CUDA yoksa CPU'ya düşecek
-      şekilde güncelle (CLAUDE.md'deki kural).
+- [x] Sabit 5 sn blok yerine VAD/sessizlik-tabanlı kayıt — `webrtcvad-wheels`
+      ile 30ms frame'ler, ~700ms sessizlik sonrası otomatik durma, 20sn üst
+      sınır.
+- [x] Cümle sınırı bölünmesi sorunu — dinamik VAD kaydı sabit pencereyi
+      ortadan kaldırdığı için ayrıca çözülmedi (adım 1'e "subsume" oldu);
+      ek olarak `vad_filter=True` ile transkripsiyon öncesi temizlik açıldı.
+- [x] Sürekli dinleme modu — `listen_loop()` generator'ı, `main.py`'de
+      `for user_text in listen_loop():` ile tüketiliyor. **Wake-word
+      eklenmedi** (kullanıcı kararı: önce wake-word'süz test edilecek).
+- [x] Hata yönetimi — mikrofon açılamazsa (`PortAudioError`) veya konuşma
+      algılanmazsa (timeout) `None`/log, çökme yok; `print` yerine
+      `logging` kullanılıyor. `model.transcribe()` çağrısı da try/except ile
+      sarılı — tek kötü turn `listen_loop()`'un sonsuz döngüsünü çökertmiyor
+      (bu ikinci koruma `pipeline-debugger` incelemesinde bulunan bir açıktı,
+      düzeltildi).
+- [x] CPU fallback — `_load_model_with_fallback()` CUDA'da **sessiz bir
+      warm-up transkripsiyonu** yapıp gerçek bir inference tetikliyor (salt
+      `WhisperModel(...)` constructor'ı CUDA hatasını yakalamıyor —
+      ctranslate2 nesneyi kurar ama hata ilk gerçek çağrıda patlıyor), hata
+      olursa CPU/int8'e düşüyor. **Bu makinede fiilen tetiklendi**: CUDA
+      kurulumu `cublas64_12.dll` eksikliğinden çöküyor, sistem otomatik
+      CPU'ya düşüyor (bkz. not aşağıda) — RTX 4070 hızlanması şu an
+      kullanılmıyor.
+
+Gelecek/opsiyonel (kapsam dışı bırakıldı):
+- [ ] Tetikleyici (wake-word ya da **çift alkış** gibi genlik/RMS tabanlı
+      bir tetikleyici) — kullanıcının önceliği, wake-word'süz sürüm
+      denendikten sonra değerlendirilecek. Sesli seçenek için
+      `openWakeWord` (ONNX, torch gerektirmez) düşünülebilir.
+- [ ] Latency profiling — `_vad_record` (yakalama) ile `model.transcribe`
+      (transkripsiyon) sürelerini ayrı ayrı ölçüp loglama; CPU/int8 fallback
+      modunda darboğaz muhtemelen transkripsiyon tarafında (`pipeline-debugger`
+      önerisi, henüz uygulanmadı).
+
+**İnsan doğrulaması gerekiyor:** Bu ortam headless olduğu için gerçek
+konuşmayla test edilemedi — sadece sessizlik/ortam gürültüsüyle uçtan uca
+smoke test yapıldı. `_vad_record`'a artık kısa bir pre-roll buffer (tetik
+öncesi ~90ms) eklendi (VAD'ın tetiklenmeden hemen önceki ilk heceyi/yumuşak
+sesi kırpması klasik bir sorun), ama gerçek mikrofonla — özellikle yumuşak
+başlayan cümlelerle (örn. "Şey, merhaba") — doğrulanmalı.
+
+**Aksiyon gerekiyor (CUDA hızlanması için):** Bu makinede `cublas64_12.dll`
+bulunamıyor — muhtemelen CUDA 12.x runtime DLL'leri (cuBLAS/cuDNN) sistemde
+eksik veya PATH'te değil. `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`
+(veya sistem genelinde CUDA Toolkit 12.x kurulumu) denenip `python
+audio_handler.py` tekrar çalıştırılarak "cuda cihazinda yuklendi" logunun
+görülüp görülmediği kontrol edilmeli.
 
 ## 2. Brain — LLM Katmanı 🟡
 

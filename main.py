@@ -1,5 +1,5 @@
 import ollama
-from audio_handler import transcribe
+from audio_handler import listen_loop
 
 # The core identity and behavioral rules for the AI (Jarvis Persona)
 SYSTEM_PROMPT = """You are JARVIS, a highly advanced, efficient, and concise AI assistant.
@@ -31,22 +31,18 @@ def think_and_respond(user_input):
         return f"System error during cognitive processing: {str(e)}"
 
 def run_jarvis():
-    """The main execution loop for the MVP pipeline (Ears -> Brain)."""
+    """The main execution loop for the MVP pipeline (Ears -> Brain), running continuously."""
     print("=== PROJECT JARVIS MVP ONLINE ===")
-    
-    # Step 1: Listen (Ears - Whisper via audio_handler)
-    user_text = transcribe()
-    
-    if user_text:
+
+    # Step 1: Listen (Ears - VAD-bounded utterances via audio_handler.listen_loop)
+    for user_text in listen_loop():
         print(f"\n[USER]: {user_text}")
-        
+
         # Step 2: Think (Brain - Llama 3.1)
         jarvis_response = think_and_respond(user_text)
-        
+
         # Step 3: Respond (Text output for now, TTS will be next)
         print(f"\n[JARVIS]: {jarvis_response}")
-    else:
-        print("\n[SYSTEM]: No audio detected.")
 
 if __name__ == "__main__":
     run_jarvis()
