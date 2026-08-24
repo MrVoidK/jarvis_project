@@ -1,0 +1,20 @@
+# Python virtual environment 
+venv/
+env/
+
+# cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# temporary audio files and logs
+*.wav
+*.mp3
+*.log
+
+# Environment variables 
+.env
+
+# Operating System Remnants
+Thumbs.db
+.DS_Store
