@@ -7,9 +7,10 @@ adımın altında somut alt adımlar var. Durum etiketleri: ✅ tamam,
 ## 1. Ears — Ses/Girdi Pipeline ✅ (olgunlaştırıldı, wake-word hariç)
 
 Mevcut: `audio_handler.py` — `webrtcvad` ile VAD-tabanlı dinamik kayıt
-(sabit blok yok) → ndarray (disk'e yazmadan) → faster-whisper
-(`vad_filter=True` ile, CUDA/float16 + otomatik CPU/int8 fallback) → metin.
-`listen_loop()` ile sürekli dinleme; `main.py` bunu tüketiyor.
+(sabit blok yok) → ndarray (disk'e yazmadan) → faster-whisper (`turbo` =
+large-v3-turbo, `language="tr"` sabit, `vad_filter=True` ile, CUDA/float16 +
+otomatik CPU/int8 fallback) → metin. `listen_loop()` ile sürekli dinleme;
+`main.py` bunu tüketiyor.
 
 Alt adımlar:
 - [x] Sabit 5 sn blok yerine VAD/sessizlik-tabanlı kayıt — `webrtcvad-wheels`
@@ -31,10 +32,16 @@ Alt adımlar:
       warm-up transkripsiyonu** yapıp gerçek bir inference tetikliyor (salt
       `WhisperModel(...)` constructor'ı CUDA hatasını yakalamıyor —
       ctranslate2 nesneyi kurar ama hata ilk gerçek çağrıda patlıyor), hata
-      olursa CPU/int8'e düşüyor. **Bu makinede fiilen tetiklendi**: CUDA
-      kurulumu `cublas64_12.dll` eksikliğinden çöküyor, sistem otomatik
-      CPU'ya düşüyor (bkz. not aşağıda) — RTX 4070 hızlanması şu an
-      kullanılmıyor.
+      olursa CPU/int8'e düşüyor. **Bu makinede fiilen tetiklendi ve
+      çözüldü**: `cublas64_12.dll` eksikti; `audio_handler.py` başına
+      eklenen Windows DLL-fix (venv'deki `nvidia-cublas-cu12`/
+      `nvidia-cudnn-cu12` pip paketlerinin bin/ dizinlerini
+      `os.add_dll_directory` ile PATH'e tanıtıyor) sonrası CUDA doğrulandı
+      çalışıyor — "faster-whisper 'cuda' cihazinda yuklendi" logu görüldü.
+      RTX 4070 hızlanması artık aktif.
+- [x] Türkçe doğruluk — model `base` yerine `turbo` (large-v3-turbo) yapıldı,
+      `transcribe()`'a `language="tr"` sabitlendi (otomatik dil algılama
+      kaldırıldı, yanlış dil tespiti riski önlendi).
 
 Gelecek/opsiyonel (kapsam dışı bırakıldı):
 - [ ] Tetikleyici (wake-word ya da **çift alkış** gibi genlik/RMS tabanlı
@@ -53,17 +60,14 @@ smoke test yapıldı. `_vad_record`'a artık kısa bir pre-roll buffer (tetik
 sesi kırpması klasik bir sorun), ama gerçek mikrofonla — özellikle yumuşak
 başlayan cümlelerle (örn. "Şey, merhaba") — doğrulanmalı.
 
-**Aksiyon gerekiyor (CUDA hızlanması için):** Bu makinede `cublas64_12.dll`
-bulunamıyor — muhtemelen CUDA 12.x runtime DLL'leri (cuBLAS/cuDNN) sistemde
-eksik veya PATH'te değil. `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`
-(veya sistem genelinde CUDA Toolkit 12.x kurulumu) denenip `python
-audio_handler.py` tekrar çalıştırılarak "cuda cihazinda yuklendi" logunun
-görülüp görülmediği kontrol edilmeli.
-
 ## 2. Brain — LLM Katmanı 🟡
 
-Mevcut: `main.py` — `ollama.chat` ile `llama3.1`'e tek turluk (system +
+Mevcut: `main.py` — `ollama.chat` ile `llama3.1:8b`'ye tek turluk (system +
 user) mesaj gönderiliyor, yanıt tek seferde dönüyor.
+
+- [x] Bug fix: `MODEL_NAME` etiketsiz `"llama3.1"` idi, Ollama'da 404
+      hatası veriyordu (Ollama tam tag bekliyor) — `"llama3.1:8b"` olarak
+      düzeltildi.
 
 Alt adımlar:
 - [ ] Konuşma geçmişi/context yönetimi: her çağrıda `messages` listesi

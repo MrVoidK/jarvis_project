@@ -11,7 +11,7 @@ Rules:
 4. Maintain a professional, slightly dry, but helpful tone."""
 
 # We are using Llama 3.1 (8B) as our local brain
-MODEL_NAME = "llama3.1" 
+MODEL_NAME = "llama3.1:8b"
 
 def think_and_respond(user_input):
     """Sends the user input to the local Llama 3.1 model and returns the response."""

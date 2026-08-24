@@ -11,12 +11,13 @@ süreçlerinde destek vermek.
 Düzeni"):
 
 - **Ears** (`audio_handler.py`) — `webrtcvad` ile VAD-tabanlı dinamik kayıt
-  (sabit blok yok, disk'e yazmadan ndarray) → `faster-whisper` (`base`
-  model, CUDA/float16 + otomatik CPU/int8 fallback, `vad_filter=True`) ile
-  transkripsiyon; `listen_loop()` ile sürekli dinleme.
-- **Brain** (`main.py`) — transkripti `ollama` üzerinden yerel `llama3.1`
-  modeline gönderir (bkz. `SYSTEM_PROMPT`), yanıtı konsola yazdırır.
-  `run_jarvis()` giriş noktası: Ears → Brain → (şimdilik) print.
+  (sabit blok yok, disk'e yazmadan ndarray) → `faster-whisper` (`turbo`
+  model = large-v3-turbo, `language="tr"` sabit, CUDA/float16 + otomatik
+  CPU/int8 fallback, `vad_filter=True`) ile transkripsiyon; `listen_loop()`
+  ile sürekli dinleme.
+- **Brain** (`main.py`) — transkripti `ollama` üzerinden yerel
+  `llama3.1:8b` modeline gönderir (bkz. `SYSTEM_PROMPT`), yanıtı konsola
+  yazdırır. `run_jarvis()` giriş noktası: Ears → Brain → (şimdilik) print.
 - **Mouth (TTS)** — henüz kod yok, `main.py` yorumunda planlanmış; venv'de
   `edge-tts` zaten kurulu (`requirements.txt`) — muhtemel seçim bu.
 
@@ -59,9 +60,11 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
   bunu karşılıyor (CUDA'da sessiz bir warm-up transkripsiyonuyla gerçek bir
   inference tetikleyip hata olursa CPU/int8'e düşüyor — salt `WhisperModel()`
   constructor'ı CUDA hatasını yakalamaz, hata ilk gerçek çağrıda patlar).
-  **Bilinen durum:** bu geliştirme makinesinde `cublas64_12.dll` eksik,
-  sistem otomatik CPU'ya düşüyor — RTX 4070 hızlanması şu an aktif değil
-  (bkz. `docs/ROADMAP.md` §1 "Aksiyon gerekiyor").
+  **Not:** bu makinede `cublas64_12.dll` eksikliği, `audio_handler.py`
+  başındaki Windows DLL-fix (venv'deki `nvidia-cublas-cu12`/
+  `nvidia-cudnn-cu12` pip paketlerinin bin/ dizinlerini
+  `os.add_dll_directory` ile tanıtıyor) + bu paketlerin kurulmasıyla
+  çözüldü — RTX 4070 CUDA hızlanması artık aktif.
 - Gizli bilgiler (API anahtarı, token) asla koda veya commit'e gömülmez;
   `.env` + `.gitignore` kullanılır (`.gitignore`'da `.env` ve `secrets/`
   zaten hariç tutulmuş durumda).

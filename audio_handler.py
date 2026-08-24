@@ -1,3 +1,20 @@
+import os
+import sys
+import glob
+
+# --- Windows CUDA DLL Fix Başlangıcı ---
+# Eğer işletim sistemi Windows ise, venv içindeki nvidia pip paketlerinin DLL'lerini Python'a tanıtıyoruz.
+if os.name == "nt":
+    site_packages = os.path.join(sys.prefix, "Lib", "site-packages")
+    nvidia_bins = glob.glob(os.path.join(site_packages, "nvidia", "*", "bin"))
+    for bin_dir in nvidia_bins:
+        try:
+            os.add_dll_directory(bin_dir)  # Python'un DLL'leri görmesi için
+        except Exception:
+            pass
+        # ctranslate2'nin alt süreçleri için ortam değişkenine de ekliyoruz:
+        os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+# --- Windows CUDA DLL Fix Sonu ---
 import logging
 from collections import deque
 from typing import Iterator, Optional
@@ -20,7 +37,7 @@ PREROLL_FRAMES = 3  # ~90ms of audio kept before trigger, so onset isn't clipped
 VAD_AGGRESSIVENESS = 2  # 0 (permissive) - 3 (aggressive filtering of non-speech)
 
 
-def _load_model_with_fallback(model_size: str = "base") -> tuple[WhisperModel, str]:
+def _load_model_with_fallback(model_size: str = "turbo") -> tuple[WhisperModel, str]:
     """Loads faster-whisper on CUDA/float16, falling back to CPU/int8 if unavailable.
 
     ctranslate2 can construct a CUDA model object successfully even when the
@@ -117,6 +134,7 @@ def transcribe_once() -> Optional[str]:
         segments, _info = model.transcribe(
             audio,
             beam_size=5,
+            language="tr",
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
         )

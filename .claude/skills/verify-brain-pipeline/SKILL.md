@@ -6,18 +6,21 @@ disable-model-invocation: false
 
 ## On kosul
 
-Ollama servisi calisiyor ve `llama3.1` modeli cekilmis olmali:
+Ollama servisi calisiyor ve `llama3.1:8b` modeli cekilmis olmali (`main.py`
+icindeki `MODEL_NAME` ile birebir eslesmeli - etiketsiz `llama3.1` Ollama'da
+404 hatasi verir):
 
 ```
 ollama list
 ```
 
-`llama3.1` listede yoksa `ollama pull llama3.1` calistir.
+`llama3.1:8b` listede yoksa `ollama pull llama3.1:8b` calistir.
 
 ## Brain'i tek basina dogrula (mikrofon olmadan)
 
-`main.py` su an `transcribe()` cagirdigi icin mikrofonsuz test etmek istersen
-Python'dan dogrudan `think_and_respond`'u cagir:
+`main.py`'yi import etmek `audio_handler`'i da import edip Whisper modelini
+yukler (yavas); mikrofonsuz test etmek icin dogrudan `think_and_respond`'u
+cagir:
 
 ```
 python -c "from main import think_and_respond; print(think_and_respond('What is the current time zone concept in one sentence?'))"
