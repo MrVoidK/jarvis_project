@@ -45,6 +45,13 @@ WAKEWORD_THRESHOLD = 0.5
 WAKEWORD_CHUNK_MS = 80  # openWakeWord's native frame size; other sizes work but add latency
 WAKEWORD_CHUNK_SAMPLES = SAMPLE_RATE * WAKEWORD_CHUNK_MS // 1000  # 1280 samples
 
+CLAP_THRESHOLD = 4000  # RMS esigi (int16 ornekleme, 0-32767 arasi) - mikrofon
+                        # kazancina/ortam gurultusune gore manuel ayarlanmali
+CLAP_MIN_GAP_MS = 200  # iki alkis arasi min. sure - tek bir alkisin yankisini/
+                        # ikinci pikini yanlislikla "ikinci alkis" saymayi engeller
+CLAP_MAX_GAP_MS = 800  # iki alkis arasi maks. sure - bu pencere asilirsa ilk
+                        # alkis olarak yeniden sayilir (bekleyen durum sifirlanir)
+
 
 class ListenState(Enum):
     IDLE = auto()  # waiting for the wake word, nothing is transcribed
@@ -162,24 +169,54 @@ def _vad_record(
     return audio_int16.astype(np.float32) / 32768.0
 
 
+def _rms(chunk: np.ndarray) -> float:
+    """Bir int16 ses chunk'inin RMS (Root Mean Square) genligini hesaplar.
+
+    int16'nin karesi (32767**2) int16 sinirini asip overflow'a yol acacagi
+    icin once float32'ye cast ediliyor.
+    """
+    return float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
+
+
 def _wait_for_wakeword(stream: sd.InputStream) -> np.ndarray:
-    """Blocks on an open stream until the wake word is detected, logging latency.
+    """Blocks on an open stream until the wake word OR a double-clap is detected,
+    logging latency. Both triggers are evaluated on the same stream of chunks -
+    the RMS-based clap check is cheap enough to run every iteration alongside the
+    openWakeWord inference, so no separate thread is needed.
 
     Returns the triggering chunk itself, so the caller can feed it into
     `_vad_record`'s pre-roll instead of discarding it - otherwise the ~80ms
-    of audio right after "Hey Jarvis" (which can already contain the start
+    of audio right after the trigger (which can already contain the start
     of the command, if the user doesn't pause) is silently lost.
     """
     wakeword_model.reset()  # clear buffers left over from the previous cycle
-    logger.info("Uyku modunda... ('Hey Jarvis' bekleniyor)")
+    logger.info("Uyku modunda... ('Hey Jarvis' veya cift alkis bekleniyor)")
 
     wait_start = time.perf_counter()
     chunk_latencies: list[float] = []
+    clap_min_gap_s = CLAP_MIN_GAP_MS / 1000
+    clap_max_gap_s = CLAP_MAX_GAP_MS / 1000
+    last_clap_time: Optional[float] = None
+    clap_active = False  # ayni alkisin birden fazla chunk'ta tekrar sayilmasini engeller
     while True:
         chunk, overflowed = stream.read(WAKEWORD_CHUNK_SAMPLES)
         if overflowed:
             logger.warning("Giris tamponu tasti (overflow) - ses kaybi olabilir.")
         chunk = chunk.reshape(-1)
+
+        rms = _rms(chunk)
+        is_loud = rms >= CLAP_THRESHOLD
+        if is_loud and not clap_active:
+            now = time.perf_counter()
+            if last_clap_time is not None and clap_min_gap_s <= now - last_clap_time <= clap_max_gap_s:
+                logger.info(
+                    "Cift alkis algilandi (rms=%.0f, bekleme=%.1fs)",
+                    rms,
+                    now - wait_start,
+                )
+                return chunk
+            last_clap_time = now
+        clap_active = is_loud
 
         infer_start = time.perf_counter()
         prediction = wakeword_model.predict(chunk)
