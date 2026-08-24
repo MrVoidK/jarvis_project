@@ -21,8 +21,13 @@ Düzeni"):
 - **Brain** (`main.py`) — transkripti `ollama` üzerinden yerel
   `llama3.1:8b` modeline gönderir (bkz. `SYSTEM_PROMPT`), yanıtı konsola
   yazdırır. `run_jarvis()` giriş noktası: Ears → Brain → (şimdilik) print.
-- **Mouth (TTS)** — henüz kod yok, `main.py` yorumunda planlanmış; venv'de
-  `edge-tts` zaten kurulu (`requirements.txt`) — muhtemel seçim bu.
+- **Mouth** (`tts_handler.py`) — Coqui **XTTS-v2** ile zero-shot voice
+  cloning: proje kökündeki `jarvis_reference.wav` referans alınarak,
+  `speak(text)` çağrıldığında model+konuşmacı embedding'leri (modül
+  importunda bir kez yüklenir) üzerinden `inference_stream()` ile üretilen
+  ses chunk'ları, disk'e `.wav` yazmadan doğrudan `sounddevice.OutputStream`
+  ile hoparlöre akıtılır. `edge-tts` (bulut tabanlı) yerine bu tercih
+  edildi — tüm pipeline'ın yerelde/offline çalışması ilkesiyle tutarlı.
 
 Genel ilkeler:
 - Modüler ajan mimarisi: her yetenek (ses girişi, komut yönlendirme, araç
@@ -40,7 +45,8 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
 1. **Ears** — mikrofon → metin (durum: IDLE/ACTIVE state machine + wake-word
    `openWakeWord`/"Hey Jarvis" + CPU fallback + latency profiling tamam)
 2. **Brain** — transkript → LLM yanıtı (durum: MVP tamam, `main.py`'de)
-3. **Mouth / TTS** — yanıt → sesli çıktı (durum: başlanmadı, sıradaki)
+3. **Mouth / TTS** — yanıt → sesli çıktı (durum: MVP tamam, XTTS-v2 voice
+   cloning ile, `tts_handler.py`)
 4. **Modüler Komut Yöneticisi** — intent parsing → ilgili modüle yönlendirme
 5. **Sistem Entegrasyonları / Tool Use** — dosya yönetimi, terminal komutları,
    sistem izleme, API entegrasyonları
@@ -48,7 +54,10 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
 
 ## Komutlar
 
-- Kurulum: `venv\Scripts\pip install -r requirements.txt`
+- Kurulum (sıra önemli — CUDA'lı `torch` PyPI'nin varsayılan index'inde
+  yok, atlanırsa XTTS sessizce CPU-only'e düşüp çok yavaşlar):
+  1. `venv\Scripts\pip install torch==2.11.0+cu128 torchaudio==2.11.0+cu128 --index-url https://download.pytorch.org/whl/cu128`
+  2. `venv\Scripts\pip install -r requirements.txt`
 - Çalıştırma (tam döngü): `python main.py`
 - Sadece Ears testi: `python audio_handler.py`
 - Test: `pytest` (henüz test yok — `tests/` klasörü kurulacak)
@@ -68,6 +77,23 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
   `nvidia-cudnn-cu12` pip paketlerinin bin/ dizinlerini
   `os.add_dll_directory` ile tanıtıyor) + bu paketlerin kurulmasıyla
   çözüldü — RTX 4070 CUDA hızlanması artık aktif.
+- `tts_handler.py` da aynı CUDA/CPU fallback deseninde (`_load_tts_model_with_fallback()`),
+  ama `torch`'un Windows wheel'i CUDA DLL'lerini kendi içinde taşıdığı için
+  (ctranslate2'nin aksine) `os.add_dll_directory` hack'ine ihtiyaç yok.
+  XTTS-v2 modeli Coqui'nin CPML (ticari olmayan kullanım) lisansı altında;
+  `COQUI_TOS_AGREED=1` ile bu otomatik kabul ediliyor — bilinçli bir
+  lisans kararı, değiştirilirse dikkatli olunmalı.
+  **Not:** `torch` 2.9+'ta `torchaudio.load()`'ın varsayılan backend'i
+  `torchcodec`'e taşındı; `torchcodec` ise sistemde ayrıca kurulu bir
+  paylaşımlı FFmpeg kütüphanesi gerektiriyor (bu makinede yok, pip de
+  getirmiyor — `torchcodec` kendi `.dll`'lerini sistemin FFmpeg'ine dinamik
+  bağlıyor). XTTS referans `.wav`'i okumak için sadece `torchaudio.load()`
+  çağırdığından (`get_conditioning_latents` → `load_audio`), `tts_handler.py`
+  bunu `torchaudio.load = _load_audio_via_soundfile` ile **monkeypatch**
+  ediyor — zaten kurulu olan `soundfile` (libsndfile, FFmpeg gerektirmez) ile
+  aynı `(tensor, sample_rate)` sözleşmesini taklit ediyor. `torchcodec` pip
+  paketi yine de kurulu kalmalı çünkü `TTS/__init__.py` onu import zamanında
+  arıyor (kullanılmasa da olmazsa olmaz).
 - Gizli bilgiler (API anahtarı, token) asla koda veya commit'e gömülmez;
   `.env` + `.gitignore` kullanılır (`.gitignore`'da `.env` ve `secrets/`
   zaten hariç tutulmuş durumda).

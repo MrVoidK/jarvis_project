@@ -112,21 +112,63 @@ Alt adımlar:
 - [ ] `SYSTEM_PROMPT`'u sabit string yerine ayrı bir yapılandırma/dosyaya
       taşımayı değerlendir (persona değişikliklerini kolaylaştırmak için).
 
-## 3. Mouth — TTS ⬜
+## 3. Mouth — TTS ✅ (MVP tamam — XTTS-v2 voice cloning)
 
-Henüz kod yok; `main.py` içindeki yorum ("TTS will be next") ve venv'de
-zaten kurulu olan `edge-tts` paketi bir sonraki adımın bu olduğunu gösteriyor.
+`edge-tts` (bulut) yerine kullanıcı tercihiyle Coqui **XTTS-v2** zero-shot
+voice cloning'e geçildi — tüm pipeline'ın yerelde/offline çalışması
+ilkesiyle tutarlı. `tts_handler.py`: proje kökündeki `jarvis_reference.wav`
+referans alınarak model + konuşmacı embedding'leri (`gpt_cond_latent`,
+`speaker_embedding`) import zamanında **bir kez** hesaplanıyor;
+`speak(text, language=None)` her çağrıda sadece `model.inference_stream()`
+çalıştırıp üretilen chunk'ları disk'e yazmadan doğrudan
+`sounddevice.OutputStream`'e akıtıyor (gerçek streaming oynatma).
 
 Alt adımlar:
-- [ ] `edge-tts` ile temel bir `speak(text: str)` fonksiyonu yaz (async API'yi
-      senkron `run_jarvis()` akışına nasıl bağlayacağına karar ver —
-      `asyncio.run` veya pipeline'ı async'e çevirme).
-- [ ] Ana döngüye bağla: `run_jarvis()` içinde `print(jarvis_response)`
-      yerine/yanında `speak(jarvis_response)` çağrısı.
-- [ ] Gecikme ölçümü: Ears→Brain→Mouth toplam gecikmeyi ölç, darboğazı
-      belirle (muhtemelen Brain'in ilk token'a kadarki süresi).
+- [x] `speak(text: str)` fonksiyonu — `main.py`'nin senkron `run_jarvis()`
+      akışına doğrudan (asyncio olmadan) bağlandı; XTTS'in kendi streaming
+      API'si zaten düşük gecikmeli olduğu için async'e geçmenin şu an somut
+      bir faydası yok (bkz. `CLAUDE.md` Kod Stili notu).
+- [x] Ana döngüye bağlandı: `main.py:run_jarvis()` içinde `print(jarvis_response)`
+      sonrası `speak(jarvis_response)`.
+- [x] Gecikme ölçümü: `tts_handler.py` model yükleme süresini, ilk-chunk
+      gecikmesini ve toplam sentez+oynatma süresini `logger.info` ile
+      logluyor (Ears'in latency profiling desenine paralel).
 - [ ] Kesinti/iptal: kullanıcı konuşurken Jarvis konuşuyorsa ne olacak
-      (barge-in) — MVP'de basitçe engellensin, ileride ele alınsın.
+      (barge-in) — MVP'de basitçe engellensin (mevcut durum zaten bu),
+      ileride ele alınsın.
+- [ ] Dil tespiti (`_detect_language`, `langdetect` ile) şu an pratikte hep
+      "en" dönüyor çünkü `main.py`'deki `SYSTEM_PROMPT` yanıtları
+      İngilizce'ye sabitliyor — Brain çok dilli olduğunda gerçek TR/EN
+      okuma davranışı doğrulanmalı.
+- [x] Kurulum riskleri gerçekleşti ve çözüldü: `coqui-tts==0.27.5`'in
+      taban paketi `transformers>=4.57`'i pinsiz kabul ettiği için ilk
+      kurulumda `transformers==5.15.1` çekildi — bu, XTTS'in tortoise/gpt
+      katmanlarının kullandığı `transformers.pytorch_utils.isin_mps_friendly`
+      fonksiyonunu kaldırmış (transformers 5.x breaking change), import'u
+      kırdı. `transformers==4.57.6`'ya (son 4.x sürümü) pinlenerek çözüldü;
+      bu da `huggingface_hub`'ı `1.28.0`'dan `0.36.2`'ye düşürdü (sorun
+      çıkarmadı). Ayrıca `tokenizers` `0.23.1`den `0.22.2`'ye düştü —
+      `pip check` + `faster-whisper`/`ollama` import testleri temiz çıktı.
+- [x] **Daha büyük bir bulgu:** `torch` 2.9+'ta `torchaudio.load()`'ın
+      varsayılan backend'i `torchcodec`'e taşınmış; `torchcodec` sistemde
+      ayrıca kurulu bir paylaşımlı FFmpeg kütüphanesi arıyor (bu makinede
+      yok). XTTS referans `.wav`'i okurken tam olarak bu path'e düşüyordu
+      (`get_conditioning_latents` → `load_audio` → `torchaudio.load`),
+      `RuntimeError: Could not load libtorchcodec` ile patlıyordu — ayrıca
+      bu hata `python script.py 2>&1 | tail -N` şeklinde çalıştırılan
+      komutlarda gerçek exit code'u maskeliyordu (pipe'ın son elemanı
+      `tail` başarıyla bittiği için `0` dönüyordu; gerçek hata `$?`'yi
+      doğrudan script'ten almadan görünmüyordu). Çözüm: sistem geneline
+      FFmpeg kurmak yerine `tts_handler.py` içinde `torchaudio.load`'u
+      `soundfile` (zaten kurulu, libsndfile tabanlı, FFmpeg gerektirmez)
+      ile aynı `(tensor, sample_rate)` sözleşmesini taklit eden bir
+      fonksiyonla **monkeypatch**'ledik — sadece referans ses yükleme
+      path'i için, `inference_stream()`'in kendisi hiç dosya okumuyor.
+- [x] VRAM: gerçek `speak()` çağrılarında sorun çıkmadı (model yükleme
+      ~9sn, ilk chunk ~0.3-0.5sn, toplam sentez ~4sn/cümle, RTX 4070/12GB
+      üzerinde CUDA'da). Whisper + Ollama + XTTS'in **aynı anda** birlikte
+      kullanıldığı gerçek bir uçtan uca (`python main.py`) turu henüz
+      insan tarafından doğrulanmadı.
 
 ## 4. Modüler Komut Yöneticisi ⬜
 

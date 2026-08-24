@@ -1,5 +1,6 @@
 import ollama
 from audio_handler import listen_loop
+from tts_handler import speak
 
 # The core identity and behavioral rules for the AI (Jarvis Persona)
 SYSTEM_PROMPT = """You are JARVIS, a highly advanced, efficient, and concise AI assistant.
@@ -41,8 +42,9 @@ def run_jarvis():
         # Step 2: Think (Brain - Llama 3.1)
         jarvis_response = think_and_respond(user_text)
 
-        # Step 3: Respond (Text output for now, TTS will be next)
+        # Step 3: Respond (text output + XTTS-v2 voice-cloned speech)
         print(f"\n[JARVIS]: {jarvis_response}")
+        speak(jarvis_response)
 
 if __name__ == "__main__":
     run_jarvis()
