@@ -1,10 +1,17 @@
-# Jarvis — Detaylı Yol Haritası (alt adımlarla)
+# Jarvis — Detaylı Yol Haritası (Faz 1–5)
 
-Bu dosya `CLAUDE.md`'deki kısa MVP listesinin genişletilmiş hâlidir. Her ana
-adımın altında somut alt adımlar var. Durum etiketleri: ✅ tamam,
+Bu dosya `CLAUDE.md`'deki kısa MVP listesinin genişletilmiş hâlidir. Her fazın
+altında somut alt adımlar var. Durum etiketleri: ✅ tamam,
 🟡 kısmen/MVP var-olgunlaştırılacak, ⬜ başlanmadı.
 
-## 1. Ears — Ses/Girdi Pipeline ✅ (wake-word + latency profiling dahil, tamamlandı)
+Mimari tasarımın "nasıl/neden"i (design pattern'lar, multi-agent iletişim
+şeması, VRAM optimizasyonu, güvenlik/guardrail tasarımı, genişletilmiş
+klasör yapısı) `docs/ARCHITECTURE.md`'dedir — burası sadece eyleme
+geçirilebilir görev listesidir.
+
+## Faz 1 — Girdi/Çıktı Çekirdeği (MVP) ✅
+
+### 1.1 Ears — Ses/Girdi Pipeline ✅ (wake-word + latency profiling dahil, tamamlandı)
 
 Mevcut: `audio_handler.py:listen_loop()` bir **state machine**: IDLE
 (openWakeWord `hey_jarvis` ile "Hey Jarvis" dinlenir, transkripsiyon yok) ↔
@@ -70,49 +77,137 @@ Alt adımlar:
       `initial_prompt` ile serbest bırakıldı.
 
 Gelecek/opsiyonel (kapsam dışı bırakıldı):
-- [x] **Çift alkış** — `_wait_for_wakeword` içine RMS-tabanlı, 0.2-0.8sn
+- [x] **Çift alkış** — `_wait_for_wakeword` içine RMS-tabanlı, 0.15-0.8sn
       pencereli çift-alkış tespiti eklendi (aynı chunk döngüsü, ekstra
       thread yok); wake-word ile aynı `return chunk` sözleşmesini paylaştığı
-      için `listen_loop()` değişmedi. Kullanıcı gerçek mikrofonla doğruladı
-      ("gayet iyi çalışıyor"). `CLAP_THRESHOLD`/`CLAP_MIN_GAP_MS`/
-      `CLAP_MAX_GAP_MS` `audio_handler.py`'de ayarlanabilir sabitler.
+      için `listen_loop()` değişmedi. `CLAP_THRESHOLD`/`CLAP_MIN_GAP_MS`/
+      `CLAP_MAX_GAP_MS` `src/jarvis/ears/listener.py`'de ayarlanabilir
+      sabitler.
+      **Güvenilirlik bulgusu + düzeltme** (kullanıcı: "önce uzak/yakın fark
+      etmeden çalışıyordu, şimdi birkaç deneme gerekiyor"): kök neden iki
+      katmanlıydı. (1) Gürültü tabanı (`_clap_noise_floor`) sadece impulsif
+      olmayan (`is_loud=False`) chunk'lardan güncelleniyordu, ama sürekli
+      konuşma/ortam sesi de düşük crest-factor'lu olduğundan bu kategoriye
+      giriyor ve tabanı sınırsızca yukarı sürüklüyordu — uzun bir konuşma
+      sonrası dinamik eşik (`noise_floor*6`) gerçek alkışların RMS'ini
+      geçebiliyordu; **`CLAP_NOISE_FLOOR_MAX=450`** tavanı eklendi ve
+      EMA güncellemesi sadece gerçekten "rms-olarak yüksek olmayan"
+      chunk'lardan yapılacak şekilde daraltıldı. (2) Uzaktan gelen alkışlar
+      oda yankısı yüzünden daha düşük crest-factor'e sahip (gerçek testte
+      4.1 ölçüldü) — `CLAP_MIN_CREST_FACTOR` 3.5'ten **3.0**'a düşürüldü.
+      (3) Asıl baskın sebep: iki alkış arası zaman penceresi (`CLAP_MIN_GAP_MS`)
+      200ms'ti, gerçek testte geçerli bir alkış çifti 159ms'de bu yüzden
+      reddediliyordu (yeni eklenen near-miss loglarıyla görüldü) —
+      **150ms**'e düşürüldü. Ayrıca her başarısız/near-miss algılama artık
+      `logger.info` ile (rms/crest/gap değerleriyle) loglanıyor, ileride
+      benzer bir ayar sorununda kör kalınmasın diye. Kullanıcı gerçek
+      mikrofonla, önce yakından sonra özellikle uzaktan, düzeltme
+      sonrası tekrar doğruladı ("çalışıyor").
 - [ ] `hey_jarvis` modelinin Türkçe aksanla güvenilirliği düşük çıkarsa:
       `WAKEWORD_THRESHOLD` ayarı veya openWakeWord'ün custom-model eğitim
       akışı (ayrı, daha büyük bir görev).
+- [ ] **Ek tetikleyici kelimeler** ("jarvis", "wake up", "uyan"): araştırıldı
+      — openWakeWord'ün pip paketiyle gelen hazır (pretrained) modelleri
+      sadece `alexa`/`hey_mycroft`/`hey_jarvis`/`hey_rhasspy`/`timer`/
+      `weather`'dan ibaret; "jarvis" tek başına, "wake up" veya Türkçe
+      "uyan" için hazır bir model yok. İki yol var: (a) her ifade için
+      openWakeWord'ün sentetik-veri eğitim akışıyla ayrı bir ONNX modeli
+      eğitmek (yukarıdaki maddeyle aynı — ayrı, daha büyük bir görev), ya
+      da (b) zaten yüklü faster-whisper modelini ikinci bir tetikleyici
+      yolu olarak kullanmak (IDLE'da enerji-tabanlı kısa bir konuşma
+      tamponu biriktirip transkribe ederek kelime araması yapmak — eğitim
+      gerektirmez ama openWakeWord'ün ~1.6ms/chunk hızına göre gecikmesi
+      daha yüksek). Kullanıcı talebiyle bu oturumda kapsam dışı bırakıldı,
+      ileride ayrı bir görev olarak ele alınacak.
 
-**İnsan doğrulaması gerekiyor (headless ortamda yapılamadı):**
+**İnsan doğrulaması ✅ (gerçek "Hey Jarvis" ile, `python -u main.py` +
+`.claude/skills/verify-wakeword-pipeline` kontrol listesiyle yapıldı):**
 - Kullanıcı `python main.py` ile gerçek Türkçe/İngilizce konuşarak Ears→Brain
   zincirini (wake-word öncesi) doğruladı — bu kısım çalışıyor.
-- **Henüz doğrulanmadı:** wake-word state machine'i gerçek "Hey Jarvis"
-  sesiyle (bkz. `.claude/skills/verify-wakeword-pipeline`) — Türkçe aksanla
-  tetiklenme güvenilirliği, wake-word söylemeden konuşmanın gerçekten
-  Brain'e gitmediği, IDLE↔ACTIVE geçişlerinin akıcılığı.
-- Pre-roll buffer (tetik öncesi ~90ms, ilk hecenin kırpılmaması için) gerçek
-  mikrofonla, özellikle yumuşak başlayan cümlelerle (örn. "Şey, merhaba")
-  doğrulanmalı.
+- [x] Wake-word state machine gerçek "Hey Jarvis" sesiyle iki ayrı IDLE→ACTIVE
+      döngüsünde doğrulandı (skor=0.51 ve 0.67, eşiğin — 0.5 — üzerinde);
+      wake-word söylemeden konuşulan cümleler (IDLE'da ~120sn boyunca)
+      transkribe edilmedi/Brain'e gitmedi — yanlış-pozitif görülmedi.
+- [x] Gecikme: wake-word ort. chunk gecikmesi her iki tetiklenmede de
+      **2.3ms** (80ms bütçenin çok altında); transkripsiyon gecikmesi
+      gerçek konuşmalarda 0.4-1.1s aralığında (CUDA/turbo).
+- [x] Uçtan uca TR/EN doğrulandı: "Hello Jarvis. Nasılsın?" girdisi TR olarak
+      algılanıp (p=0.94) Türkçe yanıt + Türkçe TTS sesiyle (gerçek
+      `jarvis_reference_tr.wav` ile, artık fallback değil) okundu; "Hey
+      Jarvis." girdisi EN yanıt + EN TTS sesiyle okundu — Faz 1.3'teki
+      bilingual switch canlı ortamda da çalışıyor.
+- [x] IDLE↔ACTIVE↔FOLLOWUP geçişleri restart gerekmeden akıcı çalıştı, iki
+      ayrı wake-word döngüsü art arda başarıyla tetiklendi.
+- [ ] Pre-roll buffer (tetik öncesi ~90ms, ilk hecenin kırpılmaması için)
+      özellikle yumuşak başlayan cümlelerle (örn. "Şey, merhaba") ayrıca
+      doğrulanmalı — bu turda dolaylı olarak sorun görülmedi ("Hello Jarvis"
+      hiç kırpılmadan transkribe edildi) ama özel olarak test edilmedi.
 
-## 2. Brain — LLM Katmanı 🟡
+**Bulgu düzeltildi ✅ — takip penceresi gürültüde gereğinden uzun sürüyordu:**
+Kullanıcı gözlemi ("uyku moduna çok geç giriyor") loglarla doğrulanmıştı:
+`webrtcvad`'in ortam gürültüsünü/nefes sesini "konuşma" sanıp tetiklenmesi
+sonucu faster-whisper'ın kendi `vad_filter`'ı tarafından tamamen boşaltılan
+(`VAD filter removed X of audio` = tüm klip) boş turlar, her biri tam bir
+`FOLLOWUP_WINDOW_MS` (12sn) penceresini sıfırdan yeniden açıyordu — art
+arda geldikçe IDLE'a dönüş kümülatif olarak çok gecikiyordu. **Düzeltme**
+(`audio_handler.py:listen_loop()`): artık bir `followup_deadline` (mutlak
+zaman) tutuluyor; deadline sadece **gerçek bir transkript** (boş olmayan
+`text`) üretildiğinde tam `FOLLOWUP_WINDOW_MS`'e sıfırlanıyor, gürültü
+kaynaklı boş turlar ise sadece kalan süreyi tüketiyor (yeni pencere
+açmıyor) — `_vad_record`'a da her seferinde kalan süre `max_wait_ms`
+olarak geçiliyor. Log satırı da buna göre "Takip penceresi acik (kalan
+Xs)" şeklinde güncellendi. Gerçek mikrofonla iki senaryoda doğrulandı: (1)
+gerçek bir soru-cevap sonrası art arda gürültü tetiklenmeleri "kalan 12s →
+10s → 8s → 5s" şeklinde düzgün azalıp tam ~12sn'de IDLE'a döndü; (2) hiç
+gerçek konuşma olmadan sadece gürültü/çift-alkış ile başlayan bir turda da
+"kalan 12s → 9s → 6s → 3s → 1s" şeklinde azalıp yine ~12sn'de IDLE'a
+döndü — sonsuza kadar ertelenme sorunu ortadan kalktı.
 
-Mevcut: `main.py` — `ollama.chat` ile `llama3.1:8b`'ye tek turluk (system +
-user) mesaj gönderiliyor, yanıt tek seferde dönüyor.
+### 1.2 Brain — LLM Katmanı ✅
+
+Mevcut: `main.py` — `ollama.chat`'e `llama3.1:8b` ile **streaming** ve
+**geçmiş-bağlı (history)** bir istek gönderiliyor; `SYSTEM_PROMPT` artık
+kod içine gömülü değil, `system_prompt.txt`'ten okunuyor.
 
 - [x] Bug fix: `MODEL_NAME` etiketsiz `"llama3.1"` idi, Ollama'da 404
       hatası veriyordu (Ollama tam tag bekliyor) — `"llama3.1:8b"` olarak
       düzeltildi.
+- [x] `SYSTEM_PROMPT` artık yanıtları İngilizce'ye sabitlemiyor —
+      kullanıcının kullandığı dilde (TR/EN) yanıt verme kuralına çevrildi
+      (1.3'teki çift-dilli TTS'i canlı ortamda kullanılır kıldı).
 
 Alt adımlar:
-- [ ] Konuşma geçmişi/context yönetimi: her çağrıda `messages` listesi
-      sıfırdan kuruluyor, önceki tur hatırlanmıyor — bir `conversation`
-      state'i ekle (son N mesaj veya özet).
-- [ ] Streaming yanıt: `ollama.chat(..., stream=True)` ile token bazlı
-      yanıt — TTS'e (Mouth) cümle cümle beslemek için gerekecek.
-- [ ] Model/parametre fallback: `llama3.1` yüklenemezse/Ollama kapalıysa
-      davranış (şu an `except Exception` genel bir hata metni döndürüyor,
-      kullanıcıya "Ollama çalışmıyor" gibi daha net bir sinyal ver).
-- [ ] `SYSTEM_PROMPT`'u sabit string yerine ayrı bir yapılandırma/dosyaya
-      taşımayı değerlendir (persona değişikliklerini kolaylaştırmak için).
+- [x] **Konuşma geçmişi/context yönetimi**: `run_jarvis()` bir `history`
+      listesini (`system` mesajıyla başlayan) döngü boyunca kalıcı tutuyor,
+      her tur `think_and_respond_stream()`'e referans olarak geçiyor ve
+      `user`/`assistant` mesajlarıyla büyüyor. `_trim_history()`,
+      `MAX_HISTORY_MESSAGES = 12` (son 6 kullanıcı+6 asistan turu) sınırını
+      aşan en eski mesajları atıyor (system mesajı hariç) — yerel 8B
+      modelde her ek mesaj gecikme/işlem yükü kattığından. Doğrulama: "Benim
+      adım Ömer, bunu hatırla" → "Benim adım ne?" takip sorusuna doğru
+      "Ömer." yanıtı alındı (gerçek hafıza çalışıyor).
+- [x] **Streaming yanıt + cümle-cümle TTS**: `think_and_respond_stream()`
+      `ollama.chat(..., stream=True)` ile token akışını okuyup bir
+      cümle-sonu regex'iyle (`(?<=[.!?])\s+`) tamamlanan her cümleyi
+      `yield` ediyor; `run_jarvis()` bunları tek tek `speak()`'e besliyor —
+      TTS ilk cümle hazır olur olmaz başlıyor, LLM geri kalanını üretirken
+      paralel ilerliyor (gerçek mikrofonla uçtan uca doğrulandı).
+- [x] **Model/bağlantı fallback**: `think_and_respond_stream()`'in hata
+      bloğu üçe ayrıldı — `httpx.ConnectError`/`ConnectionError` (Ollama
+      kapalı — not: `ollama` paketi bu dönüşümü sadece non-streaming yolda
+      yapıyor, streaming'de ham `httpx.ConnectError` sızıyor, ikisi de
+      yakalanıyor) → net TR/EN "Ollama'ya bağlanamıyorum" mesajı;
+      `ollama.ResponseError` + `status_code == 404` (model çekilmemiş) →
+      `ollama pull {MODEL_NAME}` talimatlı net mesaj; diğerleri → genel
+      teşhis mesajı. Üçü de sahte `OLLAMA_HOST`/geçersiz model adıyla
+      izole test edildi (gerçek Ollama süreci durdurulmadan), history'ye
+      hatalı bir `assistant` mesajı eklenmediği doğrulandı.
+- [x] `SYSTEM_PROMPT` artık `system_prompt.txt` dosyasında (proje kökü) —
+      persona değişikliği için kod dokunulmuyor; dosya yoksa
+      `tts_handler.py`'nin `REFERENCE_AUDIO_EN` deseniyle tutarlı şekilde
+      açık `FileNotFoundError` ile patlıyor.
 
-## 3. Mouth — TTS ✅ (MVP tamam — XTTS-v2 voice cloning)
+### 1.3 Mouth — TTS ✅ (MVP tamam — XTTS-v2 voice cloning + VRAM-optimize çift-dilli)
 
 `edge-tts` (bulut) yerine kullanıcı tercihiyle Coqui **XTTS-v2** zero-shot
 voice cloning'e geçildi — tüm pipeline'ın yerelde/offline çalışması
@@ -136,10 +231,13 @@ Alt adımlar:
 - [ ] Kesinti/iptal: kullanıcı konuşurken Jarvis konuşuyorsa ne olacak
       (barge-in) — MVP'de basitçe engellensin (mevcut durum zaten bu),
       ileride ele alınsın.
-- [ ] Dil tespiti (`_detect_language`, `langdetect` ile) şu an pratikte hep
-      "en" dönüyor çünkü `main.py`'deki `SYSTEM_PROMPT` yanıtları
-      İngilizce'ye sabitliyor — Brain çok dilli olduğunda gerçek TR/EN
-      okuma davranışı doğrulanmalı.
+- [x] Dil tespiti (`_detect_language`, `langdetect` ile) artık gerçekten iki
+      dil arasında değişiyor: `main.py`'deki `SYSTEM_PROMPT`'un "Always
+      respond STRICTLY in English" kuralı kaldırılıp kullanıcının kullandığı
+      dilde (TR/EN) yanıt verme kuralına çevrildi (bkz. 1.2). `.claude/skills
+      /verify-brain-pipeline` ile Türkçe ve İngilizce örnek girdiler
+      denendi: Türkçe girdiye Türkçe ("Günaydın! Bugün Londra'da güneşli ve
+      serin bir hava var...") , İngilizce girdiye İngilizce yanıt doğrulandı.
 - [x] Kurulum riskleri gerçekleşti ve çözüldü: `coqui-tts==0.27.5`'in
       taban paketi `transformers>=4.57`'i pinsiz kabul ettiği için ilk
       kurulumda `transformers==5.15.1` çekildi — bu, XTTS'in tortoise/gpt
@@ -169,23 +267,106 @@ Alt adımlar:
       üzerinde CUDA'da). Whisper + Ollama + XTTS'in **aynı anda** birlikte
       kullanıldığı gerçek bir uçtan uca (`python main.py`) turu henüz
       insan tarafından doğrulanmadı.
+- [x] **VRAM-optimize tek-motor çift-dilli (TR/EN) TTS**: `tts_handler.py`
+      tek `Xtts` model instance'ı üzerinde, dile göre seçilen iki
+      referans/embedding çifti tutuyor: `REFERENCE_AUDIO_EN =
+      jarvis_reference.wav` (zorunlu, mevcut) + `REFERENCE_AUDIO_TR =
+      jarvis_reference_tr.wav` (opsiyonel — proje kökünde henüz yok).
+      `_compute_voice_profiles()` her ikisi için `get_conditioning_latents()`
+      hesaplayıp `_voice_profiles = {"en": ..., "tr": ...}` sözlüğünde
+      saklıyor; TR dosyası bulunamazsa `logger.warning` ile bildirilip
+      `"tr"` anahtarı da EN embedding'ine düşürülüyor (özellik dosya
+      eklenmeden de çalışır, gerçek bir TR dublaj örneği eklendiğinde kod
+      değişikliği gerekmiyor). `speak()` artık `lang == "tr"` ise TR,
+      değilse EN profilini `_produce_tts_chunks()`'a açık parametre olarak
+      geçiriyor (önceki modül-global `_gpt_cond_latent`/`_speaker_embedding`
+      bağımlılığı kaldırıldı). Manuel doğrulama: `speak(text,
+      language="en")` ve `speak(text, language="tr")` ayrı ayrı çağrılıp
+      ikisinin de hatasız sentezlendiği/çalındığı, TR fallback uyarısının
+      bir kez loglandığı görüldü (VRAM etkisi: yükleme ~10.5s, iki dil
+      birlikte, ek model yok — bkz. `docs/ARCHITECTURE.md` §5).
 
-## 4. Modüler Komut Yöneticisi ⬜
+## Faz 2 — Agentic Orkestrasyon & Guardrail 🟡
+
+**Not:** `main.py`, `audio_handler.py`, `tts_handler.py` bu fazda
+`src/jarvis/{ears,brain,mouth}/` altına taşındı (Faz 1'in yukarıdaki
+anlatımı o zamanki, taşıma-öncesi duruma ait tarihsel bir kayıttır).
+Aşağıdaki 2.1-2.3'teki tüm parçalar **yazıldı ve bağımsız test edildi**
+ama **henüz `core/app.py:run_jarvis()`'in canlı döngüsüne bağlanmadı** —
+ne zaman/nasıl devreye gireceklerine karar vermek ayrı bir adım.
+
+### 2.1 Modüler Komut Yöneticisi ✅ (iskelet)
 
 Alt adımlar:
-- [ ] Intent şeması tasarımı: hangi alanlar zorunlu (intent adı, parametreler,
-      güven skoru?).
-- [ ] Rule-based ilk sürüm: basit anahtar kelime/regex eşleştirme ile birkaç
-      örnek komut (ör. "saat kaç", "dosya listele").
-- [ ] Modül yönlendirme arayüzü: intent → handler fonksiyon eşlemesi
-      (`core/dispatcher.py` gibi).
-- [ ] Hybrid/LLM-based'e geçiş: rule-based eşleşmezse Ollama'ya "bu komut
-      hangi intent'e girer" diye sorduran bir katman.
-- [ ] **Modülerleşme dönüm noktası burada**: `src/jarvis/{ears,brain,mouth,
-      core,tools,agents}/` paket yapısına geçişi bu adımda yap (mevcut düz
-      `main.py`/`audio_handler.py` bu paketlerin altına taşınır).
+- [x] Intent şeması tasarımı: `core/dispatcher.py`'de Pydantic `Intent`
+      (`name`, `confidence`, `parameters`, `source: "rule"|"llm"`).
+- [x] Rule-based ilk sürüm: `_RULES` sözlüğünde "saat kaç"→`get_time`,
+      "dosya listele"→`list_files` regex örnekleri.
+- [x] Modül yönlendirme arayüzü: `Dispatcher.classify(text) -> Intent`
+      (`core/dispatcher.py`) — gerçek handler eşlemesi (intent→fonksiyon)
+      henüz yok, sadece sınıflandırma var.
+- [x] Hybrid/LLM-based'e geçiş: kural eşleşmezse `AgentFactory.create(
+      "orchestrator")` üzerinden Ollama'ya "bu metin hangi intent'e girer"
+      diye sorup `source="llm"` ile dönüyor.
+- [x] **Modülerleşme dönüm noktası**: `src/jarvis/{ears,brain,mouth,core,
+      adapters,agents}/` paket yapısına geçiş tamamlandı — `audio_handler.py`
+      → `src/jarvis/ears/listener.py`, `tts_handler.py` →
+      `src/jarvis/mouth/tts.py`, `main.py`'nin LLM mantığı →
+      `src/jarvis/brain/llm.py`, döngü → `src/jarvis/core/app.py`; kökte
+      ince bir `main.py` giriş noktası kaldı. Statik import testiyle ve
+      gerçek mikrofonla uçtan uca doğrulandı — davranış değişmedi.
+      `.claude/skills/verify-*` komutları ve `CLAUDE.md`/`docs/ARCHITECTURE.md`
+      dosya-yolu referansları da güncellendi.
 
-## 5. Sistem Entegrasyonları / Tool Use ⬜
+### 2.2 Multi-Agent Orkestrasyon (Orkestratör → Hermes → Claude Code) ✅ (iskelet)
+
+`docs/ARCHITECTURE.md` §3–4'te tanımlanan Factory/Adapter tabanlı ajan
+ağının ilk somut uygulaması:
+
+- [x] `Agent` arayüzü (`respond()`, `supports_tools()`, `agents/base.py`)
+      ve `AgentFactory` (`adapters/agent_factory.py`, `role→Agent`
+      eşlemesi: `"orchestrator"|"tool_agent"|"deep_reasoning"`).
+- [x] `LlamaOrchestratorAdapter` — `llama3.1:8b` ile senkron `respond()`
+      (bağımsız, yeni bir implementasyon — `brain/llm.py`'nin streaming
+      `think_and_respond_stream()`'ini sarmalamıyor, ikisi şimdilik ayrı
+      duruyor).
+- [x] Intent sınıflandırma kuralları: `core/dispatcher.py`'nin LLM-fallback
+      yolu bu adapter'ı kullanıyor (bkz. 2.1).
+- [x] **`HermesAgentAdapter`** — kullanıcı tercihiyle VRAM-notundaki
+      "paylaşımlı model" önerisi yerine **gerçek, ayrı bir model**
+      (`hermes3:8b`, `ollama pull` ile indirildi) kullanılıyor; Ollama'nın
+      model swap/`keep_alive` mekanizmasıyla aynı anda VRAM'de iki 8B
+      modelin birden tutulması gerekmiyor (bkz. `docs/ARCHITECTURE.md`
+      §5 "sıralı yükleme" seçeneği). Gerçek `respond()` çağrısıyla test
+      edildi. Tool-calling bağlanması hâlâ Faz 3'e ait.
+- [x] `ClaudeCodeAdapter` — **stub**: `anthropic` SDK'sı kurulu değil,
+      `ANTHROPIC_API_KEY` `.env`'de yok; `respond()` net bir
+      `NotImplementedError` ile ne eksik olduğunu söylüyor. Gerçek
+      bağlantı ayrı bir görev.
+
+### 2.3 AI Guardrail Katmanı ✅ (iskelet)
+
+`docs/ARCHITECTURE.md` §6'daki Chain-of-Responsibility tasarımının ilk
+sürümü, `core/guardrail/`:
+
+- [x] `GuardrailCheck` (ABC) + `GuardrailChain` (`base.py`) — sırayla
+      çalıştırır, ilk red'de durur.
+- [x] Girdi tarafı: `InputInjectionCheck` (`input_checks.py`) — OWASP LLM01
+      kalıpları (TR+EN: "ignore previous instructions", "önceki
+      talimatları yok say" vb.), regex tabanlı.
+- [x] Çıktı tarafı: `OutputSafetyCheck` (`output_checks.py`) — tehlikeli
+      komut kalıpları (`rm -rf`, `format`, fork bomb, `DROP TABLE`,
+      `shutdown` vb.).
+- [x] Guardrail red/kabul kararlarının loglanması: `GuardrailChain.run()`
+      her kararı (`check_name` + `reason`) `logging` ile basıyor.
+- [ ] OWASP LLM Top 10 eşlemesinin (bkz. `docs/ARCHITECTURE.md` §6) her bir
+      satırı için en az bir test senaryosu — henüz yazılmadı, gerçek
+      test/otomasyon (Faz 2'nin canlı döngüye bağlanma adımıyla birlikte
+      ele alınacak).
+
+## Faz 3 — Sistem Entegrasyonları & Zero-Trust Güvenlik ⬜
+
+### 3.1 Tool Use
 
 Alt adımlar:
 - [ ] Tool arayüz şeması: her tool'un adı, parametre şeması, dönüş tipi için
@@ -202,7 +383,28 @@ Alt adımlar:
       paketleme (bkz. `docs/claude-code-rehberi.md` §6) — hem Jarvis hem
       Claude Code aynı araçları kullanabilsin.
 
-## 6. Otonom Ajan Döngüsü ⬜
+### 3.2 Zero-Trust Erişim Kontrolü ⬜
+
+`docs/ARCHITECTURE.md` §6'daki risk puanlama tablosunun uygulanması:
+
+- [ ] Her tool çağrısına bir risk seviyesi (Düşük/Orta/Yüksek/Kritik) atayan
+      sınıflandırma (bkz. tablo — Read=Düşük, Write/Delete=Yüksek).
+- [ ] Terminal/arayüzde `[Y/N]` onay akışı: Orta ve üzeri riskli her aksiyon
+      için, varsayılan **N** (onaylanmadan çalışmaz).
+- [ ] **RFID fiziksel sudo**: kök dizin erişimi/kritik donanım müdahalesi
+      için `TrustElevation` modülü — RFID okutma olayı (Observer/`EventBus`
+      ile), zaman-sınırlı yükseltilmiş yetki penceresi (bkz.
+      `docs/ARCHITECTURE.md` §6).
+- [ ] **Sesli kimlik doğrulama**: Ears pipeline'ına konuşmacı doğrulama adımı
+      (ses biyometrisi/embedding karşılaştırma) — özellikle Orta/Yüksek
+      riskli komutlarda sahibinin sesi onayı aranır; replay-attack ve
+      yetkisiz mikrofon erişimine karşı.
+- [ ] OWASP LLM Top 10 checklist'inin (bkz. `docs/ARCHITECTURE.md` §6 tablo)
+      her tool/entegrasyon eklendiğinde tekrar gözden geçirilmesi —
+      `security-reviewer` subagent'ının inceleme kriterlerine bu tabloyu
+      referans olarak ekle.
+
+## Faz 4 — Otonom Ajan Döngüsü ⬜
 
 Alt adımlar:
 - [ ] Görev planlama/zincirleme: çok adımlı bir isteği alt görevlere bölme.
@@ -213,14 +415,41 @@ Alt adımlar:
 - [ ] Çok adımlı yürütme döngüsü: plan → araç çağrısı → sonucu değerlendir →
       devam et/bitir.
 - [ ] Kullanıcı onay noktaları: riskli aksiyonlardan (dosya silme, dış API'ye
-      veri gönderme) önce onay iste — `security-reviewer` bulgularıyla
-      örtüşür.
+      veri gönderme) önce onay iste — Faz 3.2'deki risk puanlama/onay
+      akışıyla örtüşür, aynı mekanizma kullanılır.
+
+## Faz 5 — IoT Entegrasyonu & Dağıtım ⬜
+
+`docs/ARCHITECTURE.md` §8'deki mimarinin uygulanması.
+
+### 5.1 IoT & Uç Nokta (Client) Yönetimi
+
+- [ ] İstemci mimarisi: dizüstü bilgisayar, akıllı telefon gibi cihazlar
+      ana sunucuya bağlı birer "client" (uç nokta) olarak görev yapar; bu
+      cihazlarda asistanlık ve yetki onayı (Telegram Inline Keyboard veya
+      yerel API) sağlanır.
+- [ ] Ağ izolasyonu: Jarvis'in kontrol edeceği IoT cihazları ana ev
+      ağından izole edilmiş bir VLAN'da bulunur, haberleşme şifreli MQTT
+      protokolü üzerinden yapılır (TLS + broker kimlik doğrulama).
+- [ ] MQTT broker seçimi ve topic/izin şeması (hangi client hangi topic'e
+      publish/subscribe edebilir).
+
+### 5.2 Dağıtım, Arayüz ve Taşınabilirlik
+
+- [ ] Uygulama Docker (veya benzeri konteyner teknolojisi) ile paketlenir —
+      GPU passthrough (CUDA) desteği dahil.
+- [ ] Kompakt bir arayüz (UI) veya sistem tepsisi (system tray) uygulaması
+      ile arka planda çalışacak şekilde tasarlanır.
+- [ ] Kurulum/taşıma dokümantasyonu: başka bir makineye (RTX 4070 dışında
+      bir GPU dahil) taşınırken hangi adımların (bkz. `CLAUDE.md` Komutlar
+      bölümü) tekrarlanması gerektiği netleştirilir.
 
 ---
 
 ## Notlar
 
 - Bu dosya `CLAUDE.md`'nin 200 satır kısıtından muaf; detay burada birikir.
+  Mimari tasarımın "nasıl/neden"i için `docs/ARCHITECTURE.md`'ye bak.
 - Her adım tamamlandığında durum etiketini (✅/🟡/⬜) güncelle, böylece
   `CLAUDE.md`'deki kısa özetle senkron kalır.
 - Yeni bir adıma başlarken önce **plan mode** ile keşif yap (bkz. rehber

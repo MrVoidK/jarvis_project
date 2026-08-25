@@ -7,32 +7,50 @@ süreçlerinde destek vermek.
 
 ## Mimari (mevcut durum)
 
-Şu an düz kökte iki modül var (henüz `src/` paketlenmesi yok, bkz. "Depo
-Düzeni"):
+Kod `src/jarvis/` paket hiyerarşisinde (bkz. "Depo Düzeni"); kökte sadece
+ince bir `main.py` giriş noktası var.
 
-- **Ears** (`audio_handler.py`) — `listen_loop()` bir **state machine**:
-  IDLE (openWakeWord `hey_jarvis` ile "Hey Jarvis" dinlenir, hiçbir şey
-  transkribe edilmez) ↔ ACTIVE (wake-word sonrası `webrtcvad` ile
-  VAD-tabanlı dinamik kayıt, disk'e yazmadan ndarray) → `faster-whisper`
-  (`turbo` model = large-v3-turbo, `multilingual=True` + TR/EN karışık
-  `initial_prompt` ile serbest dil algılama, CUDA/float16 + otomatik
-  CPU/int8 fallback, `vad_filter=True`) ile transkripsiyon. Wake-word tespiti
-  ve transkripsiyon için latency loglanıyor (`logger.info`).
-- **Brain** (`main.py`) — transkripti `ollama` üzerinden yerel
-  `llama3.1:8b` modeline gönderir (bkz. `SYSTEM_PROMPT`), yanıtı konsola
-  yazdırır. `run_jarvis()` giriş noktası: Ears → Brain → (şimdilik) print.
-- **Mouth** (`tts_handler.py`) — Coqui **XTTS-v2** ile zero-shot voice
-  cloning: proje kökündeki `jarvis_reference.wav` referans alınarak,
-  `speak(text)` çağrıldığında model+konuşmacı embedding'leri (modül
-  importunda bir kez yüklenir) üzerinden `inference_stream()` ile üretilen
-  ses chunk'ları, disk'e `.wav` yazmadan doğrudan `sounddevice.OutputStream`
-  ile hoparlöre akıtılır. `edge-tts` (bulut tabanlı) yerine bu tercih
-  edildi — tüm pipeline'ın yerelde/offline çalışması ilkesiyle tutarlı.
+- **Ears** (`src/jarvis/ears/listener.py`) — `listen_loop()` bir **state
+  machine**: IDLE (openWakeWord `hey_jarvis` ile "Hey Jarvis" dinlenir,
+  hiçbir şey transkribe edilmez) ↔ ACTIVE (wake-word sonrası `webrtcvad`
+  ile VAD-tabanlı dinamik kayıt, disk'e yazmadan ndarray) ↔ FOLLOWUP (bir
+  utterance bitince wake-word gerekmeden kısa bir takip penceresi açılır;
+  pencere sadece gerçek bir yanıt üretildiğinde sıfırdan yenilenir,
+  gürültü kaynaklı boş turlar kalan süreyi tüketir — IDLE'a dönüşü
+  süresiz ertelemez) → `faster-whisper` (`turbo` = large-v3-turbo,
+  `multilingual=True` + TR/EN karışık `initial_prompt`, CUDA/float16 +
+  otomatik CPU/int8 fallback, `vad_filter=True`) ile transkripsiyon.
+- **Brain** (`src/jarvis/brain/llm.py`) — transkripti, döngü boyunca
+  kalıcı tutulan bir `history` listesiyle (son `MAX_HISTORY_MESSAGES`
+  mesaj, eskiler otomatik kırpılır) `ollama.chat(..., stream=True)`
+  üzerinden yerel `llama3.1:8b`'ye gönderir; `think_and_respond_stream()`
+  tamamlanan her cümleyi ürettikçe `yield` eder (Mouth'a cümle cümle
+  beslenir). `SYSTEM_PROMPT` kökteki `system_prompt.txt`'ten okunur,
+  yanıtın kullanıcının kullandığı dilde (TR/EN) verilmesini ister. Ollama
+  bağlantı/model hataları (`httpx.ConnectError`/`ConnectionError`,
+  `ollama.ResponseError` 404) ayrı ayrı yakalanıp net TR/EN mesajla
+  bildirilir.
+- **Mouth** (`src/jarvis/mouth/tts.py`) — Coqui **XTTS-v2** ile zero-shot
+  voice cloning: **tek** model instance'ı, dile göre seçilen iki referans
+  ses/embedding çifti tutar (`jarvis_reference.wav` EN zorunlu,
+  `jarvis_reference_tr.wav` TR opsiyonel — yoksa EN'e düşer, VRAM-nötr).
+  `speak(text, language=None)` çağrıldığında `inference_stream()` ile
+  üretilen ses chunk'ları, disk'e `.wav` yazmadan doğrudan
+  `sounddevice.OutputStream` ile hoparlöre akıtılır.
+- **Faz 2 iskeleti** (`src/jarvis/{core,adapters,agents}/`) — yazıldı,
+  bağımsız test edilebilir, ama **henüz canlı döngüye bağlı değil**:
+  `core/dispatcher.py` (Pydantic `Intent` + hibrit rule/LLM sınıflandırma),
+  `agents/base.py` (`Agent` arayüzü) + `adapters/agent_factory.py`
+  (`LlamaOrchestratorAdapter`/`HermesAgentAdapter`/`ClaudeCodeAdapter` —
+  sonuncusu `.env`/SDK eksik olduğu için stub), `core/guardrail/`
+  (Chain-of-Responsibility: `InputInjectionCheck`, `OutputSafetyCheck`).
+- `src/jarvis/core/app.py:run_jarvis()` — Ears→Brain→Mouth'u bağlayan
+  giriş noktası; kökteki `main.py` sadece bunu çağırır.
 
 Genel ilkeler:
 - Modüler ajan mimarisi: her yetenek (ses girişi, komut yönlendirme, araç
-  kullanımı, otonom görev zinciri) ayrı bir modül/paket olmalı — büyüdükçe
-  `src/jarvis/{ears,brain,mouth,core,tools,agents}/` altına taşınacak.
+  kullanımı, otonom görev zinciri) ayrı bir modül/paket — `src/jarvis/
+  {ears,brain,mouth,core,adapters,agents,tools}/` altında.
 - Clean Code ve tasarım desenleri esas alınır; kısayol/geçici çözüm eklenirken
   neden geçici olduğu koda yorum olarak düşülür.
 - Ortam: Windows + Claude Code CLI (Git Bash), izole çalışma alanları için
@@ -42,12 +60,16 @@ Genel ilkeler:
 
 Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.**
 
-1. **Ears** — mikrofon → metin (durum: IDLE/ACTIVE state machine + wake-word
-   `openWakeWord`/"Hey Jarvis" + CPU fallback + latency profiling tamam)
-2. **Brain** — transkript → LLM yanıtı (durum: MVP tamam, `main.py`'de)
-3. **Mouth / TTS** — yanıt → sesli çıktı (durum: MVP tamam, XTTS-v2 voice
-   cloning ile, `tts_handler.py`)
-4. **Modüler Komut Yöneticisi** — intent parsing → ilgili modüle yönlendirme
+1. **Ears** — mikrofon → metin (durum: tamam — IDLE/ACTIVE/FOLLOWUP state
+   machine + wake-word + CPU fallback + latency profiling, gerçek mikrofonla
+   doğrulandı)
+2. **Brain** — transkript → LLM yanıtı (durum: tamam — streaming + hafıza,
+   `src/jarvis/brain/llm.py`)
+3. **Mouth / TTS** — yanıt → sesli çıktı (durum: tamam — XTTS-v2 çift-dilli
+   voice cloning, `src/jarvis/mouth/tts.py`)
+4. **Modüler Komut Yöneticisi** — `src/jarvis/` paketine taşındı; intent
+   dispatcher + multi-agent adapter + guardrail iskeleti yazıldı (durum:
+   🟡 — canlı döngüye bağlanması sıradaki adım)
 5. **Sistem Entegrasyonları / Tool Use** — dosya yönetimi, terminal komutları,
    sistem izleme, API entegrasyonları
 6. **Otonom Ajan Döngüsü** — ileri düzey görev zincirleri
@@ -59,7 +81,7 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
   1. `venv\Scripts\pip install torch==2.11.0+cu128 torchaudio==2.11.0+cu128 --index-url https://download.pytorch.org/whl/cu128`
   2. `venv\Scripts\pip install -r requirements.txt`
 - Çalıştırma (tam döngü): `python main.py`
-- Sadece Ears testi: `python audio_handler.py`
+- Sadece Ears testi: `python -m src.jarvis.ears.listener`
 - Test: `pytest` (henüz test yok — `tests/` klasörü kurulacak)
 - Lint/format: `ruff check .` / `black .` (henüz projeye eklenmedi)
 
@@ -68,16 +90,16 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
 - Python: PEP 8, type hints tercih edilir, fonksiyonlar tek sorumluluk
   prensibine uyar (bkz. `.claude/rules/python-style.md`).
 - CUDA/GPU'ya bağımlı kod, GPU olmayan ortamda da (CPU fallback) en azından
-  hata vermeden davranmalı — `audio_handler.py:_load_model_with_fallback()`
+  hata vermeden davranmalı — `src/jarvis/ears/listener.py:_load_model_with_fallback()`
   bunu karşılıyor (CUDA'da sessiz bir warm-up transkripsiyonuyla gerçek bir
   inference tetikleyip hata olursa CPU/int8'e düşüyor — salt `WhisperModel()`
   constructor'ı CUDA hatasını yakalamaz, hata ilk gerçek çağrıda patlar).
-  **Not:** bu makinede `cublas64_12.dll` eksikliği, `audio_handler.py`
+  **Not:** bu makinede `cublas64_12.dll` eksikliği, `src/jarvis/ears/listener.py`
   başındaki Windows DLL-fix (venv'deki `nvidia-cublas-cu12`/
   `nvidia-cudnn-cu12` pip paketlerinin bin/ dizinlerini
   `os.add_dll_directory` ile tanıtıyor) + bu paketlerin kurulmasıyla
   çözüldü — RTX 4070 CUDA hızlanması artık aktif.
-- `tts_handler.py` da aynı CUDA/CPU fallback deseninde (`_load_tts_model_with_fallback()`),
+- `src/jarvis/mouth/tts.py` da aynı CUDA/CPU fallback deseninde (`_load_tts_model_with_fallback()`),
   ama `torch`'un Windows wheel'i CUDA DLL'lerini kendi içinde taşıdığı için
   (ctranslate2'nin aksine) `os.add_dll_directory` hack'ine ihtiyaç yok.
   XTTS-v2 modeli Coqui'nin CPML (ticari olmayan kullanım) lisansı altında;
@@ -88,7 +110,7 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
   paylaşımlı FFmpeg kütüphanesi gerektiriyor (bu makinede yok, pip de
   getirmiyor — `torchcodec` kendi `.dll`'lerini sistemin FFmpeg'ine dinamik
   bağlıyor). XTTS referans `.wav`'i okumak için sadece `torchaudio.load()`
-  çağırdığından (`get_conditioning_latents` → `load_audio`), `tts_handler.py`
+  çağırdığından (`get_conditioning_latents` → `load_audio`), `src/jarvis/mouth/tts.py`
   bunu `torchaudio.load = _load_audio_via_soundfile` ile **monkeypatch**
   ediyor — zaten kurulu olan `soundfile` (libsndfile, FFmpeg gerektirmez) ile
   aynı `(tensor, sample_rate)` sözleşmesini taklit ediyor. `torchcodec` pip
@@ -107,34 +129,37 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
 - Her yeni modül bittiğinde: testleri çalıştır, mümkünse gerçek ses/metin
   örneğiyle doğrula, sonra commit mesajı yaz.
 - `.claude/agents/security-reviewer` subagent'ı, dış dünyaya açık yüzeyler
-  (API entegrasyonları, terminal komutu çalıştırma modülü — adım 5) eklenince
+  (API entegrasyonları, terminal komutu çalıştırma modülü — Faz 3) eklenince
   proaktif olarak kullanılmalı.
 - `.claude/agents/pipeline-debugger` subagent'ı Ears/Brain hatalarında
   (CUDA, gecikme, geçici dosya sızıntısı) kullanılır.
-- MCP: şu an gerekli değil; adım 5 (Tool Use) başladığında, Jarvis'in kendi
+- MCP: şu an gerekli değil; Faz 3 (Tool Use) başladığında, Jarvis'in kendi
   tool-calling katmanını MCP standardına uygun tasarlamak değerlendirilebilir
   (bkz. `docs/claude-code-rehberi.md` §6).
 
 ## Depo Düzeni
 
-Şu an düz kökte (henüz `src/` yok):
 ```
-main.py            # Brain — Ollama/llama3.1
-audio_handler.py   # Ears — sounddevice + faster-whisper
+main.py             # ince giriş noktası -> src/jarvis/core/app.py:run_jarvis()
+system_prompt.txt   # Brain persona/kuralları (kod dışı, düzenlenebilir)
+jarvis_reference.wav      # Mouth EN referans sesi (zorunlu)
+jarvis_reference_tr.wav   # Mouth TR referans sesi (opsiyonel)
 requirements.txt
-.claude/           # Claude Code yapılandırması (agents, rules, skills, hooks)
-docs/              # ROADMAP.md, claude-code-rehberi.md
-```
-Modülerleşme (adım 4 — Komut Yöneticisi — başlarken önerilir):
-```
 src/jarvis/
-├── ears/           # ses yakalama + faster-whisper pipeline
-├── brain/          # Ollama/LLM katmanı
-├── mouth/          # TTS
-├── core/           # komut yöneticisi, intent parsing
-├── tools/          # tool-calling entegrasyonları
-└── agents/         # otonom görev zinciri mantığı
+├── ears/listener.py          # Ears — sounddevice + faster-whisper + wake-word
+├── brain/llm.py              # Brain — Ollama/llama3.1, streaming + hafıza
+├── mouth/tts.py               # Mouth — XTTS-v2 çift-dilli TTS
+├── core/
+│   ├── app.py                  # run_jarvis() — MVP döngüsü (Ears→Brain→Mouth)
+│   ├── dispatcher.py           # Intent sınıflandırma (Pydantic, hibrit rule/LLM)
+│   └── guardrail/               # Chain-of-Responsibility I/O kontrolleri
+├── adapters/agent_factory.py   # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri
+└── agents/base.py               # Agent (ABC) arayüzü
+.claude/            # Claude Code yapılandırması (agents, rules, skills, hooks)
+docs/               # ROADMAP.md, ARCHITECTURE.md, claude-code-rehberi.md
 ```
+Henüz eklenmemiş, ARCHITECTURE.md §7'de tanımlı: `src/jarvis/tools/`
+(Faz 3 tool-calling entegrasyonları).
 
 ## Notlar
 
@@ -142,6 +167,9 @@ src/jarvis/
   `.claude/skills/` veya `docs/` içine taşınmalı.
 - Kullanım rehberi (skills, subagents, hooks, MCP, izin modları, worktree)
   için `docs/claude-code-rehberi.md`'ye bak.
+- Hedef mimari (multi-agent, guardrail, VRAM optimizasyonu, design pattern'lar)
+  için `docs/ARCHITECTURE.md`'ye bak — bu dosya (CLAUDE.md) sadece şu anki
+  duruma odaklanır.
 - `/init` komutunu ileride tekrar çalıştırıp Claude'un kod tabanından
   çıkardığı ek kuralları bu dosyaya entegre edebilirsin.
 - TODO: `tests/fixtures/` altına gerçek bir örnek `.wav` + beklenen
