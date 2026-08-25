@@ -441,43 +441,109 @@ core/dispatcher.py,core/handlers.py}` + yeni `core/language.py`):
 
 ## Faz 3 — Sistem Entegrasyonları & Zero-Trust Güvenlik ⬜
 
-### 3.1 Tool Use
+### 3.1 Tool Use 🟡 (yerel araçlar tamam, dış API'ler bekliyor)
+
+**Tetikleme yöntemi (bilinçli karar):** araçlar `core/dispatcher.py`'deki
+**rule-based regex** ile tetikleniyor — Hermes'in gerçek function-calling'i
+(serbest doğal dille "Jarvis bir hatırlatma bırak..." demek) ayrı ve büyük
+bir sonraki adım olarak bırakıldı. Bugün regex dışında kalan ifadeler
+normal sohbete düşüyor, tool tetiklemiyor.
 
 Alt adımlar:
-- [ ] Tool arayüz şeması: her tool'un adı, parametre şeması, dönüş tipi için
-      ortak bir sözleşme (ör. `dict`/`dataclass` bazlı tanım).
-- [ ] Dosya yönetimi tool'u: okuma/yazma/listeleme, erişim izin verilen
-      dizinlerle sınırlı olmalı.
-- [ ] Terminal komut çalıştırma tool'u — **başlanır başlanmaz
-      `.claude/agents/security-reviewer` subagent'ı ile incelenmeli**
-      (komut enjeksiyonu, ayrıcalık sınırı, LLM çıktısına aşırı güven riski).
-- [ ] Sistem izleme tool'u: CPU/RAM/GPU/VRAM durumu (`nvidia-smi` sarmalayıcı).
-- [ ] Harici API entegrasyonları: sır yönetimi `.env` üzerinden, asla koda
-      gömülmeden.
+- [x] Tool arayüz şeması: `tools/base.py`'de `Tool(ABC)` — `name`,
+      `description`, `risk_level`, `execute(params: dict) -> str`
+      (`agents/base.py`'deki `Agent(ABC)` deseniyle simetrik). Kayıt:
+      `tools/registry.py`'de statik `TOOL_REGISTRY` (dinamik keşif
+      bilinçli olarak yok — hangi aracın kayıtlı olduğu tek bakışta
+      görülebilmeli).
+- [x] Dosya yönetimi tool'u: `tools/notes.py` (`create_note` Orta risk /
+      `read_notes` Orta risk) + `tools/files.py` (`list_files`, Düşük).
+      Erişim gerçekten sınırlı: her ikisi de **dışarıdan yol parametresi
+      almıyor**, sabit `notes/` ve `jarvis_workspace/` dizinlerine bakıyor —
+      path traversal saldırı yüzeyi hiç oluşmuyor (güvenlik incelemesi bu
+      iddiayı doğruladı). Yollar proje kökünden türetilmiş **mutlak** yollar
+      (`core/paths.py`) — CWD'ye bağımlı değil.
+- [x] Terminal komut çalıştırma tool'u (`tools/shell.py`, `run_command`) —
+      **`security-reviewer` subagent'ı ile incelendi** (aşağıya bak).
+      4 katmanlı savunma: (1) `RiskLevel.HIGH` → istisnasız `[Y/N]` onayı
+      (whitelist yaklaşımı bilinçle reddedildi), (2) onay isteminde komutun
+      TAM METNİ gösterilir, (3) onay sorulmadan önce metin
+      `OutputSafetyCheck` guardrail'inden geçer, (4) 15sn timeout +
+      `taskkill /F /T` ile tüm süreç ağacının öldürülmesi.
+- [x] Sistem izleme tool'u: `tools/system_info.py` (`get_system_info`,
+      Düşük) — `psutil` (CPU/RAM) + `nvidia-smi` (GPU/VRAM); GPU yoksa
+      sessizce sadece CPU/RAM raporluyor.
+- [ ] **Harici API entegrasyonları** (müzik/Spotify, takvim/Google Calendar):
+      OAuth uygulaması kaydı + kullanıcı tarafından alınacak API
+      anahtarı/credential gerektirdiği için bu turun kapsamı dışında
+      bırakıldı — kullanıcı kendi Spotify/Google Cloud uygulamasını
+      kaydettiğinde ayrı bir adım olarak eklenecek (`.env` ile, asla koda
+      gömülmeden).
 - [ ] Opsiyonel: bu tool katmanını MCP standardına uygun bir sunucu olarak
       paketleme (bkz. `docs/claude-code-rehberi.md` §6) — hem Jarvis hem
       Claude Code aynı araçları kullanabilsin.
 
-### 3.2 Zero-Trust Erişim Kontrolü ⬜
+**Güvenlik incelemesi bulguları ve düzeltmeleri** (`security-reviewer`,
+Faz 3'ün zorunlu adımı — CLAUDE.md'nin kendi talimatı):
+- [x] **Doğrulanmış atlatma**: `OutputSafetyCheck`'teki `rm -rf` ve `mkfs`
+      kalıplarında `re.IGNORECASE` YOKTU — "RM -RF C:\..." sessizce
+      geçiyordu. Whisper transkripsiyonu büyük/küçük harf tutarlılığı
+      garanti etmediğinden bu kötü niyet olmadan da tetiklenebilirdi.
+      Tüm kalıplara tutarlı `IGNORECASE` eklendi.
+- [x] **Kalıp listesi Windows'u kapsamıyordu**: liste 7 POSIX-ağırlıklı
+      kalıptan ibaretti; PowerShell/cmd'nin asıl yıkıcı araç seti
+      (`Remove-Item -Recurse`, `rd /s /q`, `Stop-Computer`, `reg delete`,
+      `diskpart`, `cipher /w`, `takeown`/`icacls`) ve LOLBAS zincirleri
+      (`-EncodedCommand`, `iex`, `curl ... | bash`, `certutil -urlcache`,
+      `netsh ... firewall`) hiç yakalanmıyordu. Hepsi eklendi; bayrak
+      sırası/ayrımı varyantları (`rm -fr`, `rm -r -f`, `rmdir /q /s`) da
+      kapsandı. Bulguların her biri için `tests/test_guardrail.py`'ye
+      regresyon testi yazıldı (bu testler, düzeltmenin ilk halindeki iki
+      gerçek regex hatasını — `\b`'nin tire öncesinde hiç eşleşmemesi ve
+      `advfirewall`'un kaçması — anında yakaladı).
+- [x] **`read_notes` bilgi ifşası**: LOW risk olduğu için FOLLOWUP
+      penceresinde (wake-word gerekmeden, 12sn) herhangi bir sesle
+      tetiklenip kişisel notları hoparlörden okuyabiliyordu. **MEDIUM**'a
+      çekildi — risk ölçütü "eylem geri alınabilir mi" değil, "yanlış
+      tetiklenmesinin bedeli ne".
+- [x] **Yetim süreçler**: `subprocess.run(timeout=)` Windows'ta yalnızca
+      `cmd.exe`'yi öldürüyor, onun başlattığı süreçler (`start ...`,
+      `ping -t`) çalışmaya devam ediyordu. `Popen` + `taskkill /F /T` ile
+      tüm süreç ağacı sonlandırılacak şekilde düzeltildi.
+- [x] **Mimari varsayım belgelendi**: `shell=True`'nun güvenlik gerekçesi
+      SADECE `content`'in regex'ten (LLM'e hiç uğramadan) gelmesine
+      dayanıyor. İçerik çıkarımı ileride LLM'e taşınırsa bu savunma
+      geçersiz olur ve prompt-injection→RCE zinciri açılır — `shell.py`
+      docstring'ine kritik uyarı olarak eklendi.
+
+### 3.2 Zero-Trust Erişim Kontrolü 🟡 (risk+onay tamam, kimlik doğrulama bekliyor)
 
 `docs/ARCHITECTURE.md` §6'daki risk puanlama tablosunun uygulanması:
 
-- [ ] Her tool çağrısına bir risk seviyesi (Düşük/Orta/Yüksek/Kritik) atayan
-      sınıflandırma (bkz. tablo — Read=Düşük, Write/Delete=Yüksek).
-- [ ] Terminal/arayüzde `[Y/N]` onay akışı: Orta ve üzeri riskli her aksiyon
-      için, varsayılan **N** (onaylanmadan çalışmaz).
+- [x] Her tool çağrısına risk seviyesi atayan sınıflandırma:
+      `core/risk.py`'de `RiskLevel` (LOW/MEDIUM/HIGH/CRITICAL). Karar
+      merkezi olarak `core/app.py:_execute_tool()`'da veriliyor — bir
+      aracın kendi riskini "düşük" ilan edip onaydan kaçınması imkânsız.
+      `CRITICAL` tanımlı ama henüz hiçbir araç kullanmıyor (RFID yok).
+- [x] `[Y/N]` onay akışı (`core/risk.py:request_approval`): Orta ve üzeri
+      her aksiyon için zorunlu, **varsayılan RED** — boş girdi, tanımadık
+      cevap ve `EOFError` (stdin yok) üçü de "hayır" sayılıyor (güvenlik
+      incelemesi bu davranışı doğruladı). Kullanıcı ekrana bakmıyor
+      olabileceği için önce sesli uyarı veriliyor, sonra terminalde
+      bloklayıcı soru. Sesli onay bilinçli olarak ertelendi: STT'nin
+      yanlış-algılama payı güvenlik-kritik bir yolda kabul edilemez.
 - [ ] **RFID fiziksel sudo**: kök dizin erişimi/kritik donanım müdahalesi
-      için `TrustElevation` modülü — RFID okutma olayı (Observer/`EventBus`
-      ile), zaman-sınırlı yükseltilmiş yetki penceresi (bkz.
-      `docs/ARCHITECTURE.md` §6).
-- [ ] **Sesli kimlik doğrulama**: Ears pipeline'ına konuşmacı doğrulama adımı
-      (ses biyometrisi/embedding karşılaştırma) — özellikle Orta/Yüksek
-      riskli komutlarda sahibinin sesi onayı aranır; replay-attack ve
-      yetkisiz mikrofon erişimine karşı.
-- [ ] OWASP LLM Top 10 checklist'inin (bkz. `docs/ARCHITECTURE.md` §6 tablo)
-      her tool/entegrasyon eklendiğinde tekrar gözden geçirilmesi —
-      `security-reviewer` subagent'ının inceleme kriterlerine bu tabloyu
-      referans olarak ekle.
+      için `TrustElevation` modülü — **donanım gerektiriyor** (RFID
+      okuyucu), o yüzden bekliyor (bkz. `docs/ARCHITECTURE.md` §6).
+- [ ] **Sesli kimlik doğrulama**: konuşmacı doğrulama (ses biyometrisi).
+      Güvenlik incelemesi bunun eksikliğini somut bir risk olarak işaret
+      etti: FOLLOWUP penceresinde odadaki başka bir ses (TV dahil) Düşük
+      riskli araçları onaysız tetikleyebilir. `read_notes`'un MEDIUM'a
+      çekilmesi en hassas ifşayı kapattı, ama kalıcı çözüm bu madde.
+- [ ] OWASP LLM Top 10 checklist'inin her tool/entegrasyon eklendiğinde
+      tekrar gözden geçirilmesi — bu turda fiilen uygulandı
+      (`security-reviewer` çağrıldı, bulguları düzeltildi ve regresyon
+      testine bağlandı); süreç olarak kalıcılaştırılması sürüyor.
 
 ## Faz 4 — Otonom Ajan Döngüsü ⬜
 

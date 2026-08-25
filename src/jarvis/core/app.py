@@ -9,8 +9,11 @@ from src.jarvis.core.guardrail.input_checks import InputInjectionCheck
 from src.jarvis.core.guardrail.output_checks import OutputSafetyCheck
 from src.jarvis.core.handlers import HANDLERS
 from src.jarvis.core.language import detect_language
+from src.jarvis.core.risk import request_approval, requires_approval
 from src.jarvis.ears.listener import listen_loop
 from src.jarvis.mouth.tts import speak
+from src.jarvis.tools.base import Tool
+from src.jarvis.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger("jarvis.core.app")
 
@@ -27,6 +30,66 @@ _INPUT_REJECTED_MESSAGES = {
     "en": "I can't process that request.",
 }
 
+_APPROVAL_PENDING_MESSAGES = {
+    "tr": "Onayınızı bekliyorum, terminale bakın.",
+    "en": "I need your approval, please check the terminal.",
+}
+_APPROVAL_DENIED_MESSAGES = {
+    "tr": "Anlaşıldı, iptal ettim.",
+    "en": "Understood, I've cancelled it.",
+}
+_UNSAFE_COMMAND_MESSAGES = {
+    "tr": "Bu komut güvenlik kontrolüne takıldı, çalıştırmayacağım.",
+    "en": "That command was blocked by the safety check, I won't run it.",
+}
+_TOOL_FAILED_MESSAGES = {
+    "tr": "Aracı çalıştırırken bir hata oluştu.",
+    "en": "Something went wrong while running that tool.",
+}
+
+
+def _localized(messages: dict[str, str], lang: str) -> str:
+    return messages.get(lang, messages["en"])
+
+
+def _execute_tool(tool: Tool, intent, stop_event: Optional[threading.Event]) -> str:
+    """Bir tool'u risk kontrolu + insan onayindan gecirerek calistirir.
+
+    Guvenlik karari BURADA, tek merkezde veriliyor - tool'un kendisine birakilmiyor
+    (bkz. tools/base.py). Sira: (1) tehlikeli komut on-taramasi, (2) risk seviyesine
+    gore [Y/N] onayi, (3) calistirma.
+    """
+    lang = intent.parameters.get("lang", "en")
+    content = intent.parameters.get("content")
+
+    # (1) Icerik tasiyan araclarda (ozellikle run_command) metni, LLM ciktisi icin
+    # kullandigimiz ayni guardrail'den geciriyoruz - kullaniciya onay bile sorulmadan
+    # bilinen yikici kaliplar (rm -rf, format, DROP TABLE...) reddedilsin diye
+    # (defense-in-depth: yanlislikla "Y"ye basma ihtimali bu kaliplar icin dogmuyor).
+    if content:
+        safety = _OUTPUT_GUARDRAIL.run(content)
+        if not safety.allowed:
+            logger.warning("Tool girdisi guardrail'e takildi (%s): %s", tool.name, safety.reason)
+            return _localized(_UNSAFE_COMMAND_MESSAGES, lang)
+
+    # (2) Orta ve uzeri risk -> zorunlu insan onayi. Kullanici ekrana bakmiyor
+    # olabilecegi icin once sesli uyariyoruz, sonra terminalde bloklayici soru.
+    if requires_approval(tool.risk_level):
+        speak(_localized(_APPROVAL_PENDING_MESSAGES, lang), language=lang, stop_event=stop_event)
+        prompt = f"'{tool.name}' calistirilsin mi? (risk: {tool.risk_level.value})"
+        if content:
+            prompt += f"\n  -> {content}"  # kullanici TAM METNI gorsun (bkz. tools/shell.py)
+        if not request_approval(prompt):
+            return _localized(_APPROVAL_DENIED_MESSAGES, lang)
+
+    # (3) Calistir - tek bir kotu tool cagrisi run_jarvis()'in dongusunu cokertmemeli
+    # (_transcribe()/speak()'teki ayni izolasyon deseni).
+    try:
+        return tool.execute(intent.parameters)
+    except Exception as exc:
+        logger.error("Tool calistirilamadi (%s): %s", tool.name, exc)
+        return _localized(_TOOL_FAILED_MESSAGES, lang)
+
 
 def _handle_turn(
     user_text: str, history: list[dict], stop_event: Optional[threading.Event] = None
@@ -35,12 +98,12 @@ def _handle_turn(
 
     Sira: (1) girdi guardrail'i - reddedilirse Brain'e hic gidilmez, history kirlenmez,
     TEK dilde (tespit edilen girdi diline gore) bir ret mesaji doner; (2) SADECE
-    kural-tabanli (LLM'e gitmeyen, bkz. Dispatcher.match_rule) hizli dispatch - bilinen
-    ve gercek bir handler'i olan bir intent'se dogrudan onun (metin, dil) cifti donuyor,
-    Brain'e hic gidilmiyor; (3) aksi halde normal streaming sohbet - her cumle icin dil
-    None donuyor (Brain SYSTEM_PROMPT sayesinde zaten girdi diliyle eslesiyor, speak()'in
-    kendi auto-detect'i yeterli), ama once cikti guardrail'inden geciyor, reddedilen
-    cumleler atlaniyor.
+    kural-tabanli (LLM'e gitmeyen, bkz. Dispatcher.match_rule) hizli dispatch - once
+    risk-tasimayan HANDLERS (orn. get_time), sonra risk-kontrollu TOOL_REGISTRY (Faz 3
+    araclari, bkz. _execute_tool); ikisinde de Brain'e hic gidilmiyor; (3) aksi halde
+    normal streaming sohbet - her cumle icin dil None donuyor (Brain SYSTEM_PROMPT
+    sayesinde zaten girdi diliyle eslesiyor, speak()'in kendi auto-detect'i yeterli),
+    ama once cikti guardrail'inden geciyor, reddedilen cumleler atlaniyor.
 
     `stop_event` verilirse, Brain'in streaming yanitini urettigi surece her cumle
     sonrasi kontrol edilir - kapatma istenirse kalan cumleler beklenmeden erken cikilir.
@@ -53,11 +116,17 @@ def _handle_turn(
         return
 
     intent = _DISPATCHER.match_rule(user_text)
-    handler = HANDLERS.get(intent.name) if intent else None
-    if handler is not None:
-        text, lang = handler(intent)
-        yield text, lang
-        return
+    if intent is not None:
+        handler = HANDLERS.get(intent.name)
+        if handler is not None:
+            text, lang = handler(intent)
+            yield text, lang
+            return
+
+        tool = TOOL_REGISTRY.get(intent.name)
+        if tool is not None:
+            yield _execute_tool(tool, intent, stop_event), intent.parameters.get("lang", "en")
+            return
 
     for sentence in think_and_respond_stream(user_text, history):
         if stop_event is not None and stop_event.is_set():

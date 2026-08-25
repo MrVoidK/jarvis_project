@@ -32,6 +32,8 @@ DEFAULT_INTENT_NAME = "chat"
 # verebiliyor (gercek testte TR sorgusu yanlislikla "en" olarak tespit edildi, TTS
 # "It's 02:03 now." diye Ingilizce okudu) ama regex'in KENDISI zaten hangi dilde
 # yazildigini biliyor - o bilgiyi bosa harcamamak gerekiyor.
+# Icerik gerektiren kaliplar (?P<content>...) named group'u kullanir - match_rule()
+# bunu Intent.parameters["content"]'e koyar, tool'lar oradan okur (bkz. tools/base.py).
 _RULES: dict[str, list[tuple[str, re.Pattern]]] = {
     "get_time": [
         ("tr", re.compile(r"\bsaat kaç\b", re.IGNORECASE)),
@@ -40,6 +42,22 @@ _RULES: dict[str, list[tuple[str, re.Pattern]]] = {
     "list_files": [
         ("tr", re.compile(r"\bdosya(ları)? listele\b", re.IGNORECASE)),
         ("en", re.compile(r"\blist (the )?files\b", re.IGNORECASE)),
+    ],
+    "create_note": [
+        ("tr", re.compile(r"\bnot (?:tut|al)\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
+        ("en", re.compile(r"\btake a note\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
+    ],
+    "read_notes": [
+        ("tr", re.compile(r"\bnotlar[ıi]m[ıi]?\s*oku\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bread (?:my )?notes\b", re.IGNORECASE)),
+    ],
+    "run_command": [
+        ("tr", re.compile(r"\bkomut çalıştır\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
+        ("en", re.compile(r"\brun command\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
+    ],
+    "get_system_info": [
+        ("tr", re.compile(r"\bsistem durumu\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bsystem status\b", re.IGNORECASE)),
     ],
 }
 
@@ -87,10 +105,15 @@ class Dispatcher:
         """
         for name, variants in _RULES.items():
             for lang, pattern in variants:
-                if pattern.search(text):
+                match = pattern.search(text)
+                if match:
                     logger.info("Dispatcher: kural eslesti (%s, dil=%s).", name, lang)
+                    parameters: dict = {"lang": lang}
+                    content = match.groupdict().get("content")
+                    if content:
+                        parameters["content"] = content.strip()
                     return Intent(
-                        name=name, confidence=1.0, source="rule", parameters={"lang": lang}
+                        name=name, confidence=1.0, source="rule", parameters=parameters
                     )
         return None
 

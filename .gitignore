@@ -22,6 +22,11 @@ __pycache__/
 .env
 secrets/
 
+# Kullanici verisi - Jarvis'in kaydettigi notlar ve arac calisma dizini
+# (.env ile ayni mantik: kisisel, makineye ozel, repoya girmemeli)
+notes/
+jarvis_workspace/
+
 # Operating System Remnants
 Thumbs.db
 .DS_Store

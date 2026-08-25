@@ -154,13 +154,17 @@ src/jarvis/
 │   ├── app.py                  # run_jarvis() — MVP döngüsü (Ears→Brain→Mouth)
 │   ├── dispatcher.py           # Intent sınıflandırma (Pydantic, hibrit rule/LLM)
 │   └── guardrail/               # Chain-of-Responsibility I/O kontrolleri
+│   ├── risk.py                 # RiskLevel + [Y/N] onay (Zero-Trust, Faz 3)
+│   └── paths.py                 # PROJECT_ROOT (CWD-bağımsız mutlak yollar)
+├── tools/                       # Faz 3 araçları: base(ABC)+registry, notes,
+│                                #  files, shell (HIGH risk), system_info
 ├── adapters/agent_factory.py   # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri
 └── agents/base.py               # Agent (ABC) arayüzü
 .claude/            # Claude Code yapılandırması (agents, rules, skills, hooks)
 docs/               # ROADMAP.md, ARCHITECTURE.md, claude-code-rehberi.md
 ```
-Henüz eklenmemiş, ARCHITECTURE.md §7'de tanımlı: `src/jarvis/tools/`
-(Faz 3 tool-calling entegrasyonları).
+Henüz eklenmemiş, ARCHITECTURE.md §7'de tanımlı: `src/jarvis/{security,iot}/`
+(Faz 3.2 RFID/ses biyometrisi ve Faz 5 IoT).
 
 ## Notlar
 
