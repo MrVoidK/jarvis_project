@@ -12,6 +12,12 @@ __pycache__/
 *.mp3
 *.log
 
+# Mouth (XTTS-v2) voice-cloning reference samples are required assets, not
+# temporary output - tracked despite the blanket *.wav rule above so the
+# repo is runnable after a fresh clone (see tts_handler.py REFERENCE_AUDIO_*).
+!jarvis_reference.wav
+!jarvis_reference_tr.wav
+
 # Environment variables
 .env
 secrets/
