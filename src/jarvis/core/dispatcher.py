@@ -2,8 +2,7 @@
 siniflandirma (hibrit) (bkz. docs/ROADMAP.md Faz 2.1).
 
 Amac, her kullanici transkriptini bir Intent'e (isim + guven skoru + parametreler) cevirmek;
-handler'lara gercek yonlendirme (core.app icine baglanma) Faz 2'nin ilerleyen bir adimi -
-burada sadece siniflandirma sozlesmesi ve iskeleti var.
+gercek intent->fonksiyon eslemesi core.handlers'ta, canli dongudeki kullanimi core.app'te.
 """
 
 import logging
@@ -55,11 +54,25 @@ class Dispatcher:
         # isimler + varsayilan "chat") - Faz 3'te tool intent'leri eklendikce buyur.
         self._known_intents = known_intents or [*_RULES.keys(), DEFAULT_INTENT_NAME]
 
-    def classify(self, text: str) -> Intent:
+    def match_rule(self, text: str) -> Optional[Intent]:
+        """Sadece `_RULES`'a bakar, LLM'e HIC gitmez - eslesme yoksa None doner.
+
+        core.app'in canli dongusu bunu kullanir: her turda "chat" mi yoksa
+        bilinen bir komut mu diye anlamak icin ayrica bir LLM cagrisi yapmak
+        (classify()'in yaptigi gibi), su an sadece get_time/list_files gibi
+        onemsiz kurallar varken normal sohbetin gecikmesini gereksiz yere
+        ikiye katlardi (bkz. docs/ROADMAP.md Faz 2 notu).
+        """
         for name, pattern in _RULES.items():
             if pattern.search(text):
                 logger.info("Dispatcher: kural eslesti (%s).", name)
                 return Intent(name=name, confidence=1.0, source="rule")
+        return None
+
+    def classify(self, text: str) -> Intent:
+        rule_match = self.match_rule(text)
+        if rule_match is not None:
+            return rule_match
 
         logger.info("Dispatcher: kural eslesmedi, LLM siniflandirmasina dusuluyor.")
         orchestrator = AgentFactory.create("orchestrator")

@@ -82,7 +82,8 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
   2. `venv\Scripts\pip install -r requirements.txt`
 - Çalıştırma (tam döngü): `python main.py`
 - Sadece Ears testi: `python -m src.jarvis.ears.listener`
-- Test: `pytest` (henüz test yok — `tests/` klasörü kurulacak)
+- Test: `python -m pytest tests/ -v` (bare `pytest` değil — `-m` olmadan
+  `src.jarvis` import'u çözülmeyebilir, bkz. `tests/test_guardrail.py`)
 - Lint/format: `ruff check .` / `black .` (henüz projeye eklenmedi)
 
 ## Kod Stili ve Kurallar
