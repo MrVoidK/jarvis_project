@@ -286,28 +286,49 @@ Alt adımlar:
       bir kez loglandığı görüldü (VRAM etkisi: yükleme ~10.5s, iki dil
       birlikte, ek model yok — bkz. `docs/ARCHITECTURE.md` §5).
 
-## Faz 2 — Agentic Orkestrasyon & Guardrail 🟡
+## Faz 2 — Agentic Orkestrasyon & Guardrail ✅
 
 **Not:** `main.py`, `audio_handler.py`, `tts_handler.py` bu fazda
 `src/jarvis/{ears,brain,mouth}/` altına taşındı (Faz 1'in yukarıdaki
 anlatımı o zamanki, taşıma-öncesi duruma ait tarihsel bir kayıttır).
-Aşağıdaki 2.1-2.3'teki tüm parçalar **yazıldı ve bağımsız test edildi**
-ama **henüz `core/app.py:run_jarvis()`'in canlı döngüsüne bağlanmadı** —
-ne zaman/nasıl devreye gireceklerine karar vermek ayrı bir adım.
 
-### 2.1 Modüler Komut Yöneticisi ✅ (iskelet)
+**Canlı döngüye bağlandı ✅**: `core/app.py:_handle_turn()` artık her
+turu sırayla (1) girdi guardrail'i (`InputInjectionCheck` — red ise
+Brain'e hiç gidilmez, iki dilli ret mesajı döner), (2) **sadece
+kural-tabanlı** hızlı dispatch (`Dispatcher.match_rule()` — LLM'e hiç
+gitmez, bilinen bir handler varsa Brain'e hiç gidilmeden direkt cevap
+döner), (3) yoksa normal streaming sohbet + her cümle için çıktı
+guardrail'i (`OutputSafetyCheck` — red ise o cümle sessizce atlanır)
+sırasından geçiriyor. Gerçek mikrofonla doğrulandı: normal sohbet, "saat
+kaç?" (Brain'e hiç gitmeden handler'dan cevap) ve izole bir injection
+testi hepsi doğru çalıştı.
+
+*Bilinçli tasarım kararı:* `classify()`'in LLM-fallback'i (hibrit,
+Faz 3'te daha fazla intent olduğunda anlamlı) canlı döngüde
+KULLANILMIYOR — her sıradan sohbet turunda ekstra bir "bu ne intent'i"
+LLM çağrısı, gerçek cevap için ikinci bir çağrıyla birlikte gecikmeyi
+ikiye katlardı. `match_rule()` bunun için eklendi (sadece `_RULES`,
+LLM'e gitmez); `classify()` değişmeden, ayrı bir yol olarak duruyor.
+
+### 2.1 Modüler Komut Yöneticisi ✅
 
 Alt adımlar:
 - [x] Intent şeması tasarımı: `core/dispatcher.py`'de Pydantic `Intent`
       (`name`, `confidence`, `parameters`, `source: "rule"|"llm"`).
 - [x] Rule-based ilk sürüm: `_RULES` sözlüğünde "saat kaç"→`get_time`,
       "dosya listele"→`list_files` regex örnekleri.
-- [x] Modül yönlendirme arayüzü: `Dispatcher.classify(text) -> Intent`
-      (`core/dispatcher.py`) — gerçek handler eşlemesi (intent→fonksiyon)
-      henüz yok, sadece sınıflandırma var.
-- [x] Hybrid/LLM-based'e geçiş: kural eşleşmezse `AgentFactory.create(
-      "orchestrator")` üzerinden Ollama'ya "bu metin hangi intent'e girer"
-      diye sorup `source="llm"` ile dönüyor.
+- [x] Modül yönlendirme arayüzü: `core/handlers.py` — `HANDLERS: dict[str,
+      Callable[[Intent], str]]`. Şimdilik sadece `get_time` gerçek bir
+      handler'a sahip (dosya/sistem erişimi gerektirmiyor, iki dilde
+      cevap veriyor — `datetime.now()`); `list_files` bilinçli olarak
+      handler'sız bırakıldı, çünkü gerçek dosya listeleme ROADMAP'in
+      kendi tanımına göre Faz 3.1'in erişim-kontrollü tool'u — handler'ı
+      olmayan her intent otomatik olarak normal sohbete düşüyor.
+- [x] Hybrid/LLM-based'e geçiş: `classify()` kural eşleşmezse
+      `AgentFactory.create("orchestrator")` üzerinden Ollama'ya "bu metin
+      hangi intent'e girer" diye sorup `source="llm"` ile dönüyor (canlı
+      döngüde kullanılmıyor, bkz. yukarıdaki tasarım kararı — ama
+      bağımsız test edilmiş durumda, Faz 3'te devreye alınabilir).
 - [x] **Modülerleşme dönüm noktası**: `src/jarvis/{ears,brain,mouth,core,
       adapters,agents}/` paket yapısına geçiş tamamlandı — `audio_handler.py`
       → `src/jarvis/ears/listener.py`, `tts_handler.py` →
@@ -318,7 +339,7 @@ Alt adımlar:
       `.claude/skills/verify-*` komutları ve `CLAUDE.md`/`docs/ARCHITECTURE.md`
       dosya-yolu referansları da güncellendi.
 
-### 2.2 Multi-Agent Orkestrasyon (Orkestratör → Hermes → Claude Code) ✅ (iskelet)
+### 2.2 Multi-Agent Orkestrasyon (Orkestratör → Hermes → Claude Code) ✅
 
 `docs/ARCHITECTURE.md` §3–4'te tanımlanan Factory/Adapter tabanlı ajan
 ağının ilk somut uygulaması:
@@ -344,7 +365,7 @@ ağının ilk somut uygulaması:
       `NotImplementedError` ile ne eksik olduğunu söylüyor. Gerçek
       bağlantı ayrı bir görev.
 
-### 2.3 AI Guardrail Katmanı ✅ (iskelet)
+### 2.3 AI Guardrail Katmanı ✅
 
 `docs/ARCHITECTURE.md` §6'daki Chain-of-Responsibility tasarımının ilk
 sürümü, `core/guardrail/`:
@@ -359,10 +380,16 @@ sürümü, `core/guardrail/`:
       `shutdown` vb.).
 - [x] Guardrail red/kabul kararlarının loglanması: `GuardrailChain.run()`
       her kararı (`check_name` + `reason`) `logging` ile basıyor.
-- [ ] OWASP LLM Top 10 eşlemesinin (bkz. `docs/ARCHITECTURE.md` §6) her bir
-      satırı için en az bir test senaryosu — henüz yazılmadı, gerçek
-      test/otomasyon (Faz 2'nin canlı döngüye bağlanma adımıyla birlikte
-      ele alınacak).
+- [x] OWASP LLM Top 10 eşlemesinin (bkz. `docs/ARCHITECTURE.md` §6) test
+      senaryoları: `tests/test_guardrail.py` (yeni, `pytest` eklendi —
+      `requirements.txt`), kod-seviyesinde test edilebilir iki satır için
+      gerçek testler — LLM01 (Prompt Injection → `InputInjectionCheck`,
+      TR+EN kalıp + masum cümle örnekleri) ve LLM02 (Insecure Output
+      Handling → `OutputSafetyCheck`, tehlikeli komut + masum çıktı
+      örnekleri), `python -m pytest tests/ -v` ile 4/4 geçiyor. Tablodaki
+      diğer satırlar (LLM06/08/09) kod-seviyesinde bir check değil,
+      tasarım/süreç ilkesiyle karşılanıyor — testte bir yorumla
+      netleştirildi, uydurma test yazılmadı.
 
 ## Faz 3 — Sistem Entegrasyonları & Zero-Trust Güvenlik ⬜
 
