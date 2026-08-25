@@ -16,6 +16,7 @@ if os.name == "nt":
         os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
 # --- Windows CUDA DLL Fix Sonu ---
 import logging
+import threading
 import time
 from collections import deque
 from enum import Enum, auto
@@ -154,8 +155,10 @@ def _load_wakeword_model() -> WakeWordModel:
 
 
 logger.info("Initializing Jarvis systems (Ears online)...")
+logger.info("faster-whisper modeli yukleniyor (turbo, ilk yuklemede birkac saniye surebilir)...")
 model, _device = _load_model_with_fallback()
 logger.info("faster-whisper '%s' cihazinda yuklendi.", _device)
+logger.info("openWakeWord modeli yukleniyor...")
 wakeword_model = _load_wakeword_model()
 logger.info("openWakeWord '%s' modeli yuklendi.", WAKEWORD_MODEL_NAME)
 
@@ -164,11 +167,13 @@ def _vad_record(
     stream: sd.InputStream,
     trailing: Optional[np.ndarray] = None,
     max_wait_ms: int = MAX_WAIT_MS,
+    stop_event: Optional[threading.Event] = None,
 ) -> Optional[np.ndarray]:
     """Records one utterance using VAD endpointing on an already-open stream.
 
     Returns float32 mono audio, or None if nothing was said before the wait
-    timeout. Takes an open stream (rather than opening its own) so the same
+    timeout (or a shutdown was requested mid-recording, see `stop_event`).
+    Takes an open stream (rather than opening its own) so the same
     microphone connection can be shared with wake-word listening - opening/
     closing the device on every state transition would add latency and risk
     dropping the first bit of audio.
@@ -182,6 +187,12 @@ def _vad_record(
     `listen_loop()`'s follow-up window (FOLLOWUP_WINDOW_MS) so a continued
     conversation gets a different grace period than the initial wake-word
     trigger.
+
+    `stop_event`, if given, is checked once per frame (~30ms) - the loop
+    can't interrupt a blocking `stream.read()` already in flight, but frames
+    are short enough that this bounds the worst-case shutdown latency to
+    roughly one frame period rather than waiting for the full recording/
+    timeout to finish naturally.
     """
     vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
     hangover_frames = SILENCE_HANGOVER_MS // FRAME_MS
@@ -200,6 +211,9 @@ def _vad_record(
     logger.info("Dinleniyor (konusmaya baslayabilirsiniz)...")
 
     while True:
+        if stop_event is not None and stop_event.is_set():
+            logger.info("Kapatma istendi, kayit iptal ediliyor.")
+            return None
         if not triggered and wait_frames >= max_wait_frames:
             break
         if triggered and speech_frame_count >= max_speech_frames:
@@ -253,7 +267,9 @@ def _chunk_loudness(chunk: np.ndarray) -> tuple[float, float]:
     return rms, peak
 
 
-def _wait_for_wakeword(stream: sd.InputStream) -> np.ndarray:
+def _wait_for_wakeword(
+    stream: sd.InputStream, stop_event: Optional[threading.Event] = None
+) -> Optional[np.ndarray]:
     """Blocks on an open stream until the wake word OR a double-clap is detected,
     logging latency. Both triggers are evaluated on the same stream of chunks -
     the RMS-based clap check is cheap enough to run every iteration alongside the
@@ -263,6 +279,11 @@ def _wait_for_wakeword(stream: sd.InputStream) -> np.ndarray:
     `_vad_record`'s pre-roll instead of discarding it - otherwise the ~80ms
     of audio right after the trigger (which can already contain the start
     of the command, if the user doesn't pause) is silently lost.
+
+    Returns None if `stop_event` is set while waiting - this is a distinct
+    sentinel from any real trigger (which always returns an ndarray), so
+    `listen_loop()` can tell "shutdown requested" apart from "actually heard
+    something" without ambiguity.
     """
     global _clap_noise_floor
     wakeword_model.reset()  # clear buffers left over from the previous cycle
@@ -275,6 +296,10 @@ def _wait_for_wakeword(stream: sd.InputStream) -> np.ndarray:
     last_clap_time: Optional[float] = None
     clap_active = False  # ayni alkisin birden fazla chunk'ta tekrar sayilmasini engeller
     while True:
+        if stop_event is not None and stop_event.is_set():
+            logger.info("Kapatma istendi, uyku modundan cikiliyor.")
+            return None
+
         chunk, overflowed = stream.read(WAKEWORD_CHUNK_SAMPLES)
         if overflowed:
             logger.warning("Giris tamponu tasti (overflow) - ses kaybi olabilir.")
@@ -396,7 +421,7 @@ def transcribe_once() -> Optional[str]:
     return _transcribe(audio)
 
 
-def listen_loop() -> Iterator[str]:
+def listen_loop(stop_event: Optional[threading.Event] = None) -> Iterator[str]:
     """State machine over a single persistent stream: IDLE (wake-word) -> ACTIVE (VAD
     capture + transcription) -> FOLLOWUP (brief re-listen without wake word) -> back to
     ACTIVE if speech continues, or IDLE if the follow-up window times out. Continuously
@@ -410,16 +435,27 @@ def listen_loop() -> Iterator[str]:
     of granting a brand new window each time. Otherwise a string of noise-triggered
     empty captures could keep re-arming a full window indefinitely, delaying the
     return to IDLE far longer than FOLLOWUP_WINDOW_MS (see docs/ROADMAP.md Faz 1.1).
+
+    `stop_event`, if given, lets the caller (core.app.run_jarvis()) request a
+    graceful shutdown: checked between state transitions AND (via `_wait_for_wakeword`/
+    `_vad_record`) once per audio frame, so the generator stops yielding and this
+    function returns - closing the InputStream via the `with` block - within roughly
+    one frame period of the event being set, rather than only on an exception. Note
+    this bounds LOOP-BOUNDARY latency, not a currently in-flight model call (e.g. a
+    multi-second faster-whisper transcription already running won't be interrupted
+    mid-call - see core.app.run_jarvis()'s docstring for the full caveat).
     """
     state = ListenState.IDLE
     try:
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16") as stream:
-            while True:
+            while stop_event is None or not stop_event.is_set():
                 state = ListenState.IDLE
-                trailing = _wait_for_wakeword(stream)
+                trailing = _wait_for_wakeword(stream, stop_event=stop_event)
+                if trailing is None:  # shutdown requested while waiting
+                    break
 
                 state = ListenState.ACTIVE
-                audio = _vad_record(stream, trailing=trailing)
+                audio = _vad_record(stream, trailing=trailing, stop_event=stop_event)
                 # The turn that triggered ACTIVE always earns one full follow-up
                 # window, whether or not it produced text - matches the previous
                 # behavior for this first turn.
@@ -430,6 +466,9 @@ def listen_loop() -> Iterator[str]:
                         yield text
                         followup_deadline = time.perf_counter() + FOLLOWUP_WINDOW_MS / 1000
 
+                    if stop_event is not None and stop_event.is_set():
+                        break
+
                     state = ListenState.FOLLOWUP
                     remaining_ms = int((followup_deadline - time.perf_counter()) * 1000)
                     if remaining_ms <= 0:
@@ -438,12 +477,13 @@ def listen_loop() -> Iterator[str]:
                         "Takip penceresi acik (kalan %.0fs) - 'Hey Jarvis' demeden devam edebilirsiniz...",
                         remaining_ms / 1000,
                     )
-                    audio = _vad_record(stream, max_wait_ms=remaining_ms)
+                    audio = _vad_record(stream, max_wait_ms=remaining_ms, stop_event=stop_event)
 
                 if state is ListenState.FOLLOWUP:
                     logger.info("Takip penceresi zaman asimina ugradi, uyku moduna donuluyor.")
     except sd.PortAudioError as exc:
         logger.error("Mikrofon acilamadi (state=%s): %s", state.name, exc)
+    logger.info("Ears kapatildi.")
 
 
 if __name__ == "__main__":

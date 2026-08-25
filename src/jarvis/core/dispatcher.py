@@ -24,9 +24,23 @@ DEFAULT_INTENT_NAME = "chat"
 
 # ROADMAP'teki ornek komutlarla tutarli, kucuk bir rule-based baslangic seti.
 # Regex'ler kelime siniri (\b) ile TR/EN karisik konusmada yanlis eslesmeyi azaltir.
-_RULES: dict[str, re.Pattern] = {
-    "get_time": re.compile(r"\bsaat kaç\b|\bwhat time is it\b", re.IGNORECASE),
-    "list_files": re.compile(r"\bdosya(ları)? listele\b|\blist (the )?files\b", re.IGNORECASE),
+#
+# Her intent icin TEK bir birlesik (TR|EN) pattern yerine, dile gore AYRI pattern'ler
+# tutuluyor: hangi alternatifin eslestigi, o kalibin dilini KESIN olarak veriyor. Bu,
+# eslesen metnin dilini ayrica langdetect ile tahmin etmekten (bkz. core/language.py)
+# cok daha guvenilir - langdetect kisa metinlerde (orn. "saat kaç?") yanlis sonuc
+# verebiliyor (gercek testte TR sorgusu yanlislikla "en" olarak tespit edildi, TTS
+# "It's 02:03 now." diye Ingilizce okudu) ama regex'in KENDISI zaten hangi dilde
+# yazildigini biliyor - o bilgiyi bosa harcamamak gerekiyor.
+_RULES: dict[str, list[tuple[str, re.Pattern]]] = {
+    "get_time": [
+        ("tr", re.compile(r"\bsaat kaç\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bwhat time is it\b", re.IGNORECASE)),
+    ],
+    "list_files": [
+        ("tr", re.compile(r"\bdosya(ları)? listele\b", re.IGNORECASE)),
+        ("en", re.compile(r"\blist (the )?files\b", re.IGNORECASE)),
+    ],
 }
 
 _CLASSIFY_PROMPT_TEMPLATE = (
@@ -62,11 +76,22 @@ class Dispatcher:
         (classify()'in yaptigi gibi), su an sadece get_time/list_files gibi
         onemsiz kurallar varken normal sohbetin gecikmesini gereksiz yere
         ikiye katlardi (bkz. docs/ROADMAP.md Faz 2 notu).
+
+        `parameters["lang"]`'a, eslesen pattern'in KENDI dili konur (bkz.
+        `_RULES`'un ustundeki not) - langdetect'e degil, hangi dil-alternatifinin
+        eslestigine guveniliyor. Handler'lar (core/handlers.py) Brain'i hic
+        devreye sokmadan cevap uretiyor, yani SYSTEM_PROMPT'un "kullanicinin
+        diliyle yanit ver" kuralindan faydalanamiyorlar - bu parametre olmadan
+        eski cift-dilli sablon (bkz. eski _handle_get_time) TEK bir XTTS "lang"
+        bayragiyla okunuyordu, metnin yarisi hep yanlis fonetikle cikiyordu.
         """
-        for name, pattern in _RULES.items():
-            if pattern.search(text):
-                logger.info("Dispatcher: kural eslesti (%s).", name)
-                return Intent(name=name, confidence=1.0, source="rule")
+        for name, variants in _RULES.items():
+            for lang, pattern in variants:
+                if pattern.search(text):
+                    logger.info("Dispatcher: kural eslesti (%s, dil=%s).", name, lang)
+                    return Intent(
+                        name=name, confidence=1.0, source="rule", parameters={"lang": lang}
+                    )
         return None
 
     def classify(self, text: str) -> Intent:

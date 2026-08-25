@@ -391,6 +391,54 @@ sürümü, `core/guardrail/`:
       tasarım/süreç ilkesiyle karşılanıyor — testte bir yorumla
       netleştirildi, uydurma test yazılmadı.
 
+## Faz 3 Öncesi — Kritik Bug-Fix Yaması ✅
+
+Faz 2 tamamlandıktan hemen sonra, kullanıcının gerçek kullanımda bildirdiği
+3 hata düzeltildi (`src/jarvis/{core/app.py,ears/listener.py,mouth/tts.py,
+core/dispatcher.py,core/handlers.py}` + yeni `core/language.py`):
+
+- [x] **Graceful shutdown**: `core/app.py:run_jarvis()` artık bir
+      `threading.Event` (`stop_event`) oluşturup `listen_loop()`'a ve
+      `speak()`'e geçiriyor; her ikisi de kendi iç döngülerinde (ses
+      frame'i / chunk bazında) bunu periyodik kontrol edip erken çıkıyor.
+      Ctrl+C `run_jarvis()`'te `except KeyboardInterrupt` ile yakalanıp
+      `stop_event.set()` çağırıyor. İzole testlerle doğrulandı:
+      `listen_loop()` 0.02sn'de, `speak()` (ilk halinde 3sn süren bir
+      gecikme bulunup düzeltildikten sonra) 0.31sn'de temiz çıkıyor —
+      `speak()`'teki asıl gecikme `sd.OutputStream`'in normal `close()`'unun
+      (PortAudio `Pa_StopStream`) yazılmış ses tamponunun çalınmasını
+      BEKLEMESİYDİ; kapatma anında bunun yerine `out.abort()` (`Pa_
+      AbortStream`, beklemeden anında durur) çağrılarak çözüldü. Gerçek
+      terminalde `python -u main.py` + Ctrl+C ile uçtan uca doğrulandı
+      ("terminalde denedim çalışıyor"). **Bilinen sınırlama**: hâlihazırda
+      çalışan TEK bir bloklayıcı model çağrısını (bir faster-whisper
+      transkripsiyonu, bir Ollama isteği, bir XTTS inference chunk'ı)
+      yarıda kesemez — bunlar Python'un sinyal kontrol noktalarına dönene
+      kadar beklenir; sadece bu çağrılar ARASINDAKI bekleme sürelerini
+      anında kısaltır.
+- [x] **Ses üst üste binmesi**: `mouth/tts.py`'de modül-seviyesi bir
+      `_PLAYBACK_LOCK` eklendi — `speak()`'in tüm gövdesini sarıyor, iki
+      çağrının sesleri kod-seviyesinde asla üst üste binemez (savunma
+      amaçlı garanti; mevcut akışta zaten sıralı çağrılıyordu).
+- [x] **Kural-tabanlı yanıtlarda dil kayması**: kök neden, `core/handlers.py`
+      ve `core/app.py`'nin Brain'i (ve SYSTEM_PROMPT'un dil kuralını) hiç
+      devreye sokmadan ürettiği şablonların TEK bir XTTS `lang` bayrağı
+      için İKİ dili birleştirmesiydi (örn. "Şu an saat 01:49. It's 01:49
+      now." → `lang=en` seçilip Türkçe kısım İngilizce fonetikle
+      okunuyordu). Düzeltme: `core/dispatcher.py`'deki `_RULES` artık her
+      intent için dile göre AYRI regex alternatifleri tutuyor
+      (`list[tuple[str, re.Pattern]]`) — hangi alternatifin eşleştiği
+      doğrudan doğru dili veriyor (`langdetect`'e hiç güvenmeden; ilk
+      denemede `langdetect`'in kısa metinlerde — "saat kaç?" gibi —
+      güvenilmez çıktığı gerçek testte görüldü). `core/handlers.py`'nin
+      `_handle_get_time`'ı artık TEK dilde, doğru şablonla `(text, lang)`
+      döner; `core/app.py`'nin girdi-guardrail ret mesajı da aynı desenle
+      (yeni paylaşılan `core/language.py:detect_language()` ile, serbest
+      metin için) tek dilde düzeltildi. Gerçek mikrofonla "saat kaç?" → TR,
+      "what time is it?" → EN, ikisi de doğru dilde doğrulandı.
+- [x] Ek: `ears/listener.py`'ye model yükleme öncesi daha açıklayıcı
+      durum logları eklendi ("... yukleniyor (birkaç saniye sürebilir)...").
+
 ## Faz 3 — Sistem Entegrasyonları & Zero-Trust Güvenlik ⬜
 
 ### 3.1 Tool Use

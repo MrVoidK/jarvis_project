@@ -8,6 +8,8 @@ from typing import Optional
 import numpy as np
 import sounddevice as sd
 
+from src.jarvis.core.language import detect_language as _detect_language
+
 # XTTS-v2 (Coqui) CPML lisansi altinda; ilk indirmede interaktif bir
 # onay istemi cikariyor. Jarvis kisisel/ticari-olmayan bir asistan oldugu
 # icin burada bilincli olarak otomatik kabul ediliyor - importlardan once
@@ -77,11 +79,6 @@ _TTS_STREAM_DONE = object()  # queue'ya "uretim basariyla bitti" isareti olarak
                               # konur - None/0 gibi gercek bir ses degeriyle
                               # karisma riski olmayan tekil bir nesne
 
-# XTTS'in desteklegi dil kodlari (inference_stream'in "language" parametresi icin gecerli set)
-_SUPPORTED_LANGUAGES = {
-    "en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl",
-    "cs", "ar", "zh-cn", "ja", "ko", "hu", "hi",
-}
 
 
 VoiceProfile = tuple[torch.Tensor, torch.Tensor]  # (gpt_cond_latent, speaker_embedding)
@@ -158,23 +155,12 @@ logger.info(
 )
 
 
-def _detect_language(text: str) -> str:
-    """Metnin dilini tespit eder, XTTS'in desteklemedigi/belirsiz bir sonucta "en"'e duser.
-
-    main.py'deki SYSTEM_PROMPT artik kullanicinin diliyle (TR/EN) yanit
-    verilmesini istedigi icin bu fonksiyon gercekten iki dil arasinda
-    degisebiliyor - donen deger dogrudan speak()'in _voice_profiles secimini
-    belirliyor (bkz. speak()).
-    """
-    from langdetect import LangDetectException, detect
-
-    try:
-        lang = detect(text)
-    except LangDetectException:
-        return "en"
-    if lang.startswith("zh"):
-        return "zh-cn"
-    return lang if lang in _SUPPORTED_LANGUAGES else "en"
+_PLAYBACK_LOCK = threading.Lock()  # speak() cagrilarinin ses cikisini seri hale
+    # getirir - normal akista run_jarvis() zaten speak()'i tek tek, sirayla cagiriyor,
+    # ama bu kilit gelecekte concurrent bir cagri yolu (veya ayni anda iki speak()
+    # cagrisinin OutputStream'lerinin cakismasi - bazi Windows ses surucu/backend'
+    # lerinde write()/close() teorik olarak beklendigi gibi tam senkron blok
+    # etmeyebiliyor) durumunda iki sesin ust uste binmesini kesin olarak engeller.
 
 
 def _produce_tts_chunks(
@@ -208,7 +194,9 @@ def _produce_tts_chunks(
         chunk_queue.put(_TTS_STREAM_DONE)
 
 
-def speak(text: str, language: Optional[str] = None) -> None:
+def speak(
+    text: str, language: Optional[str] = None, stop_event: Optional[threading.Event] = None
+) -> None:
     """Metni XTTS-v2 ile klonlanmis sesle senteler ve dogrudan hoparlore akitir.
 
     Gecici bir .wav dosyasi yazilmiyor: uretim (_produce_tts_chunks) ayri bir
@@ -219,70 +207,120 @@ def speak(text: str, language: Optional[str] = None) -> None:
     ve baslangictaki jitter buffer (TTS_PREBUFFER_CHUNKS) sayesinde sese sizmiyor.
     speak() cagiran tarafa gore hala senkron/blocking - roadmap'te barge-in zaten
     MVP disi birakildigi icin mevcut senkron run_jarvis() dongusuyle tutarli.
+
+    `_PLAYBACK_LOCK` butun govdeyi sariyor - iki speak() cagrisinin sesleri asla
+    ust uste binmez, cagiran taraf zaten sirali olsa da bu garanti kod-seviyesinde
+    kesinlesir (bkz. modul-seviyesi tanim).
+
+    `stop_event` verilirse (core.app.run_jarvis()'in graceful-shutdown mekanizmasi,
+    bkz. ears/listener.py'deki ayni desen) uc noktada kontrol edilir: cagrildiginda
+    zaten set edilmisse hic baslamadan don; on-bellek/oynatma dongulerinde her
+    chunk'ta kontrol edilip set edilirse mevcut cumle yarida kesilip erken cikilir -
+    kapatma sirasinda kalan tum kuyruklanmis sesin sonuna kadar beklenmez.
     """
     if not text:
         return
 
+    if stop_event is not None and stop_event.is_set():
+        return
+
     lang = language or _detect_language(text)
     # Iki dil profili (en/tr) arasindan secim: XTTS'e gecen fonetik "lang" kodu
-    # tum _SUPPORTED_LANGUAGES setini kapsayabilir, ama klonlanan SES sadece
+    # tum SUPPORTED_LANGUAGES setini kapsayabilir, ama klonlanan SES sadece
     # EN/TR referanslari arasinda switch eder (bkz. docs/ARCHITECTURE.md SS5) -
     # "tr" disindaki her dil EN sesiyle okunur.
     voice_profile = _voice_profiles["tr"] if lang == "tr" else _voice_profiles["en"]
     start = time.perf_counter()
     first_chunk_logged = False
 
-    try:
-        chunk_queue: "queue.Queue[object]" = queue.Queue(maxsize=TTS_QUEUE_MAXSIZE)
-        producer = threading.Thread(
-            target=_produce_tts_chunks, args=(text, lang, voice_profile, chunk_queue), daemon=True,
-        )
-        producer.start()
-
+    with _PLAYBACK_LOCK:
         try:
-            # On-bellek (jitter buffer): oynatmayi baslatmadan once birkac chunk biriktir,
-            # boylece ilk chunk'lardaki yavasligin sonraki write()'lara sizmasi engellenir.
-            prebuffer: list[np.ndarray] = []
-            terminal: Optional[object] = None
-            while len(prebuffer) < TTS_PREBUFFER_CHUNKS:
-                item = chunk_queue.get()
-                if not first_chunk_logged:
-                    logger.info("Ilk ses chunk'i hazir: %.2fs", time.perf_counter() - start)
-                    first_chunk_logged = True
-                if item is _TTS_STREAM_DONE or isinstance(item, Exception):
-                    terminal = item
-                    break
-                prebuffer.append(item)
+            chunk_queue: "queue.Queue[object]" = queue.Queue(maxsize=TTS_QUEUE_MAXSIZE)
+            producer = threading.Thread(
+                target=_produce_tts_chunks, args=(text, lang, voice_profile, chunk_queue), daemon=True,
+            )
+            producer.start()
 
-            with sd.OutputStream(samplerate=XTTS_SAMPLE_RATE, channels=1, dtype="float32") as out:
-                for audio in prebuffer:
-                    out.write(audio)
-                while terminal is None:
-                    item = chunk_queue.get()
-                    if item is _TTS_STREAM_DONE:
+            try:
+                # On-bellek (jitter buffer): oynatmayi baslatmadan once birkac chunk biriktir,
+                # boylece ilk chunk'lardaki yavasligin sonraki write()'lara sizmasi engellenir.
+                prebuffer: list[np.ndarray] = []
+                terminal: Optional[object] = None
+                shutting_down = False
+                while len(prebuffer) < TTS_PREBUFFER_CHUNKS:
+                    if stop_event is not None and stop_event.is_set():
+                        shutting_down = True
                         break
-                    if isinstance(item, Exception):
+                    item = chunk_queue.get()
+                    if not first_chunk_logged:
+                        logger.info("Ilk ses chunk'i hazir: %.2fs", time.perf_counter() - start)
+                        first_chunk_logged = True
+                    if item is _TTS_STREAM_DONE or isinstance(item, Exception):
                         terminal = item
                         break
-                    out.write(item)
+                    prebuffer.append(item)
 
-            if isinstance(terminal, Exception):
-                raise terminal
-        finally:
-            # Consumer erken cikarsa (or. OutputStream/aygit hatasi) producer'i dolu
-            # queue.put()'ta sonsuza kadar bloklu birakmamak icin kuyrugu bosalt.
-            while producer.is_alive():
-                try:
-                    chunk_queue.get_nowait()
-                except queue.Empty:
-                    producer.join(timeout=0.1)
-    except Exception as exc:
-        # Tek bir kotu TTS turn'u (VRAM OOM, cihaz hatasi vb.) run_jarvis()'in
-        # dongusunu cokertmemeli - _transcribe()'daki izolasyonla ayni desen.
-        logger.error("TTS basarisiz, bu turn sessiz kaliniyor: %s", exc)
-        return
+                if not shutting_down:
+                    with sd.OutputStream(samplerate=XTTS_SAMPLE_RATE, channels=1, dtype="float32") as out:
+                        for audio in prebuffer:
+                            if stop_event is not None and stop_event.is_set():
+                                shutting_down = True
+                                out.abort()
+                                break
+                            out.write(audio)
+                        while not shutting_down and terminal is None:
+                            if stop_event is not None and stop_event.is_set():
+                                shutting_down = True
+                                # out.abort() (PortAudio Pa_AbortStream) zaten yazilmis
+                                # tamponun CALINMASINI BEKLEMEDEN aninda durur - `with`
+                                # bloğunun normal cikisinda cagrilan close()/stop()
+                                # (Pa_StopStream) ise tam tersine kalan sesin bitmesini
+                                # bekliyor; gercek testte bu yuzden shutdown ~3sn
+                                # suruyordu (sesi hemen kesiyorduk ama speak() fonksiyon
+                                # olarak PortAudio'nun stop() cagrisinda takili kaliyordu).
+                                out.abort()
+                                break
+                            item = chunk_queue.get()
+                            if item is _TTS_STREAM_DONE:
+                                break
+                            if isinstance(item, Exception):
+                                terminal = item
+                                break
+                            out.write(item)
 
-    logger.info("Toplam sentez+oynatma suresi: %.2fs (dil=%s)", time.perf_counter() - start, lang)
+                if isinstance(terminal, Exception):
+                    raise terminal
+            finally:
+                if shutting_down:
+                    # Kapatma sirasinda producer'in (daemon=True) GPU inference'ini
+                    # dogal olarak bitirmesini BEKLEMIYORUZ - process zaten kapanacagi
+                    # icin thread process ile birlikte olecek. Beklemeye devam etmek
+                    # (asagidaki normal-yol drain dongusu gibi) sesi aninda kesmemize
+                    # ragmen speak()'in donusunu - dolayisiyla Ctrl+C sonrasi
+                    # run_jarvis()'in kapanisini - kalan inference suresi kadar (bir
+                    # kac saniye) gereksiz yere geciktiriyordu (gercek testte olculdu).
+                    pass
+                else:
+                    # Consumer erken cikarsa (or. OutputStream/aygit hatasi) producer'i
+                    # dolu queue.put()'ta sonsuza kadar bloklu birakmamak icin kuyrugu
+                    # bosalt.
+                    while producer.is_alive():
+                        try:
+                            chunk_queue.get_nowait()
+                        except queue.Empty:
+                            producer.join(timeout=0.1)
+        except Exception as exc:
+            # Tek bir kotu TTS turn'u (VRAM OOM, cihaz hatasi vb.) run_jarvis()'in
+            # dongusunu cokertmemeli - _transcribe()'daki izolasyonla ayni desen.
+            logger.error("TTS basarisiz, bu turn sessiz kaliniyor: %s", exc)
+            return
+
+        if shutting_down:
+            logger.info("Kapatma istendi, TTS oynatmasi yarida kesildi.")
+        else:
+            logger.info(
+                "Toplam sentez+oynatma suresi: %.2fs (dil=%s)", time.perf_counter() - start, lang
+            )
 
 
 if __name__ == "__main__":
