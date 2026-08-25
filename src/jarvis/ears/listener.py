@@ -39,23 +39,87 @@ MAX_WAIT_MS = 10000  # how long to wait for speech to start before giving up
 MAX_UTTERANCE_MS = 20000  # how long a triggered utterance may run before force-stopping
 PREROLL_FRAMES = 3  # ~90ms of audio kept before trigger, so onset isn't clipped
 VAD_AGGRESSIVENESS = 2  # 0 (permissive) - 3 (aggressive filtering of non-speech)
+FOLLOWUP_WINDOW_MS = 12000  # Jarvis konustuktan sonra wake-word gerekmeden devam
+                             # konusmasi icin beklenen sure. MAX_WAIT_MS'ten (10s)
+                             # biraz daha genis tutuldu cunku kullanici Jarvis'in
+                             # cevabini dinleyip dusunmek icin ek zamana ihtiyac
+                             # duyabilir. (Deger deneysel olarak ayarlanmali.)
 
 WAKEWORD_MODEL_NAME = "hey_jarvis"
 WAKEWORD_THRESHOLD = 0.5
 WAKEWORD_CHUNK_MS = 80  # openWakeWord's native frame size; other sizes work but add latency
 WAKEWORD_CHUNK_SAMPLES = SAMPLE_RATE * WAKEWORD_CHUNK_MS // 1000  # 1280 samples
 
-CLAP_THRESHOLD = 4000  # RMS esigi (int16 ornekleme, 0-32767 arasi) - mikrofon
-                        # kazancina/ortam gurultusune gore manuel ayarlanmali
-CLAP_MIN_GAP_MS = 200  # iki alkis arasi min. sure - tek bir alkisin yankisini/
-                        # ikinci pikini yanlislikla "ikinci alkis" saymayi engeller
+CLAP_MIN_ABS_THRESHOLD = 800       # noise_floor cok dusukken (sessiz oda) esigin
+                                    # gercekci-olmayan derecede dusmesini engelleyen
+                                    # taban - tipik mikrofon oz-gurultusunun (~50-150
+                                    # RMS) belirgin ustunde ama eski sabit esikten
+                                    # (4000) cok daha dusuk, boylece uzak/hafif
+                                    # alkislar da yakalanabilsin
+CLAP_SENSITIVITY_MULTIPLIER = 6.0  # dinamik esik = noise_floor * bu deger; bir
+                                    # "yuksek" sesin ortam gurultusunden en az ~6x
+                                    # guclu olmasi gerekir - gurultu tabaninin dogal
+                                    # kisa-vadeli dalgalanmasini (1.5-2x) rahatca
+                                    # asiyor, gercek bir alkisi ise (uzaktan bile)
+                                    # genelde kolayca gecer
+CLAP_NOISE_FLOOR_EMA_ALPHA = 0.05  # ortam gurultusu EMA'sinin adaptasyon hizi
+                                    # (~20 chunk / ~1.6s zaman sabiti @ 80ms/chunk) -
+                                    # oda gurultusundeki yavas degisimi (klima acilip
+                                    # kapanmasi vb.) takip eder. NOT: "yuksek"
+                                    # (is_loud) sayilmak icin crest_factor >= 3.5 da
+                                    # gerekiyor - surekli konusma/TV/muzik gibi
+                                    # impulsif OLMAYAN seslerin crest factor'u dusuk
+                                    # (~1.5-2) oldugundan bunlar "yuksek degil" sayilip
+                                    # EMA'ya katilir; asagidaki CLAP_NOISE_FLOOR_MAX
+                                    # bu yuzden gerekli (bkz. o sabitin aciklamasi).
+CLAP_INITIAL_NOISE_FLOOR = 300.0   # EMA'nin baslangic tohumu - tipik sessiz-oda
+                                    # int16 RMS duzeyi icin makul bir varsayim; EMA
+                                    # hizla gercek degere yakinsar
+CLAP_NOISE_FLOOR_MAX = 450.0       # EMA'nin ust siniri - uzun bir konusma/surekli
+                                    # ortam sesi (crest factor dusuk oldugu icin
+                                    # "yuksek degil" sayilip EMA'yi besler, yukaridaki
+                                    # not) sinirlanmazsa noise_floor'u surukleyip
+                                    # dinamik esigi (noise_floor*6) gercek alkislarin
+                                    # RMS'inin (bu makinede gozlemlenen: ~3300-4800)
+                                    # ustune cikarabiliyordu - kullanicinin bildirdigi
+                                    # "once uzak/yakin fark etmeden calisiyordu, simdi
+                                    # birkac deneme gerekiyor" sikayetinin kok nedeni
+                                    # buydu. 450*6=2700 tavani, en zayif gozlemlenen
+                                    # alkistan (3340) rahat payla altta kaliyor.
+CLAP_MIN_CREST_FACTOR = 3.0        # "yuksek" bir chunk'in alkis benzeri (impulsif/
+                                    # transient) sayilmasi icin gereken min. peak/RMS
+                                    # orani. Surekli yuksek sesler (bagirma, muzik, TV)
+                                    # daha duz bir zarfa sahiptir (crest factor ~1.5-2),
+                                    # alkis gibi keskin darbeler ise cok daha yuksek bir
+                                    # peak/RMS oranina sahiptir. Eskiden 3.5'ti;
+                                    # gercek testte uzaktan (oda yankisi crest factor'u
+                                    # dusurdugu icin) basarili bir alkis 4.1'de olculdu -
+                                    # 3.5 bu tur sinirdaki uzak alkislari bazen reddedip
+                                    # "birkac deneme" gerektiriyordu, 3.0'a dusurulerek
+                                    # pay artirildi (surekli seslerin ~1.5-2'lik crest
+                                    # factor'unden hala rahat ayirt ediliyor).
+CLAP_MIN_GAP_MS = 150  # iki alkis arasi min. sure - tek bir alkisin yankisini/
+                        # ikinci pikini yanlislikla "ikinci alkis" saymayi engeller.
+                        # Eskiden 200ms'ti; gercek testte gecerli bir uzak cift-alkis
+                        # 159ms'de bu yuzden reddedildi (near-miss logu bunu gosterdi) -
+                        # kullanicinin doganl hizli alkis ritmi buna carpiyordu. 150ms'e
+                        # dusuruldu; oda yankisi/tek alkis decay'i genelde bundan daha
+                        # kisa surdugu icin yanlis-cift-sayma riski hala dusuk.
 CLAP_MAX_GAP_MS = 800  # iki alkis arasi maks. sure - bu pencere asilirsa ilk
                         # alkis olarak yeniden sayilir (bekleyen durum sifirlanir)
+
+_clap_noise_floor: float = CLAP_INITIAL_NOISE_FLOOR  # bilincli olarak modul-seviyesinde
+    # ve _wait_for_wakeword() cagrilari arasinda KALICI - wakeword_model.reset()'in
+    # aksine (o, model-ici tamponlari temizler ve her IDLE dongusunde sifirlanmasi
+    # dogrudur), ortam gurultusu odanin bir ozelligidir; her cagride sifirlansaydi
+    # EMA her seferinde soguktan yeniden yakinsamak zorunda kalir, "uzak/hafif alkis"
+    # kazanimi buharlasirdi
 
 
 class ListenState(Enum):
     IDLE = auto()  # waiting for the wake word, nothing is transcribed
     ACTIVE = auto()  # wake word triggered, VAD-recording an utterance
+    FOLLOWUP = auto()  # an utterance just ended; briefly re-listening without the wake word
 
 
 def _load_model_with_fallback(model_size: str = "turbo") -> tuple[WhisperModel, str]:
@@ -97,7 +161,9 @@ logger.info("openWakeWord '%s' modeli yuklendi.", WAKEWORD_MODEL_NAME)
 
 
 def _vad_record(
-    stream: sd.InputStream, trailing: Optional[np.ndarray] = None
+    stream: sd.InputStream,
+    trailing: Optional[np.ndarray] = None,
+    max_wait_ms: int = MAX_WAIT_MS,
 ) -> Optional[np.ndarray]:
     """Records one utterance using VAD endpointing on an already-open stream.
 
@@ -111,10 +177,15 @@ def _vad_record(
     (see `_wait_for_wakeword`) that hasn't been classified by VAD yet. It's
     seeded into the pre-roll buffer so a command spoken with no pause after
     "Hey Jarvis" doesn't lose its first ~80ms.
+
+    `max_wait_ms` overrides the default pre-speech wait timeout - used by
+    `listen_loop()`'s follow-up window (FOLLOWUP_WINDOW_MS) so a continued
+    conversation gets a different grace period than the initial wake-word
+    trigger.
     """
     vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
     hangover_frames = SILENCE_HANGOVER_MS // FRAME_MS
-    max_wait_frames = MAX_WAIT_MS // FRAME_MS
+    max_wait_frames = max_wait_ms // FRAME_MS
     max_speech_frames = MAX_UTTERANCE_MS // FRAME_MS
 
     preroll: deque[np.ndarray] = deque(maxlen=PREROLL_FRAMES)
@@ -169,13 +240,17 @@ def _vad_record(
     return audio_int16.astype(np.float32) / 32768.0
 
 
-def _rms(chunk: np.ndarray) -> float:
-    """Bir int16 ses chunk'inin RMS (Root Mean Square) genligini hesaplar.
+def _chunk_loudness(chunk: np.ndarray) -> tuple[float, float]:
+    """Bir int16 ses chunk'inin RMS ve peak (mutlak tepe) genligini birlikte hesaplar.
 
-    int16'nin karesi (32767**2) int16 sinirini asip overflow'a yol acacagi
-    icin once float32'ye cast ediliyor.
+    Crest factor (peak/RMS) icin ikisi de gerektiginden, ayni float32 cast'i
+    uzerinden tek gecişte birlikte donduruluyor (int16 karesi overflow riski
+    tasidigindan once float32'ye cast ediliyor).
     """
-    return float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
+    samples = chunk.astype(np.float32)
+    rms = float(np.sqrt(np.mean(samples ** 2)))
+    peak = float(np.max(np.abs(samples)))
+    return rms, peak
 
 
 def _wait_for_wakeword(stream: sd.InputStream) -> np.ndarray:
@@ -189,6 +264,7 @@ def _wait_for_wakeword(stream: sd.InputStream) -> np.ndarray:
     of audio right after the trigger (which can already contain the start
     of the command, if the user doesn't pause) is silently lost.
     """
+    global _clap_noise_floor
     wakeword_model.reset()  # clear buffers left over from the previous cycle
     logger.info("Uyku modunda... ('Hey Jarvis' veya cift alkis bekleniyor)")
 
@@ -204,17 +280,59 @@ def _wait_for_wakeword(stream: sd.InputStream) -> np.ndarray:
             logger.warning("Giris tamponu tasti (overflow) - ses kaybi olabilir.")
         chunk = chunk.reshape(-1)
 
-        rms = _rms(chunk)
-        is_loud = rms >= CLAP_THRESHOLD
+        rms, peak = _chunk_loudness(chunk)
+        crest_factor = peak / rms if rms > 1e-6 else 0.0
+        dynamic_threshold = max(CLAP_MIN_ABS_THRESHOLD, _clap_noise_floor * CLAP_SENSITIVITY_MULTIPLIER)
+        is_rms_loud = rms >= dynamic_threshold
+        is_impulsive = crest_factor >= CLAP_MIN_CREST_FACTOR
+        is_loud = is_rms_loud and is_impulsive
+
+        if not is_rms_loud:
+            # Gurultu tabanini SADECE gercekten sessiz/ortam-seviyesi chunk'lardan
+            # guncelle (rms esigin altinda) - is_loud'un aksine, "yuksek ama impulsif
+            # degil" (near-miss alkis/ani ses) chunk'lari da haric tutuyoruz; yoksa
+            # bunlar da EMA'yi yukari surukleyip CLAP_NOISE_FLOOR_MAX'a ragmen esigi
+            # gereksiz yukseltebilirdi. Ayrica CLAP_NOISE_FLOOR_MAX ile tavanlaniyor
+            # (bkz. o sabitin aciklamasi - konusma gibi surekli ama dusuk-crest sesler
+            # is_rms_loud'u da gecebilir, EMA'nin sinirsiz surunmesini onluyoruz).
+            _clap_noise_floor = min(
+                CLAP_NOISE_FLOOR_MAX,
+                _clap_noise_floor + CLAP_NOISE_FLOOR_EMA_ALPHA * (rms - _clap_noise_floor),
+            )
+        elif not is_impulsive:
+            # Yeterince yuksek ama yeterince "keskin" degil - uzaktan gelen bir alkis
+            # (oda yankisi crest factor'u dusurur) veya impulsif olmayan bir gurultu
+            # patlamasi (bagirma vb.) olabilir. INFO seviyesinde logluyoruz ki
+            # CLAP_MIN_CREST_FACTOR ayari gerekip gerekmedigi gercek kullanimda
+            # gorulebilsin.
+            logger.info(
+                "Yuksek ama yeterince impulsif degil (rms=%.0f, esik=%.0f, crest=%.1f, "
+                "gereken=%.1f) - alkis sayilmadi.",
+                rms, dynamic_threshold, crest_factor, CLAP_MIN_CREST_FACTOR,
+            )
+
         if is_loud and not clap_active:
             now = time.perf_counter()
             if last_clap_time is not None and clap_min_gap_s <= now - last_clap_time <= clap_max_gap_s:
                 logger.info(
-                    "Cift alkis algilandi (rms=%.0f, bekleme=%.1fs)",
+                    "Cift alkis algilandi (rms=%.0f, esik=%.0f, crest=%.1f, alkis-arasi=%.0fms, bekleme=%.1fs)",
                     rms,
+                    dynamic_threshold,
+                    crest_factor,
+                    (now - last_clap_time) * 1000,
                     now - wait_start,
                 )
                 return chunk
+            if last_clap_time is not None:
+                logger.info(
+                    "Yuksek+impulsif chunk algilandi ama cift alkis penceresi disinda "
+                    "(rms=%.0f, crest=%.1f, onceki alkistan %.0fms sonra - pencere %d-%dms).",
+                    rms,
+                    crest_factor,
+                    (now - last_clap_time) * 1000,
+                    CLAP_MIN_GAP_MS,
+                    CLAP_MAX_GAP_MS,
+                )
             last_clap_time = now
         clap_active = is_loud
 
@@ -279,9 +397,19 @@ def transcribe_once() -> Optional[str]:
 
 
 def listen_loop() -> Iterator[str]:
-    """State machine over a single persistent stream: IDLE (wake-word) <-> ACTIVE (VAD
-    capture + transcription). Continuously yields transcripts, one per utterance that
-    followed a detected wake word. Silent/empty turns are skipped without leaving ACTIVE.
+    """State machine over a single persistent stream: IDLE (wake-word) -> ACTIVE (VAD
+    capture + transcription) -> FOLLOWUP (brief re-listen without wake word) -> back to
+    ACTIVE if speech continues, or IDLE if the follow-up window times out. Continuously
+    yields transcripts. Empty/unintelligible turns are NOT dropped back to IDLE - a
+    misheard command doesn't force the user to re-trigger the wake word.
+
+    The follow-up deadline is only RESET to a fresh FOLLOWUP_WINDOW_MS after a turn
+    that actually produced text; empty turns (webrtcvad firing on ambient noise/breath
+    with nothing for faster-whisper's own vad_filter to keep - a real, observed
+    failure mode) just consume whatever time is left on the existing deadline instead
+    of granting a brand new window each time. Otherwise a string of noise-triggered
+    empty captures could keep re-arming a full window indefinitely, delaying the
+    return to IDLE far longer than FOLLOWUP_WINDOW_MS (see docs/ROADMAP.md Faz 1.1).
     """
     state = ListenState.IDLE
     try:
@@ -292,11 +420,28 @@ def listen_loop() -> Iterator[str]:
 
                 state = ListenState.ACTIVE
                 audio = _vad_record(stream, trailing=trailing)
-                if audio is None:
-                    continue
-                text = _transcribe(audio)
-                if text:
-                    yield text
+                # The turn that triggered ACTIVE always earns one full follow-up
+                # window, whether or not it produced text - matches the previous
+                # behavior for this first turn.
+                followup_deadline = time.perf_counter() + FOLLOWUP_WINDOW_MS / 1000
+                while audio is not None:
+                    text = _transcribe(audio)
+                    if text:
+                        yield text
+                        followup_deadline = time.perf_counter() + FOLLOWUP_WINDOW_MS / 1000
+
+                    state = ListenState.FOLLOWUP
+                    remaining_ms = int((followup_deadline - time.perf_counter()) * 1000)
+                    if remaining_ms <= 0:
+                        break
+                    logger.info(
+                        "Takip penceresi acik (kalan %.0fs) - 'Hey Jarvis' demeden devam edebilirsiniz...",
+                        remaining_ms / 1000,
+                    )
+                    audio = _vad_record(stream, max_wait_ms=remaining_ms)
+
+                if state is ListenState.FOLLOWUP:
+                    logger.info("Takip penceresi zaman asimina ugradi, uyku moduna donuluyor.")
     except sd.PortAudioError as exc:
         logger.error("Mikrofon acilamadi (state=%s): %s", state.name, exc)
 
