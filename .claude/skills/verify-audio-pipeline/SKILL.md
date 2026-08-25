@@ -7,13 +7,14 @@ disable-model-invocation: false
 ## Pipeline'i calistir
 
 Bu skill **wake-word'u atlar** — `transcribe_once()` (bkz.
-`audio_handler.py`) kendi stream'ini acip dogrudan VAD-tabanli, dinamik
-sureli kayda gecer (sabit 5sn blok yok, bkz. `audio_handler.py:_vad_record`).
-`listen_loop()`'un IDLE/ACTIVE state machine'ini (wake-word dahil) test
-etmek icin bunun yerine `verify-wakeword-pipeline` skill'ini kullan.
+`src/jarvis/ears/listener.py`) kendi stream'ini acip dogrudan VAD-tabanli,
+dinamik sureli kayda gecer (sabit 5sn blok yok, bkz.
+`src/jarvis/ears/listener.py:_vad_record`). `listen_loop()`'un IDLE/ACTIVE
+state machine'ini (wake-word dahil) test etmek icin bunun yerine
+`verify-wakeword-pipeline` skill'ini kullan.
 
 ```
-python audio_handler.py
+python -m src.jarvis.ears.listener
 ```
 
 Konsolda "Dinleniyor..." logu geldiginde konus; ~700ms sessizlik sonrasi
@@ -23,8 +24,8 @@ kayit otomatik durur, cikti "Jarvis Heard: <transkript>" seklinde gelmeli.
 
 1. Komut hatasiz sonlanmali (exit code 0). "faster-whisper 'cuda'/'cpu'
    cihazinda yuklendi" logu gorulmeli; hangi cihaza dustugune dikkat et —
-   `_load_model_with_fallback()` CUDA hatasi durumunda otomatik CPU'ya
-   duser ve bunu `[WARNING]` seviyesinde loglar.
+   `src/jarvis/ears/listener.py:_load_model_with_fallback()` CUDA hatasi
+   durumunda otomatik CPU'ya duser ve bunu `[WARNING]` seviyesinde loglar.
 2. Transkript soylenen cumleyle mantikli olcude ortusmeli (birebir esitlik
    sart degil, whisper ciktisi kucuk farkliliklar gosterebilir).
 3. Konusmadan uzun sure sessiz kalinirsa (~20sn) "Konusma algilanmadi

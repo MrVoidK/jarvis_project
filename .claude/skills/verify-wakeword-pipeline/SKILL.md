@@ -10,8 +10,9 @@ disable-model-invocation: false
 python main.py
 ```
 
-`audio_handler.py:listen_loop()` artik bir state machine: IDLE (wake-word
-bekleniyor) <-> ACTIVE (wake-word sonrasi VAD ile kayit + transkripsiyon).
+`src/jarvis/ears/listener.py:listen_loop()` artik bir state machine: IDLE
+(wake-word bekleniyor) <-> ACTIVE (wake-word sonrasi VAD ile kayit +
+transkripsiyon).
 
 ## Doğrulama adımları
 
@@ -36,7 +37,13 @@ bekleniyor) <-> ACTIVE (wake-word sonrasi VAD ile kayit + transkripsiyon).
    `pipeline-debugger` ile araştır.
 6. **Yanlış pozitif kontrolü:** Birkaç dakika normal konuşurken (wake-word
    söylemeden) hiç tetiklenmemeli. Sık yanlış pozitif oluyorsa
-   `audio_handler.py`'deki `WAKEWORD_THRESHOLD` (varsayılan 0.5) artırılabilir.
+   `src/jarvis/ears/listener.py`'deki `WAKEWORD_THRESHOLD` (varsayılan 0.5)
+   artırılabilir.
+7. **Takip penceresi:** Gerçek bir yanıt sonrası açılan takip penceresi
+   ("Takip penceresi acik (kalan Xs)") gürültü/sessizlikte düzgün azalıp
+   ~`FOLLOWUP_WINDOW_MS` (12sn) içinde IDLE'a dönmeli — sürekli sıfırdan
+   açılıp IDLE'a dönüşü süresiz ertelememeli (bkz. `docs/ROADMAP.md` Faz 1.1
+   bulgusu, düzeltildi).
 
 **Bilinen risk:** `hey_jarvis` modeli İngilizce sentetik seslerle
 eğitildi — Türkçe aksanla güvenilirliği düşükse bu bir bug değil, modelin
