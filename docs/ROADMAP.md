@@ -441,7 +441,7 @@ core/dispatcher.py,core/handlers.py}` + yeni `core/language.py`):
 
 ## Faz 3 — Sistem Entegrasyonları & Zero-Trust Güvenlik ⬜
 
-### 3.1 Tool Use 🟡 (yerel araçlar tamam, dış API'ler bekliyor)
+### 3.1 Tool Use 🟡 (yerel araçlar + Spotify tamam, Takvim bekliyor)
 
 **Tetikleme yöntemi (bilinçli karar):** araçlar `core/dispatcher.py`'deki
 **rule-based regex** ile tetikleniyor — Hermes'in gerçek function-calling'i
@@ -473,12 +473,34 @@ Alt adımlar:
 - [x] Sistem izleme tool'u: `tools/system_info.py` (`get_system_info`,
       Düşük) — `psutil` (CPU/RAM) + `nvidia-smi` (GPU/VRAM); GPU yoksa
       sessizce sadece CPU/RAM raporluyor.
-- [ ] **Harici API entegrasyonları** (müzik/Spotify, takvim/Google Calendar):
-      OAuth uygulaması kaydı + kullanıcı tarafından alınacak API
-      anahtarı/credential gerektirdiği için bu turun kapsamı dışında
-      bırakıldı — kullanıcı kendi Spotify/Google Cloud uygulamasını
-      kaydettiğinde ayrı bir adım olarak eklenecek (`.env` ile, asla koda
-      gömülmeden).
+- [x] **Harici API entegrasyonu — Spotify müzik kontrolü**:
+      `tools/spotify.py` (`play_music`/`pause_music`/`skip_track`, üçü de
+      Düşük risk — geri alınabilir, `read_notes` gibi bir gizlilik maliyeti
+      yok). `spotipy` (OAuth + Web API sarmalayıcı) kullanıyor;
+      credential'lar `.env`'den (`SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET`
+      /`SPOTIFY_REDIRECT_URI`), koda asla gömülmeden okunuyor. **Spotify
+      opsiyonel**: `.env`'de credential yoksa uygulama ÇÖKMÜYOR, sadece
+      Spotify tool'ları net bir TR/EN mesajla devre dışı kalıyor (statik
+      testle doğrulandı) — TTS'in zorunlu referans sesinden bilinçli olarak
+      farklı bir davranış, çünkü Spotify kullanmak istemeyen bir kullanıcı
+      bütün Jarvis'i kıramamalı. Yetkilendirme akışı: `python -m
+      src.jarvis.tools.spotify` ile tek seferlik tarayıcı tabanlı OAuth
+      (`.spotify_cache`'e yazılır, `.gitignore`'da — `.env` ile aynı
+      hassasiyet); sesli komutlar `cache_handler.get_cached_token()` ile
+      ÖNCE diskteki cache'e bakıyor (ağ/tarayıcı gerektirmez) — hiç
+      yetkilendirme yapılmamışsa spotipy'nin sesli bir komutun ortasında
+      beklenmedik şekilde tarayıcı açıp bloke olmasını önlemek için "önce
+      yetkilendirin" mesajı dönüyor. Hedef cihaz mantığı yazılmadı —
+      `device_id` verilmezse Web API otomatik olarak o an aktif cihazı
+      (bu makinede açık Spotify uygulaması) hedefliyor. Birim testleri
+      sahte bir Spotify client'ıyla (gerçek ağ/hesap gerektirmeden) tüm
+      yolları (başarı, cihaz yok, bulunamadı, yapılandırılmamış,
+      yetkilendirilmemiş) kapsıyor.
+- [ ] **Takvim entegrasyonu (Google Calendar)**: aynı gerekçeyle (OAuth
+      uygulaması kaydı kullanıcının kendisi tarafından yapılmalı) bu turun
+      kapsamı dışında — Spotify'daki desen (opsiyonel, `.env` tabanlı,
+      credential yoksa çökmez) tekrarlanabilir, kullanıcı kendi Google
+      Cloud uygulamasını kaydettiğinde ayrı bir adım olarak eklenecek.
 - [ ] Opsiyonel: bu tool katmanını MCP standardına uygun bir sunucu olarak
       paketleme (bkz. `docs/claude-code-rehberi.md` §6) — hem Jarvis hem
       Claude Code aynı araçları kullanabilsin.

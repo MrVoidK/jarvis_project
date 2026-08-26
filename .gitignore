@@ -22,6 +22,9 @@ __pycache__/
 .env
 secrets/
 
+# Spotify OAuth token cache (spotipy) - refresh token iceriyor, .env ile ayni hassasiyet
+.spotify_cache
+
 # Kullanici verisi - Jarvis'in kaydettigi notlar ve arac calisma dizini
 # (.env ile ayni mantik: kisisel, makineye ozel, repoya girmemeli)
 notes/

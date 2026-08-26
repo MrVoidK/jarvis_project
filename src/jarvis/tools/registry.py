@@ -12,6 +12,7 @@ from src.jarvis.tools.base import Tool
 from src.jarvis.tools.files import ListFilesTool
 from src.jarvis.tools.notes import CreateNoteTool, ReadNotesTool
 from src.jarvis.tools.shell import RunCommandTool
+from src.jarvis.tools.spotify import PauseMusicTool, PlayMusicTool, SkipTrackTool
 from src.jarvis.tools.system_info import SystemInfoTool
 
 TOOL_REGISTRY: dict[str, Tool] = {
@@ -22,5 +23,8 @@ TOOL_REGISTRY: dict[str, Tool] = {
         ListFilesTool(),
         RunCommandTool(),
         SystemInfoTool(),
+        PlayMusicTool(),
+        PauseMusicTool(),
+        SkipTrackTool(),
     )
 }

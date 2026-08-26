@@ -59,6 +59,18 @@ _RULES: dict[str, list[tuple[str, re.Pattern]]] = {
         ("tr", re.compile(r"\bsistem durumu\b", re.IGNORECASE)),
         ("en", re.compile(r"\bsystem status\b", re.IGNORECASE)),
     ],
+    "play_music": [
+        ("tr", re.compile(r"\bşarkı çal\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
+        ("en", re.compile(r"\bplay (?:music|song)\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
+    ],
+    "pause_music": [
+        ("tr", re.compile(r"\bmüziği duraklat\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bpause music\b", re.IGNORECASE)),
+    ],
+    "skip_track": [
+        ("tr", re.compile(r"\bşarkıyı geç\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bskip (?:song|track)\b", re.IGNORECASE)),
+    ],
 }
 
 _CLASSIFY_PROMPT_TEMPLATE = (
