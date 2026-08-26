@@ -105,7 +105,12 @@ class RunCommandTool(Tool):
     """Kullanicinin dikte ettigi terminal komutunu (onay sonrasi) calistirir."""
 
     name = "run_command"
-    description = "Kullanicinin soyledigi terminal komutunu calistirir."
+    description = (
+        "Kullanicinin acikca ve kelimesi kelimesine dikte ettigi bir terminal "
+        "komutunu calistirir. Bir sarki/parca calmak veya aramak icin BUNU "
+        "KULLANMA - search_music'i kullan. Bilmedigin bir dosya yolu, program "
+        "konumu veya URL UYDURMA."
+    )
     risk_level = RiskLevel.HIGH  # ISTISNASIZ - bkz. modul docstring'i, 1. katman
     parameters_schema: dict = {
         "command": {"type": "string", "description": "Calistirilacak Windows terminal komutu."}

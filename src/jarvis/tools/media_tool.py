@@ -208,8 +208,11 @@ class SearchMusicTool(Tool):
 
     name = "search_music"
     description = (
-        "Kullanicinin soyledigi sarki/sanatci adiyla Spotify'da arama acar "
-        "(otomatik calmaz, kullanici sonra kendisi baslatir)."
+        "Kullanici belirli bir sarki/parca/sanatci CALMAK, ARAMAK veya DINLEMEK "
+        "istedigi HER SEFERINDE bu araci kullan (orn. 'X sarkisini cal', "
+        "'play X'). Spotify'i o aramayla acar, kullanici sonra kendisi "
+        "baslatir. Bunun icin run_command KULLANMA veya bir dosya yolu/URL "
+        "UYDURMA - sadece bu araci cagir."
     )
     risk_level = RiskLevel.LOW  # sadece Spotify'i acar, keyfi komut calistirmaz
     parameters_schema: dict = {

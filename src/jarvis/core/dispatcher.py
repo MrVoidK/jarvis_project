@@ -48,7 +48,20 @@ _ROUTER_SYSTEM_PROMPT = (
     "one of the provided functions clearly matches their intent, call ONLY that "
     "function, exactly once. If the user is just chatting, asking a general "
     "question, or no function clearly matches their intent, do NOT call any "
-    "function."
+    "function.\n\n"
+    # search_music (Faz 3.3 gercek kullanim testi bulgusu): kucuk yerel modeller
+    # "play <song>" gibi istekler icin belirli bir arac varken bile run_command'a
+    # kacip URL/dosya yolu UYDURUYORDU (orn. var olmayan bir YouTube video ID'si
+    # veya olmayan bir kurulum yolu). Bu iki kural, modelin kendi "dunya
+    # bilgisine" guvenip halusinasyon uretmesini ACIKCA yasaklar.
+    "If the user asks to play, search for, or listen to a SPECIFIC song or "
+    "artist by name, you MUST call search_music with that song/artist as the "
+    "query - NEVER call run_command for this, even if you think you know a "
+    "file path or URL for it.\n"
+    "NEVER invent a file path, program location, or URL for run_command's "
+    "command argument. Only use run_command for a command the user explicitly "
+    "and literally dictated word-for-word. If you are not certain of the exact "
+    "command, do not call any function."
 )
 
 
