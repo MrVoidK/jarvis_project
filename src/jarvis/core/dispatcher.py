@@ -13,7 +13,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 from src.jarvis.adapters.agent_factory import AgentFactory
-from src.jarvis.adapters.tool_schema import build_ollama_tools
+from src.jarvis.adapters.tool_schema import build_ollama_tools, validate_arguments
 from src.jarvis.core.console import status_spinner
 from src.jarvis.core.language import detect_language
 from src.jarvis.tools.registry import TOOL_REGISTRY
@@ -125,11 +125,26 @@ class Dispatcher:
             )
         call = response.tool_calls[0]
 
-        if call.name not in TOOL_REGISTRY:
+        tool = TOOL_REGISTRY.get(call.name)
+        if tool is None:
             logger.warning("Dispatcher: router bilinmeyen bir arac secti: %r -> chat.", call.name)
             return Intent(name=DEFAULT_INTENT_NAME, confidence=0.3, source="llm")
 
+        # Fail-closed semantik dogrulama (bkz. adapters/tool_schema.py:validate_arguments
+        # docstring'i, security-reviewer bulgusu): argumanlar semaya uymuyorsa
+        # (beklenmeyen tip) tum cagri reddedilir - guardrail/onay panelinin
+        # sessizce atlayabilecegi dogrulanmamis bir deger asla Intent.parameters'a
+        # ulasmaz.
+        validated_arguments = validate_arguments(tool, call.arguments)
+        if validated_arguments is None:
+            logger.warning(
+                "Dispatcher: router argumanlari semaya uymuyor (%s: %r) -> chat.",
+                call.name,
+                call.arguments,
+            )
+            return Intent(name=DEFAULT_INTENT_NAME, confidence=0.3, source="llm")
+
         lang = detect_language(text)
-        parameters = {**call.arguments, "lang": lang}
+        parameters = {**validated_arguments, "lang": lang}
         logger.info("Dispatcher: router aracı secti (%s).", call.name)
         return Intent(name=call.name, confidence=0.9, source="llm", parameters=parameters)

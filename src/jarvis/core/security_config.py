@@ -100,6 +100,18 @@ def _get_config() -> SecurityConfig:
 def is_path_safe(path: "os.PathLike[str] | str", config: Optional[SecurityConfig] = None) -> bool:
     """`path`, izinli dizinlerden birinin icinde mi (veya birebir kendisi mi)?
 
+    KAPSAM UYARISI (security-reviewer bulgusu, Faz 3.3): bu fonksiyon su an
+    SADECE kod-sabit yollarla (notes_tool.py'nin `<vault>/Jarvis Notes/
+    Jarvis Log.md`'si gibi, LLM/kullanici girdisi hic karismadan kurulmus
+    yollarla) cagriliyor ve bu kullanimda guvenli. Ama genel-amacli bir
+    guvenlik primitive'i gibi gorunuyor - ileride bir tool, LLM'in urettigi
+    bir dosya adi/yolu parametresini DOGRUDAN buraya geçirirse, şunlar EK
+    olarak ele alinmadan kullanilmamali: (a) UNC yollari (`\\\\server\\share`)
+    veya `\\\\?\\`/`\\\\.\\` cihaz ad alani onekleri icin acik bir ret,
+    (b) dosya adi/uzantisi uzerinde bir allowlist - bu fonksiyon SADECE dizin
+    bazli calisir, izinli bir dizin icindeki `.env`/`.git/config` gibi
+    hassas dosyalara erisimi engellemez.
+
     `resolve()` symlink'leri gercek hedefe cozdugu icin bir symlink uzerinden
     izinli dizin disina kacis da otomatik yakalanir.
     """

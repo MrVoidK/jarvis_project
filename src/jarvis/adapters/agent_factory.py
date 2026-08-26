@@ -101,10 +101,21 @@ class LlamaOrchestratorAdapter(Agent):
             raise
 
         raw_calls = response["message"].get("tool_calls") or []
-        tool_calls = [
-            ToolCall(name=call["function"]["name"], arguments=dict(call["function"]["arguments"]))
-            for call in raw_calls
-        ]
+        # security-reviewer bulgusu (Faz 3.3): raw_calls'un beklenen bicimde
+        # olacaginin garantisi yok - bozuk/beklenmedik bir yanit burada
+        # yakalanmazsa KeyError/TypeError, classify() -> _handle_turn() ->
+        # run_jarvis() zincirinde HICBIR yerde yakalanmadan yukari cikar
+        # (run_jarvis()'in try/except'i SADECE KeyboardInterrupt yakalar) ve
+        # tum Jarvis surecini cokertir. Bozuk bir tool_call, "hicbir arac
+        # secilmedi" (bos liste) sayilir - fail-safe, crash degil.
+        try:
+            tool_calls = [
+                ToolCall(name=call["function"]["name"], arguments=dict(call["function"]["arguments"]))
+                for call in raw_calls
+            ]
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.error("Orkestrator (tool-calling): beklenmeyen tool_call bicimi: %s", exc)
+            tool_calls = []
         content = (response["message"].get("content") or "").strip() or None
         return AgentToolResponse(tool_calls=tool_calls, content=content)
 

@@ -50,6 +50,21 @@ _DANGEROUS_PATTERNS = [
     re.compile(r"\bnetsh\b.*firewall", re.IGNORECASE),
     # Veritabani
     re.compile(r"\bdrop\s+(table|database)\b", re.IGNORECASE),
+    # security-reviewer (Faz 3.3, semantic router gecisi) bulgulari: eksik LOLBAS/
+    # kalicilik/veri-imha kaliplari - bu araclarin RunCommandTool'un icerigi artik
+    # LLM tarafindan uretiliyor olmasi listeyi daha kritik hale getirdi.
+    re.compile(r"\bmshta\b", re.IGNORECASE),  # uzaktan HTA/script calistirma
+    re.compile(r"\bregsvr32\b.*/i:", re.IGNORECASE),  # "Squiblydoo" - imzali binary ile uzaktan script
+    re.compile(r"\brundll32\b", re.IGNORECASE),
+    re.compile(r"\bwmic\b.*/format", re.IGNORECASE),  # XSL script uzerinden kod calistirma
+    re.compile(r"\bbitsadmin\b.*/transfer", re.IGNORECASE),  # BITS uzerinden dosya indirme
+    re.compile(r"\bschtasks\b.*/create", re.IGNORECASE),  # zamanlanmis gorevle kalicilik
+    re.compile(r"\bvssadmin\b.*delete\s+shadows", re.IGNORECASE),  # golge kopyalari silme (ransomware)
+    re.compile(r"\bwbadmin\b.*delete", re.IGNORECASE),  # yedek silme
+    re.compile(r"\bwevtutil\b.*\bcl\b", re.IGNORECASE),  # olay gunlugu temizleme (iz silme)
+    re.compile(r"\bcertutil\b.*-decode\b", re.IGNORECASE),  # base64-encoded payload cozme
+    re.compile(r"\bnet\s+user\b.*/add\b", re.IGNORECASE),  # yeni kullanici olusturma
+    re.compile(r"\bnet\s+localgroup\s+administrators\b", re.IGNORECASE),  # yetki yukseltme
 ]
 
 

@@ -70,16 +70,25 @@ def _execute_tool(tool: Tool, intent, stop_event: Optional[threading.Event]) -> 
     `intent.parameters["content"]` guardrail'den geciyordu (parametreler tek bir
     sabit "content" regex named-group'undan geliyordu). Artik router, tool-ozgu
     anlamli parametre adlari (`command`, `app_name`, `content`) uretiyor - tek bir
-    sabit anahtara guvenmek yetersiz. Bu yuzden `lang` haric TUM string
-    parametreler taranip onay panelinde gosteriliyor (bkz. tools/terminal_tool.py
-    modul docstring'indeki "GECIS TAMAMLANDI" notu - bu, o gecisin somut
-    mitigasyonu).
+    sabit anahtara guvenmek yetersiz. Bu yuzden `lang` haric TUM parametreler
+    taranip onay panelinde gosteriliyor (bkz. tools/terminal_tool.py modul
+    docstring'indeki "GECIS TAMAMLANDI" notu - bu, o gecisin somut mitigasyonu).
+
+    GUVENLIK NOTU (security-reviewer bulgusu, Faz 3.3): degerler `str()` ile
+    donusturuluyor, `isinstance(value, str)` ile FILTRELENMIYOR - eski hali,
+    router beklenmedik bir tipte (liste/dict/sayi) bir deger urettiginde o
+    degeri SESSIZCE hem guardrail taramasindan hem onay panelinden atlatirdi
+    (ama tool.execute() yine de tam/dogrulanmamis degeri alirdi). Asil
+    savunma `Dispatcher.classify()`'daki `validate_arguments()` (fail-closed,
+    bkz. adapters/tool_schema.py) - bu satirdaki `str()` ise "beklenmeyen bir
+    deger buraya kadar sizarsa bile hicbir sey sessizce gizlenmez" seklinde
+    ikinci bir savunma katmani.
     """
     lang = intent.parameters.get("lang", "en")
     risky_values = {
-        key: value
+        key: str(value)
         for key, value in intent.parameters.items()
-        if key != "lang" and isinstance(value, str) and value
+        if key != "lang" and value not in (None, "")
     }
 
     # (1) Risk tasiyabilecek TUM parametreleri, LLM ciktisi icin kullandigimiz

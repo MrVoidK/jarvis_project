@@ -84,3 +84,21 @@ def test_classify_falls_back_to_chat_when_router_hallucinates_unknown_tool(monke
 
     assert intent.name == DEFAULT_INTENT_NAME
     assert intent.source == "llm"
+
+
+def test_classify_falls_back_to_chat_when_router_produces_wrong_argument_type(monkeypatch):
+    """security-reviewer bulgusu (Faz 3.3): kucuk yerel modeller JSON-Schema'ya
+    her zaman uymayabilir - "content" bir string yerine bir liste gelirse
+    (fail-closed validate_arguments) tum cagri reddedilmeli, dogrulanmamis
+    deger asla Intent.parameters'a ulasmamali."""
+    _patch_orchestrator(
+        monkeypatch,
+        AgentToolResponse(
+            tool_calls=[ToolCall(name="create_note", arguments={"content": ["rm", "-rf", "/"]})]
+        ),
+    )
+
+    intent = Dispatcher().classify("bir not al")
+
+    assert intent.name == DEFAULT_INTENT_NAME
+    assert intent.source == "llm"
