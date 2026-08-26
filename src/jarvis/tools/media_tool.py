@@ -20,12 +20,17 @@ kontrol eder - "filanca sarkiyi cal" gibi belirli-parca istekleri
 karsilayamaz (bu, Spotify Web API'sinin arama+oynatma-baslatma yetenegiydi,
 API kaldirilirken bilincli olarak birlikte gitti). Gercek kullanim testinde
 bu bosluk, router'in boyle bir istek icin bir arac bulamayip HALUSINE
-edilmis bir shell komutu (orn. "spotify play '...'") uretmesine yol acti -
-`SearchMusicTool` bu bosluga API'siz bir cevap: Spotify'in kendi `spotify:
-search:` URI semasini `os.startfile()` ile acar (shell=True/subprocess YOK,
-enjeksiyon yuzeyi yok) - kullanici Spotify'da arama sonuclarini gorup
-KENDISI oynatmayi baslatir (tam otomatik degil, ama isimle arama artik
-mumkun ve API/OAuth gerekmiyor).
+edilmis bir shell komutu (orn. "spotify play '...'") uretmesine yol acti.
+
+`SearchMusicTool` buna iki katmanli bir cevap: `tools/spotify_search.py`
+(Client Credentials/app-only Spotify Web API - kisisel OAuth/giris YOK,
+sadece SPOTIFY_CLIENT_ID/SECRET ile arama yapabilen bir "uygulama kimligi"
+token'i) ile parcanin Spotify ID'sini bulup `spotify:track:<id>` URI'siyle
+GERCEK otomatik calma tetikler; API yapilandirilmamis/basarisiz olursa
+sessizce eski davranisa (`spotify:search:` ile sadece arama acma, kullanici
+kendisi baslatir) duser - hicbir sekilde crash olmaz. Her iki durumda da
+`os.startfile()` kullanilir (shell=True/subprocess YOK, enjeksiyon yuzeyi
+yok).
 """
 
 import ctypes
@@ -34,6 +39,7 @@ import os
 from urllib.parse import quote
 
 from src.jarvis.core.risk import RiskLevel
+from src.jarvis.tools import spotify_search
 from src.jarvis.tools.base import Tool
 
 logger = logging.getLogger("jarvis.tools.media")
@@ -197,26 +203,38 @@ _SEARCH_OPENED_MESSAGES = {
     "tr": "Spotify'da '{query}' aramasını açtım.",
     "en": "I've opened a Spotify search for '{query}'.",
 }
+_PLAYING_MESSAGES = {
+    "tr": "'{query}' çalınıyor.",
+    "en": "Playing '{query}'.",
+}
 
 
 class SearchMusicTool(Tool):
-    """Spotify'i belirli bir sarki/sanatci aramasiyla acar - `spotify:search:`
-    URI semasi, `os.startfile()` ile (shell=True/subprocess YOK, enjeksiyon
-    yuzeyi yok). Kullanici sonucu goruntuleyip oynatmayi KENDISI baslatir -
-    bkz. modul docstring'i, "KAPSAM SINIRI".
+    """Belirli bir sarkiyi Spotify'da CALAR (yapilandirilmissa) veya en azindan
+    aramasini acar (fallback).
+
+    IKI KATMANLI DAVRANIS: once `spotify_search.find_track_id()` ile (Client
+    Credentials/app-only Spotify Web API, kisisel OAuth YOK - bkz. o modulun
+    docstring'i) parcanin Spotify ID'sini bulmayi dener; bulursa
+    `spotify:track:<id>` URI'siyle yerel istemcide GERCEK otomatik calma
+    tetiklenir. API yapilandirilmamis/basarisiz olursa (`.env`'de
+    SPOTIFY_CLIENT_ID/SECRET yoksa veya ag hatasi varsa) sessizce eski
+    davranisa duser: `spotify:search:` ile sadece arama acilir, kullanici
+    kendisi baslatir. Ikisinde de `os.startfile()` kullanilir (shell=True/
+    subprocess YOK, enjeksiyon yuzeyi yok).
     """
 
     name = "search_music"
     description = (
         "Kullanici belirli bir sarki/parca/sanatci CALMAK, ARAMAK veya DINLEMEK "
         "istedigi HER SEFERINDE bu araci kullan (orn. 'X sarkisini cal', "
-        "'play X'). Spotify'i o aramayla acar, kullanici sonra kendisi "
-        "baslatir. Bunun icin run_command KULLANMA veya bir dosya yolu/URL "
-        "UYDURMA - sadece bu araci cagir."
+        "'play X'). Mumkunse sarkiyi Spotify'da otomatik calar, degilse "
+        "aramasini acar. Bunun icin run_command KULLANMA veya bir dosya "
+        "yolu/URL UYDURMA - sadece bu araci cagir."
     )
-    risk_level = RiskLevel.LOW  # sadece Spotify'i acar, keyfi komut calistirmaz
+    risk_level = RiskLevel.LOW  # sadece Spotify'i acar/calar, keyfi komut calistirmaz
     parameters_schema: dict = {
-        "query": {"type": "string", "description": "Aranacak sarki veya sanatci adi."}
+        "query": {"type": "string", "description": "Aranacak/calinacak sarki veya sanatci adi."}
     }
     required_parameters: list[str] = ["query"]
 
@@ -226,12 +244,19 @@ class SearchMusicTool(Tool):
         if not query:
             return _localized(_EMPTY_QUERY_MESSAGES, lang)
 
-        uri = f"spotify:search:{quote(query)}"
+        track_id = spotify_search.find_track_id(query)
+        if track_id:
+            uri = f"spotify:track:{track_id}"
+            success_messages = _PLAYING_MESSAGES
+        else:
+            uri = f"spotify:search:{quote(query)}"
+            success_messages = _SEARCH_OPENED_MESSAGES
+
         try:
             os.startfile(uri)  # noqa: S606 - URI semasi, shell yorumlamasi yok
         except OSError:
             logger.warning("Spotify URI-semasi acilamadi (Spotify kurulu degil mi?): %r", uri)
             return _localized(_SPOTIFY_NOT_INSTALLED_MESSAGES, lang)
 
-        logger.info("Spotify arama URI'si acildi: %r", uri)
-        return _localized(_SEARCH_OPENED_MESSAGES, lang).format(query=query)
+        logger.info("Spotify URI'si acildi: %r", uri)
+        return _localized(success_messages, lang).format(query=query)

@@ -53,7 +53,10 @@ def test_volume_down_sends_correct_vk(monkeypatch):
     assert calls == [media_module.VK_VOLUME_DOWN]
 
 
-def test_search_music_opens_spotify_search_uri(monkeypatch):
+def test_search_music_opens_spotify_search_uri_when_track_not_found(monkeypatch):
+    """spotify_search.find_track_id() None donerse (API yapilandirilmamis/basarisiz) -
+    eski davranisa (sadece arama ac) sessizce duser."""
+    monkeypatch.setattr(media_module.spotify_search, "find_track_id", lambda query: None)
     calls: list[str] = []
     monkeypatch.setattr(media_module.os, "startfile", calls.append)
 
@@ -63,7 +66,26 @@ def test_search_music_opens_spotify_search_uri(monkeypatch):
     assert "Bohemian Rhapsody" in result
 
 
+def test_search_music_auto_plays_when_track_id_found(monkeypatch):
+    """spotify_search.find_track_id() bir ID donerse - GERCEK otomatik calma
+    (`spotify:track:<id>`) tetiklenmeli, sadece arama degil."""
+    monkeypatch.setattr(media_module.spotify_search, "find_track_id", lambda query: "abc123")
+    calls: list[str] = []
+    monkeypatch.setattr(media_module.os, "startfile", calls.append)
+
+    result = media_module.SearchMusicTool().execute({"lang": "en", "query": "Bohemian Rhapsody"})
+
+    assert calls == ["spotify:track:abc123"]
+    assert "playing" in result.lower()
+    assert "Bohemian Rhapsody" in result
+
+
 def test_search_music_rejects_empty_query(monkeypatch):
+    monkeypatch.setattr(
+        media_module.spotify_search,
+        "find_track_id",
+        lambda query: (_ for _ in ()).throw(AssertionError("cagrilmamali")),
+    )
     monkeypatch.setattr(
         media_module.os, "startfile", lambda uri: (_ for _ in ()).throw(AssertionError("cagrilmamali"))
     )
@@ -73,6 +95,8 @@ def test_search_music_rejects_empty_query(monkeypatch):
 
 
 def test_search_music_handles_missing_spotify_handler(monkeypatch):
+    monkeypatch.setattr(media_module.spotify_search, "find_track_id", lambda query: None)
+
     def _raise(uri):
         raise OSError("no application associated")
 
