@@ -37,13 +37,21 @@ ince bir `main.py` giriş noktası var.
   `speak(text, language=None)` çağrıldığında `inference_stream()` ile
   üretilen ses chunk'ları, disk'e `.wav` yazmadan doğrudan
   `sounddevice.OutputStream` ile hoparlöre akıtılır.
-- **Faz 2 iskeleti** (`src/jarvis/{core,adapters,agents}/`) — yazıldı,
-  bağımsız test edilebilir, ama **henüz canlı döngüye bağlı değil**:
-  `core/dispatcher.py` (Pydantic `Intent` + hibrit rule/LLM sınıflandırma),
-  `agents/base.py` (`Agent` arayüzü) + `adapters/agent_factory.py`
+- **Semantic Router + Tool Use** (Faz 3.3, canlı döngüye bağlı) —
+  `core/dispatcher.py:Dispatcher.classify()` önce `_RULES`'taki tek fast-path
+  kurala (`get_time`) bakar, eşleşmezse `AgentFactory.create("orchestrator")`
+  (yerel `llama3.1:8b`) ile Ollama **native tool-calling**'i kullanarak
+  (şema üretimi `adapters/tool_schema.py`) `tools/registry.py:TOOL_REGISTRY`'den
+  bir araç seçer; `core/app.py` seçileni `core/risk.py` risk seviyesine göre
+  `[Y/N]` onayından (rich panelleriyle — `core/console.py:print_approval_panel`/
+  `print_router_decision`) geçirip çalıştırır. `agents/base.py` (`Agent`:
+  `respond()` + `call_tools()`) + `adapters/agent_factory.py`
   (`LlamaOrchestratorAdapter`/`HermesAgentAdapter`/`ClaudeCodeAdapter` —
-  sonuncusu `.env`/SDK eksik olduğu için stub), `core/guardrail/`
-  (Chain-of-Responsibility: `InputInjectionCheck`, `OutputSafetyCheck`).
+  sadece ilki `call_tools()`'u gerçekten uyguluyor). `core/guardrail/`
+  (Chain-of-Responsibility: `InputInjectionCheck`, `OutputSafetyCheck`) artık
+  router'ın ürettiği TÜM tool parametrelerini tarıyor. `core/security_config.py`
+  + `config/security.yaml` (kişisel, gitignore'da; şablon: `security.example.yaml`)
+  `allowed_directories`/`known_applications`/`obsidian_vault` sağlar.
 - `src/jarvis/core/app.py:run_jarvis()` — Ears→Brain→Mouth'u bağlayan
   giriş noktası; kökteki `main.py` sadece bunu çağırır.
 
@@ -67,12 +75,12 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
    `src/jarvis/brain/llm.py`)
 3. **Mouth / TTS** — yanıt → sesli çıktı (durum: tamam — XTTS-v2 çift-dilli
    voice cloning, `src/jarvis/mouth/tts.py`)
-4. **Modüler Komut Yöneticisi** — `src/jarvis/` paketine taşındı; intent
-   dispatcher + multi-agent adapter + guardrail iskeleti yazıldı (durum:
-   🟡 — canlı döngüye bağlanması sıradaki adım)
-5. **Sistem Entegrasyonları / Tool Use** — dosya yönetimi, terminal komutları,
-   sistem izleme, API entegrasyonları
-6. **Otonom Ajan Döngüsü** — ileri düzey görev zincirleri
+4. **Modüler Komut Yöneticisi** (durum: tamam — intent dispatcher [fast-path
+   regex + semantic router] + risk-onaylı `TOOL_REGISTRY` çalıştırma, canlı
+   döngüye bağlı)
+5. **Sistem Entegrasyonları / Tool Use** (durum: tamam, yerel/API'siz — Obsidian
+   not, dosya listeleme, terminal/uygulama başlatma, sistem izleme, medya kontrolü)
+6. **Otonom Ajan Döngüsü** — ileri düzey görev zincirleri (durum: bekliyor)
 
 ## Komutlar
 
@@ -80,6 +88,9 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
   yok, atlanırsa XTTS sessizce CPU-only'e düşüp çok yavaşlar):
   1. `venv\Scripts\pip install torch==2.11.0+cu128 torchaudio==2.11.0+cu128 --index-url https://download.pytorch.org/whl/cu128`
   2. `venv\Scripts\pip install -r requirements.txt`
+  3. `config/security.example.yaml`'ı `config/security.yaml` olarak kopyalayıp
+     gerçek Obsidian vault yolunuzu/uygulama komutlarınızı girin (bu dosya
+     gitignore'da — kişisel/makineye özel yol içerir).
 - Çalıştırma (tam döngü): `python main.py`
 - Sadece Ears testi: `python -m src.jarvis.ears.listener`
 - Test: `python -m pytest tests/ -v` (bare `pytest` değil — `-m` olmadan
@@ -146,21 +157,26 @@ system_prompt.txt   # Brain persona/kuralları (kod dışı, düzenlenebilir)
 jarvis_reference.wav      # Mouth EN referans sesi (zorunlu)
 jarvis_reference_tr.wav   # Mouth TR referans sesi (opsiyonel)
 requirements.txt
+config/security.example.yaml   # Şablon (commit'lenir); security.yaml gitignore'da
 src/jarvis/
 ├── ears/listener.py          # Ears — sounddevice + faster-whisper + wake-word
 ├── brain/llm.py              # Brain — Ollama/llama3.1, streaming + hafıza
 ├── mouth/tts.py               # Mouth — XTTS-v2 çift-dilli TTS
 ├── core/
 │   ├── app.py                  # run_jarvis() — MVP döngüsü (Ears→Brain→Mouth)
-│   ├── console.py              # rich tabanlı merkezi konsol/loglama katmanı
-│   ├── dispatcher.py           # Intent sınıflandırma (Pydantic, hibrit rule/LLM)
+│   ├── console.py              # rich tabanlı konsol + onay/router panelleri
+│   ├── dispatcher.py           # Intent sınıflandırma (fast-path + semantic router)
+│   ├── security_config.py      # security.yaml okuma + is_path_safe()
 │   └── guardrail/               # Chain-of-Responsibility I/O kontrolleri
 │   ├── risk.py                 # RiskLevel + [Y/N] onay (Zero-Trust, Faz 3)
 │   └── paths.py                 # PROJECT_ROOT (CWD-bağımsız mutlak yollar)
-├── tools/                       # Faz 3 araçları: base(ABC)+registry, notes,
-│                                #  files, shell (HIGH risk), system_info
-├── adapters/agent_factory.py   # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri
-└── agents/base.py               # Agent (ABC) arayüzü
+├── tools/                       # base(ABC)+registry, notes_tool (Obsidian),
+│                                #  files, terminal_tool (run_command HIGH +
+│                                #  launch_app), system_info, media_tool
+├── adapters/
+│   ├── agent_factory.py         # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri
+│   └── tool_schema.py            # Tool -> Ollama function-calling şeması
+└── agents/base.py               # Agent (ABC): respond() + call_tools()
 .claude/            # Claude Code yapılandırması (agents, rules, skills, hooks)
 docs/               # ROADMAP.md, ARCHITECTURE.md, claude-code-rehberi.md
 ```

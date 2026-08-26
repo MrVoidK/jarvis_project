@@ -443,11 +443,13 @@ core/dispatcher.py,core/handlers.py}` + yeni `core/language.py`):
 
 ### 3.1 Tool Use 🟡 (yerel araçlar + Spotify tamam, Takvim bekliyor)
 
-**Tetikleme yöntemi (bilinçli karar):** araçlar `core/dispatcher.py`'deki
-**rule-based regex** ile tetikleniyor — Hermes'in gerçek function-calling'i
-(serbest doğal dille "Jarvis bir hatırlatma bırak..." demek) ayrı ve büyük
-bir sonraki adım olarak bırakıldı. Bugün regex dışında kalan ifadeler
-normal sohbete düşüyor, tool tetiklemiyor.
+**Tetikleme yöntemi (bilinçli karar, SONRADAN DEĞİŞTİ — bkz. 3.3):** araçlar
+`core/dispatcher.py`'deki **rule-based regex** ile tetikleniyordu — gerçek
+function-calling (serbest doğal dille "Jarvis bir hatırlatma bırak..." demek)
+ayrı ve büyük bir sonraki adım olarak bırakılmıştı. Bugün regex dışında kalan
+ifadeler normal sohbete düşüyordu, tool tetiklemiyordu. **Bu adım artık
+atıldı** (§3.3): `_RULES` sadece `get_time` için fast-path tutuyor, geri kalan
+tüm araçlar Ollama native tool-calling üzerinden semantik olarak yönlendiriliyor.
 
 Alt adımlar:
 - [x] Tool arayüz şeması: `tools/base.py`'de `Tool(ABC)` — `name`,
@@ -473,7 +475,10 @@ Alt adımlar:
 - [x] Sistem izleme tool'u: `tools/system_info.py` (`get_system_info`,
       Düşük) — `psutil` (CPU/RAM) + `nvidia-smi` (GPU/VRAM); GPU yoksa
       sessizce sadece CPU/RAM raporluyor.
-- [x] **Harici API entegrasyonu — Spotify müzik kontrolü**:
+- [x] ~~**Harici API entegrasyonu — Spotify müzik kontrolü**~~ **KALDIRILDI,
+      bkz. §3.3** — yerini yerel Windows medya tuşu simülasyonuna
+      (`tools/media_tool.py`) bıraktı. Asağıdaki paragraf, o zamanki tasarımın
+      tarihsel kaydı olarak duruyor:
       `tools/spotify.py` (`play_music`/`pause_music`/`skip_track`, üçü de
       Düşük risk — geri alınabilir, `read_notes` gibi bir gizlilik maliyeti
       yok). `spotipy` (OAuth + Web API sarmalayıcı) kullanıyor;
@@ -555,7 +560,8 @@ Faz 3'ün zorunlu adımı — CLAUDE.md'nin kendi talimatı):
       SADECE `content`'in regex'ten (LLM'e hiç uğramadan) gelmesine
       dayanıyor. İçerik çıkarımı ileride LLM'e taşınırsa bu savunma
       geçersiz olur ve prompt-injection→RCE zinciri açılır — `shell.py`
-      docstring'ine kritik uyarı olarak eklendi.
+      docstring'ine kritik uyarı olarak eklendi. **Bu geçiş §3.3'te
+      gerçekleşti; mitigasyonlar için oraya bakın.**
 
 ### 3.2 Zero-Trust Erişim Kontrolü 🟡 (risk+onay tamam, kimlik doğrulama bekliyor)
 
@@ -585,6 +591,66 @@ Faz 3'ün zorunlu adımı — CLAUDE.md'nin kendi talimatı):
       tekrar gözden geçirilmesi — bu turda fiilen uygulandı
       (`security-reviewer` çağrıldı, bulguları düzeltildi ve regresyon
       testine bağlandı); süreç olarak kalıcılaştırılması sürüyor.
+
+### 3.3 Semantic Router & Yerel "Computer-Use" Geçişi ✅
+
+Yukarıdaki "bilinçli karar"ın (rule-based regex, §3.1) ve Spotify API
+bağımlılığının tersine çevrildiği geçiş. İki bağımsız ama birlikte yapılan
+dönüşüm:
+
+- [x] **Semantic router**: `core/dispatcher.py:_RULES` sadece `get_time`
+      için fast-path tutacak şekilde küçültüldü (`list_files`, `create_note`,
+      `read_notes`, `run_command`, `get_system_info`, eski müzik intent'leri
+      kaldırıldı). `Dispatcher.classify()` — eskiden ölü kod olan, sadece
+      serbest-metin bir intent adı döndüren hali — tamamen yeniden yazıldı:
+      artık `AgentFactory.create("orchestrator")` (yerel `llama3.1:8b`) ile
+      Ollama'nın **native tool-calling** arayüzünü (`ollama.chat(...,
+      tools=[...])`) kullanıyor, `TOOL_REGISTRY`'deki her aracı
+      `adapters/tool_schema.py:build_ollama_tools()` ile bir JSON-Schema
+      function tanımına çeviriyor. Model artık serbest metin değil,
+      structured `tool_calls` (isim + argümanlar) döndürüyor — parse
+      belirsizliği yok. `agents/base.py`'ye `ToolCall`/`AgentToolResponse` +
+      `Agent.call_tools()` eklendi (mevcut `respond()`'a dokunulmadı).
+      **Bilinen maliyet**: rule-eşleşmeyen her turda artık (router + varsa
+      Brain) iki ayrı LLM çağrısı olabiliyor — kabul edilen bir trade-off.
+      **Gelecek iyileştirme adayı**: router+chat'i tek streaming çağrısına
+      birleştirmek, veya daha küçük/hızlı bir router modeli (örn.
+      `llama3.2:3b`) kullanmak.
+- [x] **API'siz yerel araçlar**: `tools/spotify.py` (spotipy, OAuth, ağ
+      bağımlılığı) tamamen kaldırıldı; yerine `tools/media_tool.py` geldi —
+      `ctypes.windll.user32.SendInput` ile Windows sanal medya tuşları
+      (`VK_MEDIA_PLAY_PAUSE`/`NEXT_TRACK`/`PREV_TRACK`/`VK_VOLUME_*`), yeni
+      pip bağımlılığı yok. `tools/notes.py` → `tools/notes_tool.py`: artık
+      proje içi `notes/notes.txt` yerine kullanıcının gerçek Obsidian
+      vault'una (`config/security.yaml:obsidian_vault`) sabit bir
+      `Jarvis Notes/Jarvis Log.md` dosyası olarak yazıyor/okuyor (dosya adı
+      LLM parametresinden asla gelmiyor — vault'ta keyfi dosyaya
+      yazma/silme riskini kapatan bilinçli bir kapsam sınırlaması).
+      `tools/shell.py` → `tools/terminal_tool.py`: aynı `RunCommandTool` +
+      yeni `LaunchAppTool` (`config/security.yaml:known_applications`
+      allowlist'inden bir uygulama başlatır, MEDIUM risk).
+- [x] **`core/security_config.py` (yeni)**: `config/security.yaml`'dan
+      (kişisel/makineye özel, `.gitignore`'da — şablonu
+      `security.example.yaml` commit'lenir) `allowed_directories`,
+      `known_applications`, `obsidian_vault` okuyor. `is_path_safe()` —
+      `Path.resolve()` + `Path.is_relative_to()` ile path traversal ve
+      symlink-kaçışını engeller (string-prefix karşılaştırması BİLİNÇLİ
+      OLARAK kullanılmadı — kardeş dizin yanlış-pozitifi riski).
+- [x] **Güvenlik geçişinin somut mitigasyonu** (§3.1'deki "mimari varsayım"
+      bulgusuna yanıt — artık `run_command`'ın `command`'ı LLM tarafından
+      üretiliyor): `core/app.py:_execute_tool`, `intent.parameters`'taki
+      `lang` hariç TÜM string değerleri (sadece `content`'i değil)
+      `OutputSafetyCheck`'ten geçiriyor; `core/console.py:print_approval_panel`
+      (yeni, `rich.Panel`) onay ekranında LLM'in ürettiği TAM parametreleri
+      büyük ve net gösteriyor — kullanıcı kendi söylediğinden farklı bir
+      argümanı onaylıyor olsa bile bunu görüyor; `print_router_decision`
+      (yeni) hangi aracın seçildiğini şeffaflaştırıyor (sadece
+      `source=="llm"` ve bir araç gerçekten seçildiğinde gösteriliyor, düz
+      sohbette gürültü yapmıyor). `launch_app` ayrıca allowlist ile
+      sınırlandırılarak LLM'in keyfi bir path/komut üretmesi engellendi.
+      Bu geçiş sonrası `terminal_tool.py`/`dispatcher.py`/`app.py`
+      `security-reviewer` subagent'ı ile incelendi (bulgular varsa ayrı bir
+      düzeltme commit'i olarak ele alındı — bkz. proje geçmişi).
 
 ## Faz 4 — Otonom Ajan Döngüsü ⬜
 
