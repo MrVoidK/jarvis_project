@@ -4,7 +4,43 @@
 gercek klavye/medya olayi uretilmiyor (bkz. CLAUDE.md Komutlar).
 """
 
+import ctypes
+import logging
+
 from src.jarvis.tools import media_tool as media_module
+
+
+def test_input_struct_matches_real_win32_size():
+    """Regresyon: `_InputUnion` sadece `ki`yi tanimlarsa (MouseInput/HardwareInput
+    olmadan) union kucuk kaliyor, tum _Input struct'i 32 byte oluyordu - gercek
+    Win32 INPUT struct'i (64-bit'te) 40 byte. SendInput, cbSize parametresi
+    kendi ic sizeof(INPUT)'iyla eslesmezse hicbir exception FIRLATMADAN sessizce
+    basarisiz oluyor (0 donuyor) - gercek kullanim testinde tam olarak bu oldu:
+    loglar "tus gonderildi" diyordu ama fiziksel olarak hicbir sey olmuyordu."""
+    assert ctypes.sizeof(media_module._Input) == 40
+
+
+def test_send_vk_uses_correct_cbsize_and_logs_on_failure(monkeypatch, caplog):
+    """`_send_vk` gercek `ctypes.windll.user32.SendInput`'u cagirir (bu testte
+    monkeypatch'lenir - gercek klavye olayi ASLA uretilmez) - dogru cbSize
+    (sizeof(_Input)=40) gectigini ve donus degeri 0 (basarisiz) oldugunda
+    bir uyari logladigini dogrular (eskiden donus degeri hic kontrol
+    edilmiyordu, sessiz basarisizliklar fark edilmiyordu)."""
+    calls: list[tuple] = []
+
+    def _fake_send_input(count, pointer, cb_size):
+        calls.append((count, cb_size))
+        return 0  # basarisiz - Windows'un input'u reddettigini simule eder
+
+    monkeypatch.setattr(media_module.ctypes.windll.user32, "SendInput", _fake_send_input)
+    monkeypatch.setattr(media_module.ctypes, "GetLastError", lambda: 5)
+
+    with caplog.at_level(logging.WARNING, logger="jarvis.tools.media"):
+        media_module._send_vk(media_module.VK_MEDIA_PLAY_PAUSE)
+
+    assert len(calls) == 2  # key-down + key-up
+    assert all(cb_size == 40 for _, cb_size in calls)
+    assert any("basarisiz" in record.message for record in caplog.records)
 
 
 def _capture_vk(monkeypatch):

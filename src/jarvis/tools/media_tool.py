@@ -56,18 +56,49 @@ KEYEVENTF_KEYUP = 0x0002
 INPUT_KEYBOARD = 1
 
 
+_ULONG_PTR = ctypes.c_uint64 if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_uint32
+
+
 class _KeyBdInput(ctypes.Structure):
     _fields_ = [
         ("wVk", ctypes.c_ushort),
         ("wScan", ctypes.c_ushort),
         ("dwFlags", ctypes.c_ulong),
         ("time", ctypes.c_ulong),
-        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+        ("dwExtraInfo", _ULONG_PTR),
+    ]
+
+
+class _MouseInput(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_long),
+        ("dy", ctypes.c_long),
+        ("mouseData", ctypes.c_ulong),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", _ULONG_PTR),
+    ]
+
+
+class _HardwareInput(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", ctypes.c_ulong),
+        ("wParamL", ctypes.c_short),
+        ("wParamH", ctypes.c_ushort),
     ]
 
 
 class _InputUnion(ctypes.Union):
-    _fields_ = [("ki", _KeyBdInput)]
+    # KRITIK: Windows'un gercek INPUT union'i (winuser.h) MOUSEINPUT/
+    # KEYBDINPUT/HARDWAREINPUT'un UCUNU de icerir - union'in boyutu EN BUYUK
+    # uyeye (MOUSEINPUT, 64-bit'te KEYBDINPUT'tan buyuk) gore belirlenir.
+    # SADECE `ki`yi tanimlamak (eski hali) union'i 24 byte, tum _Input struct'ini
+    # 32 byte yapiyordu - GERCEK sizeof(INPUT) 64-bit'te 40 byte. SendInput,
+    # verilen cbSize parametresi kendi ic sizeof(INPUT)'iyla eslesmezse hicbir
+    # hata/exception FIRLATMADAN sessizce 0 (basarisiz) donuyor - bu yuzden
+    # tuslar "gonderildi" loglaniyordu ama fiziksel olarak hicbir sey olmuyordu
+    # (gercek kullanim testinde bulundu - bkz. git log).
+    _fields_ = [("ki", _KeyBdInput), ("mi", _MouseInput), ("hi", _HardwareInput)]
 
 
 class _Input(ctypes.Structure):
@@ -79,8 +110,13 @@ def _send_vk(vk_code: int) -> None:
 
     Medya tuslari "extended key" sayildigi icin KEYEVENTF_EXTENDEDKEY bayragi
     gerekiyor - bu bayrak olmadan bazi sistemlerde tus yok sayilabiliyor.
+
+    SendInput'un DONUS DEGERI (basariyla islenen olay sayisi) BURADA
+    kontrol ediliyor - eskiden kontrol edilmiyordu, bu yuzden struct-boyutu
+    uyumsuzlugu gibi sessiz basarisizliklar hic fark edilmiyordu (bkz.
+    yukaridaki _InputUnion notu).
     """
-    extra = ctypes.pointer(ctypes.c_ulong(0))
+    extra = _ULONG_PTR(0)
     key_down = _Input(
         type=INPUT_KEYBOARD,
         union=_InputUnion(
@@ -93,8 +129,17 @@ def _send_vk(vk_code: int) -> None:
             ki=_KeyBdInput(vk_code, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0, extra)
         ),
     )
-    ctypes.windll.user32.SendInput(1, ctypes.pointer(key_down), ctypes.sizeof(_Input))
-    ctypes.windll.user32.SendInput(1, ctypes.pointer(key_up), ctypes.sizeof(_Input))
+    sent_down = ctypes.windll.user32.SendInput(1, ctypes.pointer(key_down), ctypes.sizeof(_Input))
+    sent_up = ctypes.windll.user32.SendInput(1, ctypes.pointer(key_up), ctypes.sizeof(_Input))
+    if sent_down == 0 or sent_up == 0:
+        logger.warning(
+            "SendInput basarisiz oldu (vk=0x%X, down=%d, up=%d) - "
+            "tus fiilen gonderilmedi (Windows GetLastError: %d).",
+            vk_code,
+            sent_down,
+            sent_up,
+            ctypes.GetLastError(),
+        )
 
 
 _PLAY_PAUSE_MESSAGES = {
