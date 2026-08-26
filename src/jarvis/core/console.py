@@ -34,6 +34,7 @@ import logging
 
 from rich.console import Console
 from rich.markup import escape as _escape
+from rich.panel import Panel
 from rich.status import Status
 
 console = Console()
@@ -126,6 +127,47 @@ def print_guardrail(check_name: str, passed: bool, reason: str) -> None:
     else:
         console.print(f"[dim]Guardrail[/dim] [bold]{_escape(check_name)}[/bold] [bold red][REJECTED][/bold red] - {_escape(reason)}")
         _logger.debug("Guardrail [%s]: RED - %s", check_name, reason)
+
+
+def _format_parameters(parameters: dict) -> str:
+    if not parameters:
+        return "(parametre yok)"
+    return "\n".join(f"{_escape(str(key))}: {_escape(str(value))}" for key, value in parameters.items())
+
+
+def print_approval_panel(tool_name: str, risk_level: str, parameters: dict) -> None:
+    """Riskli bir tool cagrisindan ONCE, TUM parametreleri buyuk bir panelde gosterir.
+
+    Faz 3.3 (semantic router) gecisinden sonra `parameters` artik LLM'in
+    URETTIGI degerler olabilir (kullanicinin soylediginden farkli olabilir) -
+    bu panel core/app.py:_execute_tool'daki [Y/N] onayindan hemen once
+    cagrilir, kullanici NEYI onayladigini ekranda buyuk ve net gorur (bkz.
+    tools/terminal_tool.py modul docstring'i).
+    """
+    console.print(
+        Panel(
+            _format_parameters(parameters),
+            title=f"[!] ONAY GEREKLİ - {_escape(tool_name)} (risk: {_escape(risk_level)})",
+            border_style="bold yellow",
+            expand=False,
+        )
+    )
+
+
+def print_router_decision(tool_name: str, confidence: float, parameters: dict) -> None:
+    """Semantic router'in sectigi arac + parametreleri gosterir (LLM'in "anladigi"
+    seyi seffaflastirir) - `lang` parametresi kullaniciya anlamsiz oldugu icin
+    gosterilmez.
+    """
+    visible_params = {key: value for key, value in parameters.items() if key != "lang"}
+    console.print(
+        Panel(
+            f"[bold]{_escape(tool_name)}[/bold] (güven: {confidence:.2f})\n{_format_parameters(visible_params)}",
+            title="Semantic Router Kararı",
+            border_style=f"bold {_AMBER}",
+            expand=False,
+        )
+    )
 
 
 def status_spinner(msg: str) -> Status:

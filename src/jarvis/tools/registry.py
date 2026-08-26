@@ -5,10 +5,12 @@ bir dict'e konuyor. Otomatik kesif/dinamik import bilincli olarak kullanilmiyor 
 hangi araclarin sisteme kayitli oldugunun tek bakista, dosya okunarak gorulebilmesi
 bir guvenlik ozelligi (bir arac "yanlislikla" kayitli olamaz).
 
-Anahtarlar core/dispatcher.py'deki _RULES intent adlariyla birebir eslesmeli
-(gecici not: semantic router gecisi tamamlanana kadar - bkz. ROADMAP Faz 3.3 -
-media_* araclarinin _RULES'ta karsiligi yok, bu araclar su an sadece
-Dispatcher.classify()'in LLM yolundan erisilebilir olacak).
+Anahtarlar, core/dispatcher.py:Dispatcher.classify()'in semantic router yolunun
+(Ollama native tool-calling) modele bildirdigi arac adlariyla ayni olmali -
+`adapters/tool_schema.py:build_ollama_tools()` burasi TOOL_REGISTRY'yi dogrudan
+tarayarak semayi uretir. `_RULES` (core/dispatcher.py) artik SADECE `get_time`
+icin fast-path tanimliyor; geri kalan TUM araclar buradaki isimleriyle semantic
+router'a aciliyor.
 """
 
 from src.jarvis.tools.base import Tool

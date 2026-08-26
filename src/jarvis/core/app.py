@@ -3,8 +3,14 @@ import threading
 from typing import Iterator, Optional
 
 from src.jarvis.brain.llm import SYSTEM_PROMPT, think_and_respond_stream
-from src.jarvis.core.console import print_agent, print_system, status_spinner
-from src.jarvis.core.dispatcher import Dispatcher
+from src.jarvis.core.console import (
+    print_agent,
+    print_approval_panel,
+    print_router_decision,
+    print_system,
+    status_spinner,
+)
+from src.jarvis.core.dispatcher import DEFAULT_INTENT_NAME, Dispatcher
 from src.jarvis.core.guardrail.base import GuardrailChain
 from src.jarvis.core.guardrail.input_checks import InputInjectionCheck
 from src.jarvis.core.guardrail.output_checks import OutputSafetyCheck
@@ -59,27 +65,41 @@ def _execute_tool(tool: Tool, intent, stop_event: Optional[threading.Event]) -> 
     Guvenlik karari BURADA, tek merkezde veriliyor - tool'un kendisine birakilmiyor
     (bkz. tools/base.py). Sira: (1) tehlikeli komut on-taramasi, (2) risk seviyesine
     gore [Y/N] onayi, (3) calistirma.
+
+    GENELLESTIRME NOTU (Faz 3.3, semantic router): eskiden SADECE
+    `intent.parameters["content"]` guardrail'den geciyordu (parametreler tek bir
+    sabit "content" regex named-group'undan geliyordu). Artik router, tool-ozgu
+    anlamli parametre adlari (`command`, `app_name`, `content`) uretiyor - tek bir
+    sabit anahtara guvenmek yetersiz. Bu yuzden `lang` haric TUM string
+    parametreler taranip onay panelinde gosteriliyor (bkz. tools/terminal_tool.py
+    modul docstring'indeki "GECIS TAMAMLANDI" notu - bu, o gecisin somut
+    mitigasyonu).
     """
     lang = intent.parameters.get("lang", "en")
-    content = intent.parameters.get("content")
+    risky_values = {
+        key: value
+        for key, value in intent.parameters.items()
+        if key != "lang" and isinstance(value, str) and value
+    }
 
-    # (1) Icerik tasiyan araclarda (ozellikle run_command) metni, LLM ciktisi icin
-    # kullandigimiz ayni guardrail'den geciriyoruz - kullaniciya onay bile sorulmadan
-    # bilinen yikici kaliplar (rm -rf, format, DROP TABLE...) reddedilsin diye
+    # (1) Risk tasiyabilecek TUM parametreleri, LLM ciktisi icin kullandigimiz
+    # ayni guardrail'den geciriyoruz - kullaniciya onay bile sorulmadan bilinen
+    # yikici kaliplar (rm -rf, format, DROP TABLE...) reddedilsin diye
     # (defense-in-depth: yanlislikla "Y"ye basma ihtimali bu kaliplar icin dogmuyor).
-    if content:
-        safety = _OUTPUT_GUARDRAIL.run(content)
+    for value in risky_values.values():
+        safety = _OUTPUT_GUARDRAIL.run(value)
         if not safety.allowed:
             logger.warning("Tool girdisi guardrail'e takildi (%s): %s", tool.name, safety.reason)
             return _localized(_UNSAFE_COMMAND_MESSAGES, lang)
 
     # (2) Orta ve uzeri risk -> zorunlu insan onayi. Kullanici ekrana bakmiyor
-    # olabilecegi icin once sesli uyariyoruz, sonra terminalde bloklayici soru.
+    # olabilecegi icin once sesli uyariyoruz, sonra ekranda buyuk bir panelle
+    # TUM parametreleri gosterip terminalde bloklayici soru soruyoruz - kullanici
+    # router'in URETTIGI argumani, kendi soylediginden farkli olsa bile GORUR.
     if requires_approval(tool.risk_level):
         speak(_localized(_APPROVAL_PENDING_MESSAGES, lang), language=lang, stop_event=stop_event)
+        print_approval_panel(tool.name, tool.risk_level.value, risky_values)
         prompt = f"'{tool.name}' calistirilsin mi? (risk: {tool.risk_level.value})"
-        if content:
-            prompt += f"\n  -> {content}"  # kullanici TAM METNI gorsun (bkz. tools/shell.py)
         if not request_approval(prompt):
             return _localized(_APPROVAL_DENIED_MESSAGES, lang)
 
@@ -98,13 +118,14 @@ def _handle_turn(
     """Bir kullanici turunu guardrail + dispatcher'dan gecirip (metin, dil) ciftleri uretir.
 
     Sira: (1) girdi guardrail'i - reddedilirse Brain'e hic gidilmez, history kirlenmez,
-    TEK dilde (tespit edilen girdi diline gore) bir ret mesaji doner; (2) SADECE
-    kural-tabanli (LLM'e gitmeyen, bkz. Dispatcher.match_rule) hizli dispatch - once
-    risk-tasimayan HANDLERS (orn. get_time), sonra risk-kontrollu TOOL_REGISTRY (Faz 3
-    araclari, bkz. _execute_tool); ikisinde de Brain'e hic gidilmiyor; (3) aksi halde
-    normal streaming sohbet - her cumle icin dil None donuyor (Brain SYSTEM_PROMPT
-    sayesinde zaten girdi diliyle eslesiyor, speak()'in kendi auto-detect'i yeterli),
-    ama once cikti guardrail'inden geciyor, reddedilen cumleler atlaniyor.
+    TEK dilde (tespit edilen girdi diline gore) bir ret mesaji doner; (2) dispatcher
+    (bkz. Dispatcher.classify: once LLM'e gitmeyen fast-path regex, sonra semantic
+    router) - once risk-tasimayan HANDLERS (orn. get_time), sonra risk-kontrollu
+    TOOL_REGISTRY (Faz 3 araclari, bkz. _execute_tool); ikisinde de Brain'e hic
+    gidilmiyor; (3) aksi halde (intent.name == "chat") normal streaming sohbet -
+    her cumle icin dil None donuyor (Brain SYSTEM_PROMPT sayesinde zaten girdi
+    diliyle eslesiyor, speak()'in kendi auto-detect'i yeterli), ama once cikti
+    guardrail'inden geciyor, reddedilen cumleler atlaniyor.
 
     `stop_event` verilirse, Brain'in streaming yanitini urettigi surece her cumle
     sonrasi kontrol edilir - kapatma istenirse kalan cumleler beklenmeden erken cikilir.
@@ -116,8 +137,14 @@ def _handle_turn(
         yield message, lang if lang in _INPUT_REJECTED_MESSAGES else "en"
         return
 
-    intent = _DISPATCHER.match_rule(user_text)
-    if intent is not None:
+    intent = _DISPATCHER.classify(user_text)
+    if intent.name != DEFAULT_INTENT_NAME:
+        # Router karari (source="llm") sadece gercekten bir arac secildiyse
+        # gosterilir - "chat"e dusen her tur icin panel basmak duz sohbette
+        # gurultu yaratirdi (bkz. core/console.py:print_router_decision).
+        if intent.source == "llm":
+            print_router_decision(intent.name, intent.confidence, intent.parameters)
+
         handler = HANDLERS.get(intent.name)
         if handler is not None:
             text, lang = handler(intent)

@@ -155,106 +155,44 @@ def test_launch_app_is_medium_risk():
 # --- dispatcher kalip eslesmesi ---
 
 
-def test_dispatcher_extracts_content_and_language():
+def test_dispatcher_match_rule_extracts_get_time_language():
     dispatcher = Dispatcher()
 
-    note_tr = dispatcher.match_rule("not tut: yarin toplanti var")
-    assert note_tr.name == "create_note"
-    assert note_tr.parameters["lang"] == "tr"
-    assert note_tr.parameters["content"] == "yarin toplanti var"
+    time_tr = dispatcher.match_rule("saat kaç?")
+    assert time_tr.name == "get_time"
+    assert time_tr.parameters["lang"] == "tr"
 
-    note_en = dispatcher.match_rule("take a note: buy milk")
-    assert note_en.name == "create_note"
-    assert note_en.parameters["lang"] == "en"
-    assert note_en.parameters["content"] == "buy milk"
-
-    command = dispatcher.match_rule("run command: dir")
-    assert command.name == "run_command"
-    assert command.parameters["content"] == "dir"
-
-
-def test_dispatcher_matches_contentless_intents():
-    dispatcher = Dispatcher()
-
-    for text, expected_name, expected_lang in [
-        ("notlarımı oku", "read_notes", "tr"),
-        ("read my notes", "read_notes", "en"),
-        ("sistem durumu nedir", "get_system_info", "tr"),
-        ("system status", "get_system_info", "en"),
-    ]:
-        intent = dispatcher.match_rule(text)
-        assert intent is not None, f"eslesmedi: {text!r}"
-        assert intent.name == expected_name
-        assert intent.parameters["lang"] == expected_lang
-        assert "content" not in intent.parameters
+    time_en = dispatcher.match_rule("what time is it?")
+    assert time_en.name == "get_time"
+    assert time_en.parameters["lang"] == "en"
 
 
 def test_dispatcher_returns_none_for_plain_chat():
     assert Dispatcher().match_rule("bugün hava nasıl?") is None
 
 
-def test_dispatcher_matches_music_intents():
-    """Dispatcher SADECE ham icerigi yakalar - "the"/"song"/"via spotify" gibi
-    dolgu kelimelerini ayiklamak tools/spotify.py:_clean_query()'nin isi (bkz.
-    test_play_music_query_cleanup), burada sadece dogru intent'e yonlendigi ve
-    HAM content'in kaybolmadan tasindigi test ediliyor.
-    """
+def test_dispatcher_match_rule_no_longer_handles_former_regex_intents():
+    """Regresyon: Faz 3.3 semantic router gecisiyle _RULES sadece get_time'a
+    indirildi (bkz. core/dispatcher.py). create_note/run_command/read_notes/
+    get_system_info/play_music/pause_music/skip_track artik match_rule() ile
+    DEGIL, Dispatcher.classify()'in semantic router yolu (bkz.
+    tests/test_dispatcher_router.py) ile eslesiyor - match_rule bunlar icin
+    artik None donmeli (Brain'e degil, router'a devredildi)."""
     dispatcher = Dispatcher()
 
-    play = dispatcher.match_rule("şarkı çal: Bohemian Rhapsody")
-    assert play.name == "play_music"
-    assert play.parameters["lang"] == "tr"
-    assert play.parameters["content"] == "Bohemian Rhapsody"
-
-    play_en = dispatcher.match_rule("play song: Shape of You")
-    assert play_en.name == "play_music"
-    assert play_en.parameters["content"] == "song: Shape of You"
-
-    for text, expected_name, expected_lang in [
-        ("müziği duraklat", "pause_music", "tr"),
-        ("pause music", "pause_music", "en"),
-        ("şarkıyı geç", "skip_track", "tr"),
-        ("skip track", "skip_track", "en"),
+    for text in [
+        "not tut: yarın toplantı var",
+        "take a note: buy milk",
+        "run command: dir",
+        "notlarımı oku",
+        "read my notes",
+        "sistem durumu nedir",
+        "system status",
+        "şarkı çal: Bohemian Rhapsody",
+        "pause music",
+        "şarkıyı geç",
     ]:
-        intent = dispatcher.match_rule(text)
-        assert intent is not None, f"eslesmedi: {text!r}"
-        assert intent.name == expected_name
-        assert intent.parameters["lang"] == expected_lang
-
-
-def test_dispatcher_pause_music_tolerates_pass_mishearing():
-    """Regresyon: docs/TODO.md madde 2 - Whisper "pause"u bazen "pass" diye
-    transkribe ediyor. Bare "pass" (yaygin kelime, yanlis pozitif riski yuksek)
-    tetiklenmemeli ama "pass music"/"pass the song" gibi acikca muzikle
-    birlikte gecen hali pause_music'e eslesmeli."""
-    dispatcher = Dispatcher()
-
-    pass_music = dispatcher.match_rule("Pass music.")
-    assert pass_music is not None
-    assert pass_music.name == "pause_music"
-    assert pass_music.parameters["lang"] == "en"
-
-    assert dispatcher.match_rule("I'll pass on that, thanks.") is None
-
-
-def test_dispatcher_matches_real_world_music_phrasings():
-    """Gercek kullanim testinde ILK haliyle eslesmeyen iki gercek deneme - regresyon.
-
-    Ikisi de Brain'e dusup LLM'in sarkiyi CALMADIGI halde "caliyor" diye
-    halusinasyon gormesine yol acmisti (bkz. core/dispatcher.py _RULES yorumu).
-    """
-    dispatcher = Dispatcher()
-
-    # "Sarki calin." - formal/cogul cekim, sarki adi SOYLENMEDI (bos icerik beklenir)
-    play_formal = dispatcher.match_rule("Şarkı çalın.")
-    assert play_formal is not None
-    assert play_formal.name == "play_music"
-    assert play_formal.parameters["lang"] == "tr"
-
-    # "Play the X via Spotify?" - "the"/"via Spotify" dolgu ifadeleri iceriyor
-    play_natural = dispatcher.match_rule("Play the Should I Stay or Should I Go via Spotify?")
-    assert play_natural is not None
-    assert play_natural.name == "play_music"
+        assert dispatcher.match_rule(text) is None, f"artik match_rule ile eslesmemeli: {text!r}"
 
 
 # Not: Spotify entegrasyonu (tools/spotify.py) kaldirildi - muzik kontrolu artik

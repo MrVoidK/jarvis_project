@@ -8,7 +8,24 @@ alt sinifi eklemekten ibarettir (bkz. docs/ARCHITECTURE.md SS3).
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+
+@dataclass
+class ToolCall:
+    """Modelin secip cagirmaya karar verdigi TEK bir fonksiyon + argumanlari."""
+
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class AgentToolResponse:
+    """`call_tools()`'un donus degeri - modelin sectigi (varsa) tool cagrilari."""
+
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    content: Optional[str] = None
 
 
 class Agent(ABC):
@@ -31,5 +48,20 @@ class Agent(ABC):
 
         core.dispatcher, bir intent arac kullanimi gerektiriyorsa sadece
         supports_tools() True donen bir ajana yonlendirebilir (bkz. Faz 3).
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def call_tools(
+        self, prompt: str, tools: list[dict], context: Optional[list[dict]] = None
+    ) -> AgentToolResponse:
+        """Modelin, verilen `tools` (Ollama/OpenAI-stili function-calling semasi,
+        bkz. adapters/tool_schema.py) arasindan (varsa) SECTIGI cagriyi dondurur.
+
+        `tools: list[dict]`'in saglayici-stili formati "sizdirmasi" bilincli bir
+        pragmatizm: bu format zaten fiili endustri standardi (Ollama, OpenAI,
+        Anthropic tool_use hepsi ayni iskeleti kullaniyor) - dorduncu bir
+        saglayici ihtimaline karsi bugunden asiri soyutlama (YAGNI ihlali)
+        yapilmiyor (bkz. docs/ARCHITECTURE.md SS3).
         """
         raise NotImplementedError

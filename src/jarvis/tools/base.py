@@ -23,6 +23,15 @@ class Tool(ABC):
     description: str
     risk_level: RiskLevel
 
+    # JSON-Schema "properties"/"required" sozlugu - semantic router'in (bkz.
+    # core/dispatcher.py, adapters/tool_schema.py) Ollama'ya "bu arac su
+    # parametreleri alir" diye bildirmesi icin. Parametresiz araclar (get_time,
+    # list_files, system_info, media_*) bu varsayilani degistirmez - SADECE
+    # veri (metod degil): Tool'un gorevi "nasil calistigini" bilmek, "Ollama'nin
+    # tel formatini" bilmek adapters/tool_schema.py'nin isi (SRP).
+    parameters_schema: dict = {}
+    required_parameters: list[str] = []
+
     @abstractmethod
     def execute(self, params: dict) -> str:
         """Araci calistirir ve kullaniciya SESLI okunacak tek bir cumle dondurur.

@@ -18,7 +18,7 @@ from typing import Literal, Optional
 import httpx
 import ollama
 
-from src.jarvis.agents.base import Agent
+from src.jarvis.agents.base import Agent, AgentToolResponse, ToolCall
 
 logger = logging.getLogger("jarvis.adapters")
 
@@ -84,8 +84,32 @@ class LlamaOrchestratorAdapter(Agent):
                 return _model_not_found_message(self._model_name)
             raise
 
+    def call_tools(
+        self, prompt: str, tools: list[dict], context: Optional[list[dict]] = None
+    ) -> AgentToolResponse:
+        messages = list(context or [])
+        messages.append({"role": "user", "content": prompt})
+        try:
+            response = ollama.chat(model=self._model_name, messages=messages, tools=tools)
+        except (httpx.ConnectError, ConnectionError):
+            logger.error("Orkestrator (tool-calling): Ollama'ya baglanilamadi (%s).", self._model_name)
+            return AgentToolResponse(content=_connection_error_message(self._model_name))
+        except ollama.ResponseError as exc:
+            if exc.status_code == 404:
+                logger.error("Orkestrator (tool-calling): model bulunamadi (%s).", self._model_name)
+                return AgentToolResponse(content=_model_not_found_message(self._model_name))
+            raise
+
+        raw_calls = response["message"].get("tool_calls") or []
+        tool_calls = [
+            ToolCall(name=call["function"]["name"], arguments=dict(call["function"]["arguments"]))
+            for call in raw_calls
+        ]
+        content = (response["message"].get("content") or "").strip() or None
+        return AgentToolResponse(tool_calls=tool_calls, content=content)
+
     def supports_tools(self) -> bool:
-        return False
+        return True
 
 
 class HermesAgentAdapter(Agent):
@@ -113,6 +137,17 @@ class HermesAgentAdapter(Agent):
                 return _model_not_found_message(self._model_name)
             raise
 
+    def call_tools(
+        self, prompt: str, tools: list[dict], context: Optional[list[dict]] = None
+    ) -> AgentToolResponse:
+        # Semantic router su an SADECE "orchestrator" rolunu kullaniyor (bkz.
+        # core/dispatcher.py) - Hermes'in gercek tool-calling'e baglanmasi ayri,
+        # daha buyuk bir sonraki adim (bkz. modul docstring'i).
+        raise NotImplementedError(
+            "HermesAgentAdapter.call_tools() henuz baglanmadi - semantic router "
+            "su an sadece AgentFactory.create('orchestrator') kullaniyor."
+        )
+
     def supports_tools(self) -> bool:
         return True
 
@@ -127,6 +162,14 @@ class ClaudeCodeAdapter(Agent):
     """
 
     def respond(self, prompt: str, context: Optional[list[dict]] = None) -> str:
+        raise NotImplementedError(
+            "ClaudeCodeAdapter henuz baglanmadi: 'pip install anthropic' ile SDK'yi kurup "
+            "_client() metodunu Anthropic() ile doldurun ve .env'e ANTHROPIC_API_KEY ekleyin."
+        )
+
+    def call_tools(
+        self, prompt: str, tools: list[dict], context: Optional[list[dict]] = None
+    ) -> AgentToolResponse:
         raise NotImplementedError(
             "ClaudeCodeAdapter henuz baglanmadi: 'pip install anthropic' ile SDK'yi kurup "
             "_client() metodunu Anthropic() ile doldurun ve .env'e ANTHROPIC_API_KEY ekleyin."

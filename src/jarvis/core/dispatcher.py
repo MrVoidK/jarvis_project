@@ -1,8 +1,9 @@
-"""Intent yonlendirici - once rule-based (regex/anahtar kelime), eslesme yoksa LLM-tabanli
-siniflandirma (hibrit) (bkz. docs/ROADMAP.md Faz 2.1).
+"""Intent yonlendirici - once rule-based (regex/anahtar kelime) fast-path, eslesme
+yoksa Ollama native tool-calling ile semantic router (bkz. docs/ROADMAP.md Faz 3.3).
 
-Amac, her kullanici transkriptini bir Intent'e (isim + guven skoru + parametreler) cevirmek;
-gercek intent->fonksiyon eslemesi core.handlers'ta, canli dongudeki kullanimi core.app'te.
+Amac, her kullanici transkriptini bir Intent'e (isim + guven skoru + parametreler)
+cevirmek; gercek intent->fonksiyon eslemesi core.handlers/tools.registry'de, canli
+dongudeki kullanimi core.app'te.
 """
 
 import logging
@@ -12,97 +13,42 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 from src.jarvis.adapters.agent_factory import AgentFactory
+from src.jarvis.adapters.tool_schema import build_ollama_tools
 from src.jarvis.core.console import status_spinner
+from src.jarvis.core.language import detect_language
+from src.jarvis.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger("jarvis.dispatcher")
 
 IntentSource = Literal["rule", "llm"]
 
-# Bilinmeyen/rule-eslesmeyen her sey buraya duser - Faz 2.1'de "genel sohbet" (Brain'in
-# bugunku davranisi) ile es anlamli; Faz 3'te gercek tool-calling intent'leri eklendikce
-# bu varsayilan giderek daha az tetiklenecek.
+# Bilinmeyen/rule-eslesmeyen ve router'in hicbir arac secmedigi her sey buraya
+# duser - Brain'in normal sohbet davranisiyla es anlamli.
 DEFAULT_INTENT_NAME = "chat"
 
-# ROADMAP'teki ornek komutlarla tutarli, kucuk bir rule-based baslangic seti.
-# Regex'ler kelime siniri (\b) ile TR/EN karisik konusmada yanlis eslesmeyi azaltir.
+# SADECE basit, belirsizlik tasimayan TEK bir komut fast-path'te kaliyor - geri
+# kalan TUM araclar (list_files, create_note, read_notes, run_command,
+# get_system_info, launch_app, media_*) artik asagidaki classify() ile Ollama
+# native tool-calling'e (semantic router) devrediliyor. Regex'ler kelime siniri
+# (\b) ile TR/EN karisik konusmada yanlis eslesmeyi azaltir.
 #
-# Her intent icin TEK bir birlesik (TR|EN) pattern yerine, dile gore AYRI pattern'ler
-# tutuluyor: hangi alternatifin eslestigi, o kalibin dilini KESIN olarak veriyor. Bu,
-# eslesen metnin dilini ayrica langdetect ile tahmin etmekten (bkz. core/language.py)
-# cok daha guvenilir - langdetect kisa metinlerde (orn. "saat kaç?") yanlis sonuc
-# verebiliyor (gercek testte TR sorgusu yanlislikla "en" olarak tespit edildi, TTS
-# "It's 02:03 now." diye Ingilizce okudu) ama regex'in KENDISI zaten hangi dilde
-# yazildigini biliyor - o bilgiyi bosa harcamamak gerekiyor.
-# Icerik gerektiren kaliplar (?P<content>...) named group'u kullanir - match_rule()
-# bunu Intent.parameters["content"]'e koyar, tool'lar oradan okur (bkz. tools/base.py).
+# Dile gore AYRI pattern'ler tutuluyor: hangi alternatifin eslestigi, o kalibin
+# dilini KESIN olarak veriyor - langdetect'in kisa metinlerde (orn. "saat kaç?")
+# yanlis sonuc verebilmesinden (gercek testte TR sorgusu yanlislikla "en" olarak
+# tespit edildi) cok daha guvenilir.
 _RULES: dict[str, list[tuple[str, re.Pattern]]] = {
     "get_time": [
         ("tr", re.compile(r"\bsaat kaç\b", re.IGNORECASE)),
         ("en", re.compile(r"\bwhat time is it\b", re.IGNORECASE)),
     ],
-    "list_files": [
-        ("tr", re.compile(r"\bdosya(ları)? listele\b", re.IGNORECASE)),
-        ("en", re.compile(r"\blist (the )?files\b", re.IGNORECASE)),
-    ],
-    "create_note": [
-        ("tr", re.compile(r"\bnot (?:tut|al)\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
-        ("en", re.compile(r"\btake a note\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
-    ],
-    "read_notes": [
-        ("tr", re.compile(r"\bnotlar[ıi]m[ıi]?\s*oku\b", re.IGNORECASE)),
-        ("en", re.compile(r"\bread (?:my )?notes\b", re.IGNORECASE)),
-    ],
-    "run_command": [
-        ("tr", re.compile(r"\bkomut çalıştır\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
-        ("en", re.compile(r"\brun command\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
-    ],
-    "get_system_info": [
-        ("tr", re.compile(r"\bsistem durumu\b", re.IGNORECASE)),
-        ("en", re.compile(r"\bsystem status\b", re.IGNORECASE)),
-    ],
-    # Muzik kaliplari, gercek kullanim testinde iki dogal deneme de ("Sarki calin.",
-    # "Play the Should I Stay or Should I Go via Spotify?") ilk (cok dar) haliyle
-    # ESLESMEDI - ikisi de Brain'e dustu ve LLM sarkiyi CALMADIGI halde "caliniyor"
-    # diye halusinasyon gordu (bkz. system_prompt.txt madde 5, ayni turda eklendi).
-    # Bu yuzden fiil coklu-cekim (calin/calalim vb.) ve "the"/"via spotify" gibi
-    # dolgu kelimeler kapsanacak sekilde genisletildi; content artik OPSIYONEL
-    # (`.*`) - PlayMusicTool bos sorguda zaten "hangi sarkiyi?" diye soruyor,
-    # bu da kullanicinin sarki adi soylemeden sadece "muzik ac" demesini
-    # duzgun karsiliyor.
-    "play_music": [
-        ("tr", re.compile(r"\b(?:şarkı\s+)?çal(?:ın|ınız)?\b[:,]?\s*(?P<content>.*)", re.IGNORECASE)),
-        # "the"/"song" gibi dolgu kelimelerini burada regex'le ayiklamaya calismak
-        # ("play song: X" vs "play the song X" gibi kombinasyonlarda) sirali
-        # optional group'larla kirilgan oluyordu - butun kuyruk yakalanip filtreleme
-        # tools/spotify.py:_clean_query()'ye birakildi (tek yerde, test edilebilir).
-        ("en", re.compile(r"\bplay\b[:,]?\s*(?P<content>.*)", re.IGNORECASE)),
-    ],
-    "pause_music": [
-        ("tr", re.compile(r"\b(?:müziği\s+)?duraklat(?:ın|ınız)?\b", re.IGNORECASE)),
-        # Regex "pause music"/"pause"i tek basina zaten dogru eslestiriyor (bkz.
-        # docs/TODO.md madde 2 - gercek test testte eslesmedigi zannedilen durum
-        # aslinda Whisper'in "pause"u "pass" diye yanlis transkribe etmesiydi, regex
-        # DEGIL). "pass" ise cok yaygin bir kelime oldugundan tek basina eklenmedi
-        # (yanlis pozitif riski yuksek) - sadece acikca "music"/"song" ile birlikte
-        # gecerse STT-toleransli bir varyant olarak kabul ediliyor.
-        (
-            "en",
-            re.compile(
-                r"\bpause\b\s*(?:the\s+)?(?:music|song)?\b"
-                r"|\bpass\b\s+(?:the\s+)?(?:music|song)\b",
-                re.IGNORECASE,
-            ),
-        ),
-    ],
-    "skip_track": [
-        ("tr", re.compile(r"\b(?:şarkıyı\s+)?geç(?:in|iniz)?\b", re.IGNORECASE)),
-        ("en", re.compile(r"\bskip\b\s*(?:the\s+)?(?:song|track)?\b", re.IGNORECASE)),
-    ],
 }
 
-_CLASSIFY_PROMPT_TEMPLATE = (
-    "Classify the following user message into exactly one of these intents: {intents}. "
-    "Reply with ONLY the intent name, nothing else.\n\nMessage: {text}"
+_ROUTER_SYSTEM_PROMPT = (
+    "You are JARVIS's tool-routing module. Look at the user's spoken command: if "
+    "one of the provided functions clearly matches their intent, call ONLY that "
+    "function, exactly once. If the user is just chatting, asking a general "
+    "question, or no function clearly matches their intent, do NOT call any "
+    "function."
 )
 
 
@@ -116,23 +62,13 @@ class Intent(BaseModel):
 
 
 class Dispatcher:
-    """Hibrit intent siniflandirici: once `_RULES`'a bakar, eslesme yoksa Orkestrator'e
-    (AgentFactory.create("orchestrator")) sinif etiketi sordurur.
+    """Hibrit intent siniflandirici: once `_RULES`'a (fast-path) bakar, eslesme
+    yoksa Orkestrator'e (AgentFactory.create("orchestrator")) TOOL_REGISTRY'deki
+    araclardan birini secmesi icin native tool-calling ile sorar.
     """
-
-    def __init__(self, known_intents: Optional[list[str]] = None) -> None:
-        # LLM'e siniflandirma icin gosterilecek bilinen intent listesi (rule'lardaki
-        # isimler + varsayilan "chat") - Faz 3'te tool intent'leri eklendikce buyur.
-        self._known_intents = known_intents or [*_RULES.keys(), DEFAULT_INTENT_NAME]
 
     def match_rule(self, text: str) -> Optional[Intent]:
         """Sadece `_RULES`'a bakar, LLM'e HIC gitmez - eslesme yoksa None doner.
-
-        core.app'in canli dongusu bunu kullanir: her turda "chat" mi yoksa
-        bilinen bir komut mu diye anlamak icin ayrica bir LLM cagrisi yapmak
-        (classify()'in yaptigi gibi), su an sadece get_time/list_files gibi
-        onemsiz kurallar varken normal sohbetin gecikmesini gereksiz yere
-        ikiye katlardi (bkz. docs/ROADMAP.md Faz 2 notu).
 
         `parameters["lang"]`'a, eslesen pattern'in KENDI dili konur (bkz.
         `_RULES`'un ustundeki not) - langdetect'e degil, hangi dil-alternatifinin
@@ -157,19 +93,43 @@ class Dispatcher:
         return None
 
     def classify(self, text: str) -> Intent:
+        """Fast-path regex + semantic router (Ollama native tool-calling) hibriti.
+
+        Bilinen maliyet (kabul edilen trade-off): rule-eslesmeyen her turda
+        artik router icin bir LLM cagrisi yapiliyor - eslesme yoksa Brain'e
+        (ikinci bir LLM cagrisi) dusuluyor. Bu, eski "sadece match_rule, hic
+        LLM yok" davranisina kiyasla bir gecikme maliyeti (bkz. docs/ROADMAP.md
+        "gelecek iyilestirme": router+chat'i tek cagriya birlestirme veya daha
+        kucuk/hizli bir router modeli).
+        """
         rule_match = self.match_rule(text)
         if rule_match is not None:
             return rule_match
 
-        logger.info("Dispatcher: kural eslesmedi, LLM siniflandirmasina dusuluyor.")
+        logger.info("Dispatcher: kural eslesmedi, semantic router'a dusuluyor.")
+        tools_schema = build_ollama_tools(TOOL_REGISTRY.values())
         orchestrator = AgentFactory.create("orchestrator")
-        prompt = _CLASSIFY_PROMPT_TEMPLATE.format(
-            intents=", ".join(self._known_intents), text=text
-        )
-        with status_spinner("Sınıflandırılıyor..."):
-            raw_label = orchestrator.respond(prompt).strip().lower()
+        context = [{"role": "system", "content": _ROUTER_SYSTEM_PROMPT}]
 
-        label = raw_label if raw_label in self._known_intents else DEFAULT_INTENT_NAME
-        confidence = 0.6 if raw_label in self._known_intents else 0.3
-        logger.info("Dispatcher: LLM etiketi=%r -> intent=%r", raw_label, label)
-        return Intent(name=label, confidence=confidence, source="llm")
+        with status_spinner("Yönlendiriliyor..."):
+            response = orchestrator.call_tools(text, tools=tools_schema, context=context)
+
+        if not response.tool_calls:
+            logger.info("Dispatcher: router hicbir arac secmedi -> chat.")
+            return Intent(name=DEFAULT_INTENT_NAME, confidence=0.4, source="llm")
+
+        if len(response.tool_calls) > 1:
+            logger.warning(
+                "Dispatcher: router birden fazla arac secti (%d), ilki kullaniliyor.",
+                len(response.tool_calls),
+            )
+        call = response.tool_calls[0]
+
+        if call.name not in TOOL_REGISTRY:
+            logger.warning("Dispatcher: router bilinmeyen bir arac secti: %r -> chat.", call.name)
+            return Intent(name=DEFAULT_INTENT_NAME, confidence=0.3, source="llm")
+
+        lang = detect_language(text)
+        parameters = {**call.arguments, "lang": lang}
+        logger.info("Dispatcher: router aracı secti (%s).", call.name)
+        return Intent(name=call.name, confidence=0.9, source="llm", parameters=parameters)
