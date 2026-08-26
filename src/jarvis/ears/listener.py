@@ -180,6 +180,7 @@ def _vad_record(
     trailing: Optional[np.ndarray] = None,
     max_wait_ms: int = MAX_WAIT_MS,
     stop_event: Optional[threading.Event] = None,
+    mute_event: Optional[threading.Event] = None,
 ) -> Optional[np.ndarray]:
     """Records one utterance using VAD endpointing on an already-open stream.
 
@@ -205,6 +206,17 @@ def _vad_record(
     are short enough that this bounds the worst-case shutdown latency to
     roughly one frame period rather than waiting for the full recording/
     timeout to finish naturally.
+
+    `mute_event`, if given (bkz. `mouth/tts.py:speak()`'in ayni event'i
+    "speaking_event" olarak set/clear ettigi yer), Jarvis suanda konusurken
+    set olur. Frame HALA okunur (buffer overflow'u onlemek icin) ama
+    HENUZ `triggered=False` iken (yani bir konusma BASLANGICI araniyorken)
+    is_speech kontrolu hic yapilmadan sessizlik sayilir - boylece Jarvis'in
+    kendi sesinin hoparlorden mikrofona sizip yeni bir "kullanici konusuyor"
+    tetiklemesi onlenir. Zaten `triggered` olmus (gercek bir kullanici
+    konusmasi devam ediyor) bir kaydi KESMEZ - bu, mute_event'in speak()
+    tarafindan SADECE bir turn TAMAMEN bittikten sonra set edilmesi
+    sayesinde zaten cakismaz.
     """
     vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
     hangover_frames = SILENCE_HANGOVER_MS // FRAME_MS
@@ -235,6 +247,15 @@ def _vad_record(
         if overflowed:
             logger.warning("Giris tamponu tasti (overflow) - ses kaybi olabilir.")
         frame = frame.reshape(-1)
+
+        if not triggered and mute_event is not None and mute_event.is_set():
+            # Jarvis konusuyor, henuz bir konusma BASLANGICI da yakalanmamis -
+            # bu frame'i VAD'a hic sormadan sessizlik say (bkz. yukaridaki
+            # mute_event docstring notu).
+            wait_frames += 1
+            preroll.append(frame)
+            continue
+
         is_speech = vad.is_speech(frame.tobytes(), SAMPLE_RATE)
 
         if is_speech:
@@ -280,7 +301,9 @@ def _chunk_loudness(chunk: np.ndarray) -> tuple[float, float]:
 
 
 def _wait_for_wakeword(
-    stream: sd.InputStream, stop_event: Optional[threading.Event] = None
+    stream: sd.InputStream,
+    stop_event: Optional[threading.Event] = None,
+    mute_event: Optional[threading.Event] = None,
 ) -> Optional[np.ndarray]:
     """Blocks on an open stream until the wake word OR a double-clap is detected,
     logging latency. Both triggers are evaluated on the same stream of chunks -
@@ -296,6 +319,12 @@ def _wait_for_wakeword(
     sentinel from any real trigger (which always returns an ndarray), so
     `listen_loop()` can tell "shutdown requested" apart from "actually heard
     something" without ambiguity.
+
+    `mute_event`, if given, is checked the same way as in `_vad_record()`
+    (bkz. o fonksiyonun docstring'i) - set'ken chunk okunur (overflow'u
+    onlemek icin) ama wake-word/alkis tespiti ve gurultu-tabani EMA
+    guncellemesi hic yapilmadan atlanir, boylece Jarvis kendi sesiyle
+    kendini "Hey Jarvis" veya alkis sanmaz.
     """
     global _clap_noise_floor
     wakeword_model.reset()  # clear buffers left over from the previous cycle
@@ -316,6 +345,10 @@ def _wait_for_wakeword(
         if overflowed:
             logger.warning("Giris tamponu tasti (overflow) - ses kaybi olabilir.")
         chunk = chunk.reshape(-1)
+
+        if mute_event is not None and mute_event.is_set():
+            # Jarvis konusuyor - bkz. yukaridaki mute_event docstring notu.
+            continue
 
         rms, peak = _chunk_loudness(chunk)
         crest_factor = peak / rms if rms > 1e-6 else 0.0
@@ -433,7 +466,10 @@ def transcribe_once() -> Optional[str]:
     return _transcribe(audio)
 
 
-def listen_loop(stop_event: Optional[threading.Event] = None) -> Iterator[str]:
+def listen_loop(
+    stop_event: Optional[threading.Event] = None,
+    mute_event: Optional[threading.Event] = None,
+) -> Iterator[str]:
     """State machine over a single persistent stream: IDLE (wake-word) -> ACTIVE (VAD
     capture + transcription) -> FOLLOWUP (brief re-listen without wake word) -> back to
     ACTIVE if speech continues, or IDLE if the follow-up window times out. Continuously
@@ -456,18 +492,24 @@ def listen_loop(stop_event: Optional[threading.Event] = None) -> Iterator[str]:
     this bounds LOOP-BOUNDARY latency, not a currently in-flight model call (e.g. a
     multi-second faster-whisper transcription already running won't be interrupted
     mid-call - see core.app.run_jarvis()'s docstring for the full caveat).
+
+    `mute_event`, if given (bkz. `core/app.py:run_jarvis()`'in `mouth/tts.py:speak()`
+    ile paylastigi ayni event), sadece `_wait_for_wakeword`/`_vad_record`'a
+    aynen iletilir - Jarvis konusurken yeni bir tetiklemenin ARANMAMASI icin
+    (bkz. o iki fonksiyonun kendi mute_event notlari). `listen_loop()` bunun
+    disinda bu event'e dokunmaz/degistirmez, SADECE okur.
     """
     state = ListenState.IDLE
     try:
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16") as stream:
             while stop_event is None or not stop_event.is_set():
                 state = ListenState.IDLE
-                trailing = _wait_for_wakeword(stream, stop_event=stop_event)
+                trailing = _wait_for_wakeword(stream, stop_event=stop_event, mute_event=mute_event)
                 if trailing is None:  # shutdown requested while waiting
                     break
 
                 state = ListenState.ACTIVE
-                audio = _vad_record(stream, trailing=trailing, stop_event=stop_event)
+                audio = _vad_record(stream, trailing=trailing, stop_event=stop_event, mute_event=mute_event)
                 # The turn that triggered ACTIVE always earns one full follow-up
                 # window, whether or not it produced text - matches the previous
                 # behavior for this first turn.
@@ -489,7 +531,9 @@ def listen_loop(stop_event: Optional[threading.Event] = None) -> Iterator[str]:
                         "Takip penceresi acik (kalan %.0fs) - 'Hey Jarvis' demeden devam edebilirsiniz...",
                         remaining_ms / 1000,
                     )
-                    audio = _vad_record(stream, max_wait_ms=remaining_ms, stop_event=stop_event)
+                    audio = _vad_record(
+                        stream, max_wait_ms=remaining_ms, stop_event=stop_event, mute_event=mute_event
+                    )
 
                 if state is ListenState.FOLLOWUP:
                     logger.info("Takip penceresi zaman asimina ugradi, uyku moduna donuluyor.")

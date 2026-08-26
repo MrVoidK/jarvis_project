@@ -60,7 +60,12 @@ logger = logging.getLogger("jarvis.core.input_hub")
 
 InputSource = Literal["voice", "text"]
 
-TEXT_PROMPT = "[bold yellow][Siz][/bold yellow] >>> "
+# Ters-renkli (arka plan vurgulu) stil BILINCLI: dongu boyunca konsola akan
+# diger duz metinlerden (Jarvis cevaplari, loglar, guardrail/router panelleri)
+# istemin gozle net ayrisabilmesi icin - sadece renk/kalinlik (eski hali) uzun
+# ciktilar arasinda kaybolabiliyordu. Sadece ASCII (core/console.py'nin
+# belgeledigi Windows kod sayfasi kisiti, bkz. o dosyanin UnicodeEncodeError notu).
+TEXT_PROMPT = "\n[bold black on yellow] SEN [/bold black on yellow][bold yellow] >>> [/bold yellow]"
 
 
 @dataclass
@@ -72,7 +77,11 @@ class InputEvent:
     text: str
 
 
-def _mic_producer(input_queue: "queue.Queue[InputEvent]", stop_event: threading.Event) -> None:
+def _mic_producer(
+    input_queue: "queue.Queue[InputEvent]",
+    stop_event: threading.Event,
+    speaking_event: threading.Event,
+) -> None:
     """`listen_loop()`u OLDUĞU GİBİ tüketir - davranışı hiç değişmedi, sadece
     çağrıldığı thread değişti (ana thread yerine arka plan).
 
@@ -84,10 +93,16 @@ def _mic_producer(input_queue: "queue.Queue[InputEvent]", stop_event: threading.
     tetiklerdi - mevcut test paketinin hızlı/hermetik kalma ilkesiyle
     (bkz. Faz 4.5 MCP entegrasyonunda aynı gerekçeyle yapılan düzeltme)
     tutarlı bir gecikmeli import.
+
+    `speaking_event`, `mouth/tts.py:speak()`'in set/clear ettiği AYNI event -
+    `listen_loop()`'a `mute_event=` olarak aynen iletiliyor (bkz. o fonksiyonun
+    docstring'i) ki Jarvis kendi TTS çıktısını mikrofonundan duyup yeni bir
+    kullanıcı turu sanmasın (bkz. bu event'in eklenme gerekçesi için
+    `core/app.py:run_jarvis()` docstring'i).
     """
     from src.jarvis.ears.listener import listen_loop
 
-    for transcript in listen_loop(stop_event=stop_event):
+    for transcript in listen_loop(stop_event=stop_event, mute_event=speaking_event):
         input_queue.put(InputEvent(source="voice", text=transcript))
 
 
@@ -109,7 +124,7 @@ class InputHub:
     """Mic + metin üretici thread'lerini başlatır, tüketiciye (ana thread)
     TEK bir sıralı kuyruk sunar."""
 
-    def __init__(self, stop_event: threading.Event) -> None:
+    def __init__(self, stop_event: threading.Event, speaking_event: Optional[threading.Event] = None) -> None:
         # Sinirsiz queue.Queue() BILINCLI OLARAK (security-reviewer bulgusu,
         # degerlendirilip ERTELENDI): bir maxsize, kuyruk dolduysa
         # producer thread'lerin (mic/metin) `put()`te BLOKE olmasi demek -
@@ -119,8 +134,14 @@ class InputHub:
         # bir tercih olarak kaydedildi, kod degisikligi yok.
         self._queue: "queue.Queue[InputEvent]" = queue.Queue()
         self._stop_event = stop_event
+        # `speaking_event=None` (varsayilan) geriye donuk uyumluluk icin -
+        # verilmezse mikrofon HIC susturulmaz (eski davranis, ör. testler).
+        self._speaking_event = speaking_event if speaking_event is not None else threading.Event()
         self._mic_thread = threading.Thread(
-            target=_mic_producer, args=(self._queue, stop_event), name="jarvis-mic", daemon=True
+            target=_mic_producer,
+            args=(self._queue, stop_event, self._speaking_event),
+            name="jarvis-mic",
+            daemon=True,
         )
         self._text_thread = threading.Thread(
             target=_text_producer, args=(self._queue, stop_event), name="jarvis-text-input", daemon=True

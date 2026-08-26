@@ -12,12 +12,14 @@ Calistirma: `python -m pytest tests/ -v` (repo kokunden, bkz. CLAUDE.md Komutlar
 
 import logging
 import sys
+import threading
 import types
 
 import pytest
 
 from src.jarvis.core import cli_commands
 from src.jarvis.core.cli_commands import (
+    _COMMANDS,
     _parse_test_arguments,
     handle_cli_command,
     is_cli_command,
@@ -133,7 +135,7 @@ def test_test_command_executes_known_tool_via_mocked_execute_tool(monkeypatch):
     fake_app_module = types.ModuleType("src.jarvis.core.app")
     captured_call = {}
 
-    def fake_execute_tool(tool, intent, stop_event, input_hub=None, pending=None):
+    def fake_execute_tool(tool, intent, stop_event, input_hub=None, pending=None, speaking_event=None):
         captured_call["tool_name"] = tool.name
         captured_call["parameters"] = intent.parameters
         return "sahte sonuç"
@@ -150,6 +152,28 @@ def test_test_command_executes_known_tool_via_mocked_execute_tool(monkeypatch):
     assert any("sahte sonuç" in msg for msg in printed)
 
 
+def test_test_command_forwards_speaking_event_to_execute_tool(monkeypatch):
+    # core/app.py:run_jarvis() olusturdugu paylasilan speaking_event'i /test'e
+    # de gecirir - /test uzerinden calistirilan bir arac da TTS anonsu icin
+    # (orta+ risk) mikrofonu diger her speak() cagrisiyla ayni sekilde
+    # susturabilmeli (bkz. mouth/tts.py:speak()'in speaking_event notu).
+    fake_app_module = types.ModuleType("src.jarvis.core.app")
+    captured_call = {}
+
+    def fake_execute_tool(tool, intent, stop_event, input_hub=None, pending=None, speaking_event=None):
+        captured_call["speaking_event"] = speaking_event
+        return "ok"
+
+    fake_app_module._execute_tool = fake_execute_tool
+    monkeypatch.setitem(sys.modules, "src.jarvis.core.app", fake_app_module)
+    monkeypatch.setattr(cli_commands.console, "print", lambda msg: None)
+
+    sentinel_event = threading.Event()
+    handle_cli_command("/test get_system_info", history=[], speaking_event=sentinel_event)
+
+    assert captured_call["speaking_event"] is sentinel_event
+
+
 def test_test_command_drops_parameters_not_in_tool_schema(monkeypatch):
     # security-reviewer bulgusu: /test, router yolunun validate_arguments()
     # ile yaptigi "semada tanimli olmayan anahtari sessizce ele" filtresini
@@ -159,7 +183,7 @@ def test_test_command_drops_parameters_not_in_tool_schema(monkeypatch):
     fake_app_module = types.ModuleType("src.jarvis.core.app")
     captured_call = {}
 
-    def fake_execute_tool(tool, intent, stop_event, input_hub=None, pending=None):
+    def fake_execute_tool(tool, intent, stop_event, input_hub=None, pending=None, speaking_event=None):
         captured_call["parameters"] = intent.parameters
         return "ok"
 
@@ -172,6 +196,40 @@ def test_test_command_drops_parameters_not_in_tool_schema(monkeypatch):
 
     assert captured_call["parameters"] == {"content": "merhaba", "lang": "tr"}
     assert "bogus" not in captured_call["parameters"]
+
+
+def test_help_lists_dev_commands_and_every_tool_capability(monkeypatch):
+    # security-reviewer/DX bulgusu: /help eskiden SADECE gelistirici
+    # komutlarini listeliyordu - Jarvis'in gercek yeteneklerini (TOOL_REGISTRY)
+    # hem sesli hem yazili nasil tetikleyecegini gostermiyordu. Bu test,
+    # ikinci bir arac tablosunun HER kayitli aracı (isim/aciklama/risk) icerdigini
+    # dogruluyor - rich Table'in ic render'ini degil, `add_row`'a giden ham
+    # argumanlari yakalayarak (kirilgan string-render karsilastirmasindan kacinmak icin).
+    from rich.table import Table as RichTable
+
+    from src.jarvis.core.risk import RiskLevel
+
+    class _FakeTool:
+        name = "fake_tool"
+        description = "Sahte bir seyler yapar."
+        risk_level = RiskLevel.LOW
+
+    monkeypatch.setattr(cli_commands, "all_tools", lambda: {"fake_tool": _FakeTool()})
+
+    added_rows: list[tuple] = []
+    original_add_row = RichTable.add_row
+
+    def _spy_add_row(self, *args, **kwargs):
+        added_rows.append(args)
+        return original_add_row(self, *args, **kwargs)
+
+    monkeypatch.setattr(RichTable, "add_row", _spy_add_row)
+    monkeypatch.setattr(cli_commands.console, "print", lambda *a, **k: None)
+
+    handle_cli_command("/help", history=[])
+
+    assert ("/help", _COMMANDS["/help"]) in added_rows
+    assert ("fake_tool", "Sahte bir seyler yapar.", "low") in added_rows
 
 
 def test_status_command_reports_without_real_models_or_mcp(monkeypatch):

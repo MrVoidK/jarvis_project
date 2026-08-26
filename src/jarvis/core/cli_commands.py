@@ -24,6 +24,7 @@ from src.jarvis.brain.llm import MODEL_NAME as BRAIN_MODEL_NAME
 from src.jarvis.core.console import console, print_system
 from src.jarvis.core.dispatcher import Intent
 from src.jarvis.core.input_hub import InputEvent, InputHub
+from src.jarvis.tools.base import Tool
 from src.jarvis.tools.registry import all_tools, get_tool
 
 logger = logging.getLogger("jarvis.cli")
@@ -55,6 +56,7 @@ def handle_cli_command(
     stop_event: Optional[threading.Event] = None,
     input_hub: Optional[InputHub] = None,
     pending: Optional[list[InputEvent]] = None,
+    speaking_event: Optional[threading.Event] = None,
 ) -> None:
     """`/`-prefiksli bir metni ayrıştırıp işler. Bilinmeyen bir komut sessizce
     yutulmaz - `/help`'e yönlendiren bir uyarı basılır."""
@@ -71,18 +73,46 @@ def handle_cli_command(
     elif command == "/clear":
         _cmd_clear(history)
     elif command == "/test":
-        _cmd_test(argument, stop_event=stop_event, input_hub=input_hub, pending=pending)
+        _cmd_test(
+            argument,
+            stop_event=stop_event,
+            input_hub=input_hub,
+            pending=pending,
+            speaking_event=speaking_event,
+        )
     else:
         print_system(f"Bilinmeyen komut: {command} (bkz. /help)", level="warning")
 
 
+def _tool_risk_label(tool: Tool) -> str:
+    """`"<isim> (risk: <seviye>)"` - `_cmd_status()` ve `_cmd_help()`'in araç
+    listesi satırlarında AYNI formatı kullanması için tek noktadan (bu görev
+    /help'e ikinci bir araç tablosu eklerken ortaya çıkan bir DRY düzeltmesi)."""
+    return f"{tool.name} (risk: {tool.risk_level.value})"
+
+
 def _cmd_help() -> None:
-    table = Table(title="Jarvis Geliştirici Komutları")
-    table.add_column("Komut", style="bold cyan", no_wrap=True)
-    table.add_column("Açıklama")
+    commands_table = Table(title="Jarvis Geliştirici Komutları")
+    commands_table.add_column("Komut", style="bold cyan", no_wrap=True)
+    commands_table.add_column("Açıklama")
     for command, description in _COMMANDS.items():
-        table.add_row(command, description)
-    console.print(table)
+        commands_table.add_row(command, description)
+    console.print(commands_table)
+
+    console.print(
+        "\n[dim]Aşağıdaki yetenekler hem SESLİ (mikrofon) hem YAZILI (doğal dil) "
+        "olarak, tıpkı aynı cümleyle, aynı router üzerinden tetiklenir - ikisi "
+        "arasında bir fark yoktur. '/test <araç_adı> [key=value ...]' ise "
+        "router'ı atlayıp bir aracı DOĞRUDAN çalıştırmanın yoludur (örnek "
+        "parametreler için isim üstüne gelin ya da /status'a bakın).[/dim]"
+    )
+    tools_table = Table(title="Jarvis Yetenekleri (araçlar)")
+    tools_table.add_column("Araç", style="bold cyan", no_wrap=True)
+    tools_table.add_column("Ne yapar (sesli/yazılı aynı cümleyle)")
+    tools_table.add_column("Risk", justify="center")
+    for name, tool in sorted(all_tools().items()):
+        tools_table.add_row(name, tool.description, tool.risk_level.value)
+    console.print(tools_table)
 
 
 def _cmd_status(history: list[dict]) -> None:
@@ -102,8 +132,8 @@ def _cmd_status(history: list[dict]) -> None:
         f"[bold]Hafıza:[/bold] {max(len(history) - 1, 0)}/{MAX_HISTORY_MESSAGES} mesaj",
         f"[bold]Aktif araçlar ({len(tools)}):[/bold]",
     ]
-    for name, tool in sorted(tools.items()):
-        lines.append(f"  - {name} (risk: {tool.risk_level.value})")
+    for _, tool in sorted(tools.items()):
+        lines.append(f"  - {_tool_risk_label(tool)}")
     console.print(Panel("\n".join(lines), title="Jarvis Durumu", border_style="bold cyan"))
 
 
@@ -152,6 +182,7 @@ def _cmd_test(
     stop_event: Optional[threading.Event],
     input_hub: Optional[InputHub],
     pending: Optional[list[InputEvent]],
+    speaking_event: Optional[threading.Event] = None,
 ) -> None:
     """Dispatcher'ın "hangi aracı seçeceğim" kararını (`Dispatcher.classify()`)
     BYPASS edip doğrudan bir aracı çalıştırır.
@@ -208,5 +239,7 @@ def _cmd_test(
     # aninda iki modul de zaten tam yuklu oldugu icin sorunsuz.
     from src.jarvis.core.app import _execute_tool
 
-    result = _execute_tool(tool, fake_intent, stop_event, input_hub=input_hub, pending=pending)
+    result = _execute_tool(
+        tool, fake_intent, stop_event, input_hub=input_hub, pending=pending, speaking_event=speaking_event
+    )
     console.print(f"[bold cyan]/test sonucu ({name}):[/bold cyan] {result}")

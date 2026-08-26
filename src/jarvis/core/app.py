@@ -68,6 +68,7 @@ def _execute_tool(
     input_hub: Optional[InputHub] = None,
     pending: Optional[list[InputEvent]] = None,
     on_start: Optional[Callable[[], None]] = None,
+    speaking_event: Optional[threading.Event] = None,
 ) -> str:
     """Bir tool'u risk kontrolu + insan onayindan gecirerek calistirir.
 
@@ -83,6 +84,13 @@ def _execute_tool(
     stdin okumaya calismasini (tanimsiz bir yaris) onlemenin tek yolu bu
     (bkz. input_hub.py modul docstring'i). `input_hub=None` (varsayilan) eski
     davranisi korur - hibrit-disi/gelecekteki cagiranlar icin geriye donuk uyumlu.
+
+    `speaking_event` - `run_jarvis()`'in olusturup `mouth/tts.py:speak()` ve
+    `core/input_hub.py:InputHub`'a ORTAK gecirdigi ayni event; buradaki TEK
+    kullanimi onay-bekleme anonsunun (`_APPROVAL_PENDING_MESSAGES`) `speak()`
+    cagrisina AYNEN iletilmesi - boylece bu anons da mikrofonu diger tum
+    `speak()` cagrilariyla ayni sekilde gecici susturur (bkz. `run_jarvis()`
+    docstring'indeki `speaking_event` notu).
 
     `on_start` (security-reviewer bulgusu): tool calistirmaya baslamadan
     ONCE (onay paneli/istemi basilmadan once) cagrilir - run_jarvis() bunu
@@ -136,7 +144,12 @@ def _execute_tool(
     # TUM parametreleri gosterip terminalde bloklayici soru soruyoruz - kullanici
     # router'in URETTIGI argumani, kendi soylediginden farkli olsa bile GORUR.
     if requires_approval(tool.risk_level):
-        speak(_localized(_APPROVAL_PENDING_MESSAGES, lang), language=lang, stop_event=stop_event)
+        speak(
+            _localized(_APPROVAL_PENDING_MESSAGES, lang),
+            language=lang,
+            stop_event=stop_event,
+            speaking_event=speaking_event,
+        )
         print_approval_panel(tool.name, tool.risk_level.value, risky_values)
         prompt = f"'{tool.name}' calistirilsin mi? (risk: {tool.risk_level.value})"
         if input_hub is not None:
@@ -192,6 +205,7 @@ def _handle_turn(
     input_hub: Optional[InputHub] = None,
     pending: Optional[list[InputEvent]] = None,
     on_tool_start: Optional[Callable[[], None]] = None,
+    speaking_event: Optional[threading.Event] = None,
 ) -> Iterator[tuple[str, Optional[str]]]:
     """Bir kullanici turunu guardrail + dispatcher'dan gecirip (metin, dil) ciftleri uretir.
 
@@ -232,7 +246,13 @@ def _handle_turn(
         tool = get_tool(intent.name)
         if tool is not None:
             result = _execute_tool(
-                tool, intent, stop_event, input_hub=input_hub, pending=pending, on_start=on_tool_start
+                tool,
+                intent,
+                stop_event,
+                input_hub=input_hub,
+                pending=pending,
+                on_start=on_tool_start,
+                speaking_event=speaking_event,
             )
             yield result, intent.parameters.get("lang", "en")
             return
@@ -271,18 +291,40 @@ def run_jarvis() -> None:
     tek bir `input()` çağrısı) yarıda kesemez - senkron çağrılar Python'un
     sinyal kontrol noktalarına dönene kadar beklenir; sadece bu çağrılar
     ARASINDAKI bekleme sürelerini anında kısaltır.
+
+    MİKROFON KENDİ KENDİNİ TETİKLEME DÜZELTMESİ: `speaking_event` (aşağıda
+    oluşturulur) hem `speak()`e hem `InputHub`'a geçirilir - `speak()` sesi
+    çalarken bunu set eder, `InputHub`'ın mikrofon thread'i (`ears/listener.py:
+    listen_loop()`) set'ken yeni bir wake-word/VAD tetiklemesi ARAMAZ. Bu
+    olmadan (hibrit girdiden önceki senkron döngüde örtük olarak var olan bir
+    korumaydı - `speak()` çalışırken `listen_loop()` generator'ı zaten askıda
+    kalıyordu) düşük riskli bir araç (örn. `get_system_info`, onay gerektirmez)
+    kendi sesli çıktısını mikrofondan duyup kendini sonsuza kadar yeniden
+    tetikleyebiliyordu (projede akustik yankı bastırma/AEC yok).
     """
     # Boot ekrani (ASCII art + gercek Ears/Mouth/Brain yukleme spinner'lari) artik
     # main.py'de, bu fonksiyon cagrilmadan ONCE calisiyor (bkz. main.py) - o noktada
     # modeller zaten gercekten hazir, bu yuzden burada SADECE "dinlemeye basliyorum"
     # bildirimi kaliyor (eskiden buradaki "ONLINE" banner'i hicbir sey yuklenmeden
     # basiliyordu, bkz. docs/TODO.md/plan notlari - yaniltici oldugu icin kaldirildi).
-    print_system("Jarvis dinlemeye hazır (mikrofon + '[Siz] >>>' terminal girişi).", level="success")
+    print_system("Jarvis dinlemeye hazır (mikrofon + 'SEN >>>' terminal girişi).", level="success")
 
     stop_event = threading.Event()
+    # Jarvis konusurken (speak() suresince + kisa bir sonek) set kalir - InputHub'in
+    # mikrofon thread'i bunu `mute_event` olarak okuyup yeni bir tetiklemeyi bu
+    # sure boyunca ARAMAZ. Eklenme gerekcesi: mikrofon dinleme Faz 3.3'ten
+    # (hibrit girdi, bkz. core/input_hub.py) itibaren ana thread'den bagimsiz,
+    # her zaman acik bir arka plan thread'inde calisiyor - eski senkron dongude
+    # speak() suresince generator askida oldugu icin mikrofon "kazara"
+    # susturulmus oluyordu, bu ortuk koruma o zamandan beri yoktu. Onsuz, dusuk
+    # riskli (onay gerektirmeyen) bir arac (orn. get_system_info) kendi sesli
+    # ciktisini mikrofonundan tekrar duyup kendini sonsuza kadar yeniden
+    # tetikleyebiliyordu (AEC yok) - bkz. mouth/tts.py:speak()'in speaking_event
+    # notu ve ears/listener.py'nin mute_event notu.
+    speaking_event = threading.Event()
     history: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    hub = InputHub(stop_event)
+    hub = InputHub(stop_event, speaking_event)
     hub.start()
     # Bir onay bekleme sirasinda gelen "voice" olaylari burada birikir (bkz.
     # InputHub.wait_for_text_answer()) - asagidaki dongu her turda ONCE
@@ -295,7 +337,12 @@ def run_jarvis() -> None:
 
             if event.source == "text" and is_cli_command(event.text):
                 handle_cli_command(
-                    event.text, history=history, stop_event=stop_event, input_hub=hub, pending=pending
+                    event.text,
+                    history=history,
+                    stop_event=stop_event,
+                    input_hub=hub,
+                    pending=pending,
+                    speaking_event=speaking_event,
                 )
                 continue
 
@@ -327,10 +374,11 @@ def run_jarvis() -> None:
                     input_hub=hub,
                     pending=pending,
                     on_tool_start=_stop_spinner_once,
+                    speaking_event=speaking_event,
                 ):
                     _stop_spinner_once()
                     print_agent("Jarvis", sentence)
-                    speak(sentence, language=lang, stop_event=stop_event)
+                    speak(sentence, language=lang, stop_event=stop_event, speaking_event=speaking_event)
     except KeyboardInterrupt:
         print_system("Kapatma istendi (Ctrl+C) - güvenli şekilde kapatılıyor...", level="warning")
         stop_event.set()

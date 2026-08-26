@@ -12,6 +12,8 @@ dosyayı import etmek bile gerçek model yüklemesi tetiklemez).
 Calistirma: `python -m pytest tests/ -v` (repo kokunden, bkz. CLAUDE.md Komutlar).
 """
 
+import queue
+import sys
 import threading
 import time
 
@@ -120,3 +122,44 @@ def test_input_event_is_a_plain_value_object():
     a = InputEvent(source="text", text="merhaba")
     b = InputEvent(source="text", text="merhaba")
     assert a == b
+
+
+def test_input_hub_accepts_optional_speaking_event():
+    # core/app.py:run_jarvis()'in speak()/InputHub arasinda paylastigi mikrofon-
+    # susturma event'i - verilmezse (eski cagiranlar/testler icin geriye donuk
+    # uyumlu) InputHub kendi bos Event()'ini kullanir, hic hata vermez.
+    hub_without = InputHub(threading.Event())
+    assert isinstance(hub_without._speaking_event, threading.Event)
+    assert not hub_without._speaking_event.is_set()
+
+    speaking_event = threading.Event()
+    hub_with = InputHub(threading.Event(), speaking_event)
+    assert hub_with._speaking_event is speaking_event
+
+
+def test_mic_producer_forwards_speaking_event_to_listen_loop_as_mute_event(monkeypatch):
+    # `input_hub.py:_mic_producer` listen_loop()'u `ears.listener` icinden
+    # gecikmeli import ediyor (bkz. modulun kendi yorumu) - sys.modules'a sahte
+    # bir modul enjekte ederek gercek mikrofon/model yuklemesini tetiklemeden
+    # dogru event'in `mute_event=` olarak iletildigini dogruluyoruz.
+    import types
+
+    from src.jarvis.core.input_hub import _mic_producer
+
+    captured = {}
+
+    def fake_listen_loop(stop_event=None, mute_event=None):
+        captured["stop_event"] = stop_event
+        captured["mute_event"] = mute_event
+        return iter(())  # hicbir transkript uretmeden hemen biter
+
+    fake_listener_module = types.ModuleType("src.jarvis.ears.listener")
+    fake_listener_module.listen_loop = fake_listen_loop
+    monkeypatch.setitem(sys.modules, "src.jarvis.ears.listener", fake_listener_module)
+
+    stop_event = threading.Event()
+    speaking_event = threading.Event()
+    _mic_producer(queue.Queue(), stop_event, speaking_event)
+
+    assert captured["stop_event"] is stop_event
+    assert captured["mute_event"] is speaking_event
