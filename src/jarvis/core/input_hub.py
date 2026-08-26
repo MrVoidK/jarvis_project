@@ -54,6 +54,7 @@ import threading
 from dataclasses import dataclass
 from typing import Literal, Optional
 
+from src.jarvis.core import hud_bus
 from src.jarvis.core.console import console
 
 logger = logging.getLogger("jarvis.core.input_hub")
@@ -99,10 +100,17 @@ def _mic_producer(
     docstring'i) ki Jarvis kendi TTS çıktısını mikrofonundan duyup yeni bir
     kullanıcı turu sanmasın (bkz. bu event'in eklenme gerekçesi için
     `core/app.py:run_jarvis()` docstring'i).
+
+    `listen_loop()`'un `on_state_change=hud_bus.publish_state` ile doğrudan
+    bağlanması (JARVIS HUD - web-ui entegrasyonu): `hud_bus.publish_state`
+    zaten `Callable[[str], None]` imzasıyla eşleşiyor, ayrı bir sarmalayıcı
+    closure'a gerek yok.
     """
     from src.jarvis.ears.listener import listen_loop
 
-    for transcript in listen_loop(stop_event=stop_event, mute_event=speaking_event):
+    for transcript in listen_loop(
+        stop_event=stop_event, mute_event=speaking_event, on_state_change=hud_bus.publish_state
+    ):
         input_queue.put(InputEvent(source="voice", text=transcript))
 
 
@@ -150,6 +158,26 @@ class InputHub:
     def start(self) -> None:
         self._mic_thread.start()
         self._text_thread.start()
+
+    def submit_external_text(self, text: str) -> None:
+        """JARVIS HUD (web-ui) WebSocket thread'inden (`core/api.py`) gelen
+        yazili bir komutu, `_text_producer`'in yaptigi AYNI seyi yaparak ana
+        kuyruga ekler. `self._queue` bir `queue.Queue` oldugu icin (stdlib'in
+        kendi kilidiyle korunuyor) HERHANGI bir thread'den dogrudan `put()`
+        cagirmak guvenli - `mouth/tts.py`'nin `speaking_event`i ya da bu
+        modulun `hud_bus`'a ihtiyac duydugu asyncio-loop-koprusune BENZER bir
+        seye burada gerek YOK (bkz. core/hud_bus.py modul docstring'indeki
+        "neden call_soon_threadsafe" aciklamasi - o SADECE ters yon, sync
+        thread -> asyncio Queue icin gerekli).
+
+        Web'den yazilan bir metin, terminalden yazilanla AYNI
+        `InputEvent(source="text", ...)` olarak kuyruga girer - `run_jarvis()`
+        `/slash` komutlarini ve dogal dili aralarinda fark gozetmeden isler,
+        onay bekleme sirasinda gelen bir "evet"/"y" de ayni yoldan akar
+        (bkz. wait_for_text_answer()).
+        """
+        if text.strip():
+            self._queue.put(InputEvent(source="text", text=text))
 
     def next_event(self, poll_interval: float = 0.5) -> InputEvent:
         """Bir sonraki girdi olayını bekler - kaynağı fark etmeksizin.

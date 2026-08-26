@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<!-- saved from url=(0253)https://9aa0a8c0-dfe9-424b-8150-318a64e91440.frame.claudeusercontent.com/_f/1787777249-92be/?__frame_t=BNIEy-XXSo8DRQBp29ZVC2yy.a8bfb93c-02d6-4879-bf6c-306d2605efa8.9baee27d-7de9-4793-9e6b-5d697ae87c25.1787780941&__frame_v=manifest.2aef6fa4386bfbe6.json -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><!-- frame-runtime --><!--<base href="/_f/1787777249-92be/">--><base href="."><script>window.__FRAME_PREAMBLE={"v":1,"capabilities":{"artifact":"artifact.YODCk0yK.js","assets":"assets.DBUJcvq_.js","comments":"comments.GLuHR3zP.js","db":"db.CRhVHzSt.js","downloads":"downloads.C3GSvEDP.js","embed":"embed.CxGAyc-v.js","mcp":"mcp.Bvma3qD7.js","network":"network.B5UA9Su4.js","permissions":"permissions.BNySkLV5.js","room":"room.BMMoe2BY.js","sample":"sample.BW2Uysoh.js","self":"artifact.YODCk0yK.js","user":"user.BpKav-Rf.js"},"transforms":"_transforms.CQm3TZ9K.js","comments":"_comments.PBVy184F.js","translate":"_translate.5HCW4BJh.js"}</script><script>(function(){"use strict";var J=["light","dark","system"],Q=/^[A-Za-z0-9_-]{1,64}$/,H=/^[a-zA-Z_:][a-zA-Z0-9_:.-]{0,127}$/,ee=new Set(["class","hidden","value","checked"]);function te(e){const t=e.toLowerCase();return t.startsWith("data-")||t.startsWith("aria-")||ee.has(t)}var Me="http://www.w3.org/1999/xhtml",re="http://www.w3.org/2000/svg",ne=new Set(["script","style","iframe","noscript","noframes","noembed","xmp","plaintext","template","title","textarea","object","embed"]),oe=new Set(["script","style"]);function se(e){const t=e.localName.toLowerCase();return e.namespaceURI==="http://www.w3.org/1999/xhtml"?!ne.has(t):e.namespaceURI===re?!oe.has(t):!1}var ae=new Set(["html","head","body","frameset"]);function ie(e){return e.namespaceURI==="http://www.w3.org/1999/xhtml"&&ae.has(e.localName)}function ce(e){if(e===null||typeof e!="object")return!1;const t=e;if(typeof t.target!="string"||!Q.test(t.target)||t.text!==void 0&&typeof t.text!="string")return!1;if(t.attrsSet!==void 0){if(t.attrsSet===null||typeof t.attrsSet!="object")return!1;for(const[r,n]of Object.entries(t.attrsSet))if(!H.test(r)||typeof n!="string")return!1}if(t.attrsRemoved!==void 0){if(!Array.isArray(t.attrsRemoved))return!1;for(const r of t.attrsRemoved)if(typeof r!="string"||!H.test(r))return!1}return!0}function le(e,t){if(e===null||typeof e!="object")return!1;const{seq:r,elements:n}=e;if(typeof r!="number"||!Number.isSafeInteger(r)||!Array.isArray(n)||n.length===0||n.length>64)return!1;for(let s=0;s<n.length;s++)if(!t(n[s]))return!1;return!0}function ue(e){return e===null||typeof e!="object"?!1:le(e.__frame_patch,ce)}function fe(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_init;return t!==null&&typeof t=="object"}function pe(e){return e!==null&&typeof e=="object"&&e.__frame_size_poke===!0}function de(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_theme;if(t===null||typeof t!="object")return!1;const r=t.theme;return typeof r=="string"&&J.includes(r)}var A=/^[\w.-]+\.js$/;function me(e,t,r){return r?"inert":typeof t=="string"&&A.test(t)?e?[t]:"inert":e?"inert":"framed"}function he(){return{post(e,t){parent.postMessage(e,t)},on(e){const t=r=>{r.source===parent&&e(r.data,r.origin)};return addEventListener("message",t),()=>removeEventListener("message",t)}}}function _e(){return{post:()=>{},on:()=>()=>{}}}var O="__frame_scroll",ve=150,ye=310,we=160,be=3e4;function Ee(){let e=0,t=!1,r=!1,n=!1,s=0,a=null;const l=i=>{try{sessionStorage.setItem(O,JSON.stringify({y:i}))}catch{}},d=()=>{if(clearTimeout(e),a===null)return;const i=a;a=null,l(i)},v=()=>{if(t){t=!1;return}r=!0,a=scrollY,clearTimeout(e),e=setTimeout(d,ve)};try{addEventListener("scroll",v,{passive:!0}),addEventListener("pagehide",d)}catch{}const y=()=>{let i;try{i=sessionStorage.getItem(O)}catch{return null}if(i===null)return null;let m;try{m=JSON.parse(i)}catch{m=null}const u=m?.y;if(!(typeof u=="number"&&Number.isFinite(u)&&u>=0)){try{sessionStorage.removeItem(O)}catch{}return null}return u};let S=!1;const h=i=>{try{const m=scrollY;scrollTo({top:i,left:0,behavior:"instant"}),s=i,n=!0,clearTimeout(e),a=null,l(i);const u=scrollY;u!==m&&(t=!0),u!==i&&!S&&(S=!0,addEventListener("load",()=>{try{if(scrollY===u){const k=y();h(k!==null?k:s)}}catch{}},{once:!0}))}catch{}},w=()=>{try{return!!location.hash}catch{return!0}};let o=!1;const f=()=>{try{if(o||innerWidth>ye||innerHeight>we)return;o=!0;const i=Date.now(),m=()=>{try{removeEventListener("resize",m)}catch{}if(Date.now()-i>be||r||w())return;const u=y();h(u!==null?u:s)};addEventListener("resize",m)}catch{}};let _=!1,b=!1;return{restore(){if(_||(_=!0,w()))return;const i=y();i!==null&&(h(i),f())},promoted(){if(b||(b=!0,w()))return;const i=y();i!==null?(h(i),f()):n&&h(s)}}}function ge(e,t,r,n){let s=null;try{s=window.trustedTypes?.createPolicy("frame-runtime",{createScriptURL:v=>v})??null}catch{}const a=window.Worker,l=a?.prototype,d=Object.freeze({Worker:a,workerOn:l?.addEventListener,workerPost:l?.postMessage,workerTerminate:l?.terminate,fetch:window.fetch.bind(window),preventDefault:Event.prototype.preventDefault,policy:s,origins:t});r(e).then(v=>v?.bootTopLevel?v.bootTopLevel(d,n):n.settle()).catch(()=>n.settle())}var Oe="modulepreload",Ce=function(e){return"/"+e},je={},Ae=function(t,r,n){let s=Promise.resolve();function a(l){const d=new Event("vite:preloadError",{cancelable:!0});if(d.payload=l,window.dispatchEvent(d),!d.defaultPrevented)throw l}return s.then(l=>{for(const d of l||[])d.status==="rejected"&&a(d.reason);return t().catch(a)})},Re=window===top,q=Object.getOwnPropertyDescriptor(window,"claude"),T=me(Re,window.__FRAME_PREAMBLE?.topLevel,q?.writable===!1),C=typeof T=="object"&&T[0],p=C?_e():he();(function(){const e=Object.defineProperty,t=globalThis,r=["RTCPeerConnection","webkitRTCPeerConnection","RTCDataChannel","RTCIceCandidate","RTCSessionDescription","RTCRtpSender","RTCRtpReceiver"];let n=0;for(let s=0;s<r.length;s++){const a=r[s];try{e(t,a,{value:void 0,writable:!1,configurable:!1})}catch{try{delete t[a]}catch{}try{e(t,a,{value:void 0,writable:!1,configurable:!0})}catch{}}typeof t[a]=="function"&&n++}if(n&&T==="framed")try{p.post({__frame_rtc_lockdown_failed:n},"*")}catch{}})();var Se=1e4,W=Object.freeze([...window.__FRAME_PREAMBLE?.origins??["https://claude.ai","https://preview.claude.ai"]]);function $(e){for(const t of W)if(t.endsWith(":*"))try{const r=new URL(e);if(`${r.protocol}//${r.hostname}:*`===t)return!0}catch{}else if(e===t)return!0;return!1}var L=Object.freeze({...window.__FRAME_PREAMBLE?.capabilities}),j=window.__FRAME_PREAMBLE?.transforms,N=window.__FRAME_PREAMBLE?.comments,I=window.__FRAME_PREAMBLE?.translate;function R(e){return Ae(()=>import("/_runtime/"+e),void 0)}function K(e,t){return{contract:e.contract,changes:new Set(e.changes??[]),flags:new Set(e.flags??[]),capabilities:e.capabilities??{},capBudgets:e.capBudgets??{},transforms:new Map,shellOrigin:t,mount:D,pipe:()=>({wrap:(r,n)=>(...s)=>{try{return n(...s)}catch(a){return Promise.reject(a)}}})}}var P=null,E=null;function Y(e,t,r){try{Object.defineProperty(e,t,{value:r,writable:!1,configurable:!1,enumerable:!0})}catch{try{Object.defineProperty(e,t,{value:r,writable:!1,configurable:!0,enumerable:!0})}catch{}}}var B=!1;function ke(e,t){const r=[];for(const n of e.elements){const s=document.querySelector(`[data-id="${n.target}"]`);if(!s){p.post({__frame_patch_miss:{seq:e.seq}},t);return}if([...Object.keys(n.attrsSet??{}),...n.attrsRemoved??[]].some(a=>!te(a))){p.post({__frame_patch_miss:{seq:e.seq}},t);return}if(n.text!==void 0&&(!se(s)||ie(s))){p.post({__frame_patch_miss:{seq:e.seq}},t);return}for(const[a,l]of Object.entries(n.attrsSet??{}))if(!G(s,a)){try{s.setAttribute(a,l)}catch{}X(s,a,l)}for(const a of n.attrsRemoved??[])G(s,a)||(s.removeAttribute(a),X(s,a,null));typeof n.text=="string"&&(s.textContent=n.text),r.push(n.target)}try{document.dispatchEvent(new CustomEvent("claude:edit",{detail:{seq:e.seq,targets:r}}))}catch{}}function X(e,t,r){if(!(e instanceof HTMLInputElement))return;const n=t.toLowerCase();n==="checked"?e.checked=r!==null:n==="value"&&e.type!=="file"&&(e.value=r??"")}function G(e,t){const r=t.toLowerCase(),n=e;return r==="data-id"||(r==="value"||r==="checked")&&(n.__artifactSecret===!0||/^(password|hidden|file)$/.test(n.type??"")||/(^|\s)(cc-|one-time-code|current-password|new-password)/i.test(`${e.getAttribute("autocomplete")??""} ${n.autocomplete??""}`))}function V(e){const t=document.documentElement;e==="light"||e==="dark"?(t.dataset.theme=e,t.style.colorScheme=e,B=!0):B&&(delete t.dataset.theme,t.style.colorScheme="",B=!1)}var M=new Map;function Te(){let e;const t={u:new Promise(r=>{e=r}),r:r=>{t.done=!0,e(r)},done:!1,nulled:!1};return t}function U(){for(const e of M.values())e.done||(e.nulled=!0,e.r(null))}var Le=Object.freeze(Object.assign(Object.create(null),{call:Function.prototype.call,apply:Function.prototype.apply,bind:Function.prototype.bind})),D=(e,t)=>{const r=M.get(e);if(!r||r.done){r?.nulled&&E&&p.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:e}},E);return}const n=typeof t=="function"?Object.setPrototypeOf(t,Le):Object.assign(Object.create(null),t);typeof n.then=="function"&&delete n.then,r.r(Object.freeze(n))};function Z(){const e=q?.value??{};Y(window,"claude",e);for(const t of Object.keys(L)){if(e[t]!==void 0){Y(e,t,e[t]);continue}M.set(t,Te())}if(e.use===void 0){const t=r=>{if(typeof r!="string"||!Object.hasOwn(L,r))return Promise.resolve(null);const n=M.get(r);return n?n.u:Promise.resolve(e[r]??null)};try{Object.defineProperty(e,"use",{value:t,writable:!0,configurable:!0,enumerable:!1})}catch{}}}if(T==="framed"){const e=j&&A.test(j)?R(j).catch(()=>{}):Promise.resolve(void 0),t=o=>{if(o.type==="auxclick"&&o.button!==1)return;const f=o.target,_=f&&f.closest?f.closest("a[href],area[href]"):null;if(!_)return;const b=_.getAttribute("href");if(!b)return;let i;try{i=new URL(b,document.baseURI)}catch{return}if((i.protocol==="http:"||i.protocol==="https:")&&i.origin!==location.origin){o.preventDefault();const m=(_.getAttribute("target")??"").toLowerCase(),u=o.type==="auxclick"||o.metaKey||o.ctrlKey||o.shiftKey||o.altKey||!["","_self","_top","_parent"].includes(m);p.post({__frame_nav:!0,url:i.href,newTab:u},"*")}};addEventListener("click",t,!0),addEventListener("auxclick",t,!0);const r={},n=o=>{o.isTrusted&&(r.pointer=!0)},s=o=>{o.isTrusted&&(r.click=!0)};addEventListener("pointermove",n,{capture:!0,passive:!0}),addEventListener("click",s,{capture:!0,passive:!0}),e.then(o=>{o?.wireNav&&(o.wireNav(),removeEventListener("click",t,!0),removeEventListener("auxclick",t,!0),removeEventListener("pointermove",n,!0),removeEventListener("click",s,!0),o.wireEngagement?.(r))});let a=null;try{a=Ee()}catch{}Z();let l=null,d=null,v=0;const y=p.on((o,f)=>{$(f)&&fe(o)&&(l=o.__frame_init,E=f,y(),clearTimeout(v),d?.())});p.post({__frame_connect:!0},"*");const S=new Promise(o=>{d=o,v=setTimeout(()=>{y(),o()},Se)}),h=document.readyState==="loading"?new Promise(o=>document.addEventListener("DOMContentLoaded",()=>o(),{once:!0})):Promise.resolve();h.then(()=>{try{a?.restore()}catch{}});const w={cb:null};p.on((o,f)=>{if($(f)&&pe(o)){try{a?.promoted()}catch{}w.cb?.()}}),S.then(async()=>{if(!l||!E){U();return}V(l.theme);const o=E;let f=!1,_=!1;p.on((c,x)=>{if(x!==o)return;de(c)&&V(c.__frame_theme.theme),ue(c)&&ke(c.__frame_patch,o);const g=c?.__fc_mode;g&&typeof g=="object"&&!f&&N&&A.test(N)&&(f=!0,R(N).then(z=>z.install?.(o,g.on===!0)).catch(()=>{}));const F=c?.__ft_cmd;F&&typeof F=="object"&&!_&&I&&A.test(I)&&(_=!0,R(I).then(z=>z.install?.(o,F)).catch(()=>{}))});const b=Object.keys(l.capabilities??{}).filter(c=>Object.hasOwn(L,c)).map(c=>[c,L[c]]).filter(c=>typeof c[1]=="string"&&A.test(c[1])),i=await Promise.allSettled(b.map(([,c])=>R(c))),m=await e,u=E;if(m?.buildBoot||p.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:"_transforms"}},u),m?.buildBoot)try{P=m.buildBoot(l,m.TRANSFORMS??{},{shellOrigin:u,mount:D},c=>p.post({__frame_cap_telemetry:c},u))}catch{p.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:"_transforms"}},u),P=K(l,u)}else P=K(l,u);const k=c=>p.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:c}},u),Pe=P;i.forEach((c,x)=>{const g=b[x][0];if(c.status!=="fulfilled"){k(g);return}try{c.value?.install?.(Pe)}catch{k(g)}}),U(),await h,p.post({__frame_ready:!0},E),e.then(c=>c?.installSizeReporter?.(u,w))})}else C&&(Z(),ge(C,W,R,{settle:U,mount:D}))})();</script><!-- /frame-runtime --><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}</style></head><body>
+<title>J.A.R.V.I.S. HUD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com/">
+<link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
+<link href="./css2" rel="stylesheet">
+
+<style>
+  :root{
+    /* palette pulled from the reference plate: ember filament on burnt void */
+    --void:        #040201;
+    --void-2:      #0a0503;
+    --ember:       #ff7a18;
+    --ember-deep:  #d95a08;
+    --amber:       #ffa62b;
+    --gold:        #ffc85c;
+    --hot:         #ffe9b8;
+    --copper:      #7a3f0c;
+    --copper-dim:  #4a2607;
+    --ash:         #c39160;
+    --ash-dim:     #8a6134;
+    --ash-faint:   #5c422a;
+    --alert:       #ff3d0a;
+
+    --panel:       rgba(26,13,4,0.46);
+    --panel-2:     rgba(34,17,5,0.66);
+    --line:        rgba(255,122,24,0.20);
+    --line-hot:    rgba(255,166,43,0.55);
+
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html, body{
+    margin:0; padding:0; width:100%; height:100%;
+    background: var(--void);
+    color: var(--ash);
+    overflow:hidden;
+  }
+
+  body{
+    background:
+      radial-gradient(ellipse 90% 70% at 50% 50%, rgba(255,122,24,0.055), transparent 62%),
+      radial-gradient(ellipse 130% 60% at 50% 108%, rgba(217,90,8,0.05), transparent 65%),
+      linear-gradient(180deg, var(--void), var(--void-2) 55%, var(--void));
+  }
+
+  /* ---- film layers ---- */
+  .scanlines{
+    position:fixed; inset:0; z-index:70; pointer-events:none; opacity:.55;
+    background-image: repeating-linear-gradient(0deg,
+      rgba(255,180,110,0.030) 0px, rgba(255,180,110,0.030) 1px,
+      transparent 1px, transparent 3px);
+    mix-blend-mode: overlay;
+  }
+  .sweep{
+    position:fixed; left:0; right:0; height:120px; z-index:69; pointer-events:none;
+    background: linear-gradient(180deg, transparent, rgba(255,166,43,0.045), transparent);
+    animation: sweepDown 9s linear infinite;
+  }
+  @keyframes sweepDown{ from{ transform: translateY(-140px); } to{ transform: translateY(102vh); } }
+  .vignette{
+    position:fixed; inset:0; z-index:71; pointer-events:none;
+    box-shadow: inset 0 0 20vw 3vw rgba(0,0,0,0.82);
+  }
+
+  ::selection{ background: var(--ember); color:#100600; }
+  ::-webkit-scrollbar{ width:5px; height:5px; }
+  ::-webkit-scrollbar-thumb{ background: var(--copper); }
+  ::-webkit-scrollbar-track{ background: transparent; }
+
+  button{ font-family:inherit; }
+
+  .label{
+    font-family:'Orbitron', sans-serif;
+    letter-spacing:.16em; text-transform:uppercase;
+  }
+
+  /* ---- panel chrome ---- */
+  .glass{
+    position:relative;
+    background: var(--panel);
+    border:1px solid var(--line);
+    backdrop-filter: blur(11px) saturate(115%);
+    -webkit-backdrop-filter: blur(11px) saturate(115%);
+    border-radius:2px;
+  }
+  .glass::after{
+    /* fine tick ruler along the top edge — instrument feel */
+    content:""; position:absolute; left:14px; right:14px; top:0; height:4px;
+    background-image: repeating-linear-gradient(90deg,
+      rgba(255,122,24,0.34) 0px, rgba(255,122,24,0.34) 1px,
+      transparent 1px, transparent 7px);
+    pointer-events:none; opacity:.7;
+  }
+  .brk{ position:absolute; width:9px; height:9px; border-color: var(--amber); opacity:.8; pointer-events:none; }
+  .brk.tl{ top:-1px; left:-1px; border-top:1px solid; border-left:1px solid; }
+  .brk.tr{ top:-1px; right:-1px; border-top:1px solid; border-right:1px solid; }
+  .brk.bl{ bottom:-1px; left:-1px; border-bottom:1px solid; border-left:1px solid; }
+  .brk.br{ bottom:-1px; right:-1px; border-bottom:1px solid; border-right:1px solid; }
+
+  /* ===================== SHELL ===================== */
+  .hud{
+    position:relative; width:100%; height:100vh; padding:12px;
+    display:grid;
+    grid-template-columns: 246px 1fr 302px;
+    grid-template-rows: 44px 1fr;
+    gap:10px;
+  }
+
+  /* ---- top bar ---- */
+  .topbar{ grid-column:1 / 4; display:flex; align-items:center; justify-content:space-between; padding:0 16px; }
+  .brand{ display:flex; align-items:center; gap:10px; font-size:12.5px; font-weight:700; color: var(--gold); letter-spacing:.06em; }
+  .brand .core-dot{
+    width:7px; height:7px; border-radius:50%;
+    background: var(--ember);
+    box-shadow: 0 0 10px var(--ember), 0 0 3px var(--hot);
+    animation: throb 3.6s ease-in-out infinite;
+  }
+  @keyframes throb{ 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:.4; transform:scale(.82);} }
+  .brand small{ color: var(--ash-dim); font-weight:500; font-size:9.5px; letter-spacing:.16em; }
+  .topbar-right{ display:flex; align-items:center; gap:24px; font-size:11px; color: var(--ash-dim); }
+  .clock{
+    font-family:'Orbitron', sans-serif; font-size:17px; font-weight:700;
+    color: var(--amber); letter-spacing:.08em; font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 14px rgba(255,122,24,0.45);
+  }
+  .stack{ display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
+  .stack .sub{ font-size:9px; letter-spacing:.14em; color: var(--ash-faint); }
+  .loc{ display:flex; align-items:center; gap:7px; font-size:10px; letter-spacing:.12em; }
+  .loc .pin{ width:5px; height:5px; border:1px solid var(--amber); transform:rotate(45deg); }
+
+  /* ---- left column ---- */
+  .col-left{ display:flex; flex-direction:column; gap:9px; overflow-y:auto; padding-right:2px; }
+  .panel{ padding:11px 13px 12px; }
+  .p-title{ display:flex; align-items:center; justify-content:space-between; font-size:9px; color: var(--ash-dim); margin-bottom:9px; }
+  .p-title .val{ color: var(--amber); font-weight:700; font-size:10px; font-variant-numeric: tabular-nums; }
+
+  .track{ height:4px; background: rgba(255,122,24,0.08); border:1px solid var(--line); overflow:hidden; }
+  .fill{
+    height:100%; background: linear-gradient(90deg, var(--copper), var(--ember) 70%, var(--gold));
+    box-shadow: 0 0 8px rgba(255,122,24,0.55);
+    transition: width .7s cubic-bezier(.4,0,.2,1);
+  }
+  .meta{ font-size:9px; color: var(--ash-faint); line-height:1.6; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line); letter-spacing:.04em; }
+  .meta b{ color: var(--ash-dim); font-weight:500; }
+
+  .spark{ display:flex; align-items:flex-end; gap:2px; height:28px; margin-top:8px; }
+  .spark i{
+    flex:1; background: linear-gradient(180deg, var(--amber), rgba(217,90,8,0.12));
+    transition: height .8s cubic-bezier(.4,0,.2,1);
+  }
+  .net-row{ display:flex; justify-content:space-between; font-size:9px; margin-top:8px; font-variant-numeric: tabular-nums; }
+  .net-row .up{ color: var(--gold); }
+  .net-row .dn{ color: var(--ember); }
+
+  .status-list{ display:flex; flex-direction:column; gap:6px; }
+  .status-item{ display:flex; align-items:center; gap:8px; font-size:9.5px; color: var(--ash-dim); letter-spacing:.05em; }
+  .led{ width:5px; height:5px; background: var(--amber); box-shadow:0 0 7px var(--amber); flex-shrink:0; }
+  .led.warn{ background: var(--alert); box-shadow:0 0 7px var(--alert); animation: throb 2s ease-in-out infinite; }
+
+  /* ---- center ---- */
+  .core-wrap{ position:relative; overflow:hidden; }
+  #core-canvas{ display:block; width:100%; height:100%; }
+
+  .core-status{ position:absolute; top:14px; left:50%; transform:translateX(-50%); text-align:center; pointer-events:none; }
+  .core-status .state{
+    font-family:'Orbitron', sans-serif; font-size:12.5px; font-weight:700; letter-spacing:.3em;
+    color: var(--hot); text-shadow: 0 0 16px rgba(255,122,24,0.6);
+    transition: opacity .45s ease;
+  }
+  .core-status .sub{
+    font-size:9px; color: var(--ash-faint); margin-top:5px; letter-spacing:.18em;
+    transition: opacity .45s ease;
+  }
+  .core-status.swapping .state, .core-status.swapping .sub{ opacity:.15; }
+
+  .core-controls{
+    position:absolute; bottom:13px; left:50%; transform:translateX(-50%);
+    display:flex; gap:7px; flex-wrap:wrap; justify-content:center; max-width:94%;
+  }
+  .hud-btn{
+    background: rgba(255,122,24,0.05);
+    border:1px solid var(--line);
+    color: var(--ash-dim);
+    font-family:'Orbitron', sans-serif; font-size:9px; letter-spacing:.14em; text-transform:uppercase;
+    padding:7px 13px; border-radius:1px; cursor:pointer; white-space:nowrap;
+    transition: color .35s ease, border-color .35s ease, background .35s ease, box-shadow .35s ease;
+  }
+  .hud-btn:hover{ color: var(--gold); border-color: var(--line-hot); background: rgba(255,122,24,0.1); box-shadow:0 0 14px rgba(255,122,24,0.16); }
+  .hud-btn:focus-visible{ outline:1px solid var(--gold); outline-offset:2px; }
+  .hud-btn.active{
+    color:#160800; background: linear-gradient(180deg, var(--gold), var(--ember));
+    border-color: var(--gold); box-shadow:0 0 18px rgba(255,122,24,0.45);
+  }
+  .hud-btn.accent{ border-color: rgba(255,200,92,0.35); color: var(--gold); }
+
+  /* ---- now playing ---- */
+  .now-playing{
+    position:absolute; top:14px; right:14px; width:224px; padding:11px 13px;
+    background: var(--panel-2);
+    opacity:0; transform: translateY(-8px); pointer-events:none;
+    transition: opacity .55s cubic-bezier(.4,0,.2,1), transform .55s cubic-bezier(.4,0,.2,1);
+  }
+  .now-playing.show{ opacity:1; transform:none; pointer-events:auto; }
+  .np-head{ display:flex; justify-content:space-between; align-items:center; font-size:8.5px; color: var(--gold); letter-spacing:.2em; margin-bottom:9px; }
+  .np-head button{ background:none; border:none; color: var(--ash-faint); cursor:pointer; font-size:11px; padding:0; }
+  .np-head button:hover{ color: var(--ember); }
+  .np-title{ font-size:12px; font-weight:700; color: var(--hot); margin-bottom:2px; }
+  .np-artist{ font-size:10px; color: var(--ash-dim); margin-bottom:10px; letter-spacing:.04em; }
+  .np-viz{ display:flex; align-items:flex-end; gap:2px; height:30px; }
+  .np-viz i{
+    flex:1; background: linear-gradient(180deg, var(--hot), var(--ember) 45%, rgba(122,63,12,0.2));
+    animation: viz 1.1s ease-in-out infinite;
+  }
+  @keyframes viz{ 0%,100%{ height:14%; } 50%{ height:88%; } }
+
+  /* ---- terminal ---- */
+  .terminal{ display:flex; flex-direction:column; padding:11px 12px 9px; overflow:hidden; }
+  .term-head{
+    display:flex; justify-content:space-between; align-items:center; font-size:9px; color: var(--ash-dim);
+    padding-bottom:8px; margin-bottom:8px; border-bottom:1px dashed var(--line);
+  }
+  .term-head .rail{ display:flex; gap:3px; }
+  .term-head .rail span{ width:12px; height:3px; background: var(--copper); }
+  .term-head .rail span:first-child{ background: var(--ember); }
+
+  .term-log{ flex:1; overflow-y:auto; font-size:10.5px; line-height:1.7; display:flex; flex-direction:column; }
+  .term-log .line{ display:flex; gap:6px; word-break:break-word; animation: lineIn .4s ease both; }
+  @keyframes lineIn{ from{ opacity:0; transform: translateX(-4px);} to{ opacity:1; transform:none;} }
+  .ts{ color: var(--ash-faint); flex-shrink:0; font-variant-numeric: tabular-nums; }
+  .tag{ flex-shrink:0; }
+  .tag.pass{ color: var(--gold); }
+  .tag.info{ color: var(--ash-dim); }
+  .tag.route{ color: var(--ember); }
+  .tag.warn{ color: var(--alert); }
+  .msg{ color: var(--ash-dim); }
+  .user-line .msg{ color: var(--ash); }
+  .cmd-line .msg{ color: var(--hot); text-shadow: 0 0 9px rgba(255,200,92,0.65); }
+
+  .term-input-row{ display:flex; align-items:center; gap:8px; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line); }
+  .term-prompt{ color: var(--ember); font-size:11.5px; font-weight:700; flex-shrink:0; }
+  .term-input{
+    flex:1; background:none; border:none; outline:none; color: var(--hot);
+    font-family:'JetBrains Mono', monospace; font-size:11.5px; caret-color: var(--ember);
+  }
+  .term-input::placeholder{ color: var(--ash-faint); }
+
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{ animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+    .sweep{ display:none; }
+  }
+
+  @media (max-width: 1000px){
+    html, body{ overflow-y:auto; }
+    .hud{ grid-template-columns:1fr; grid-template-rows:44px auto auto auto; height:auto; min-height:100vh; }
+    .core-wrap{ min-height:440px; }
+    .now-playing{ position:static; width:100%; margin-top:10px; transform:none; }
+    .terminal{ min-height:340px; }
+  }
+</style>
+
+<div class="scanlines"></div>
+<div class="sweep"></div>
+<div class="vignette"></div>
+
+<div class="hud">
+
+  <div class="topbar glass">
+    <div class="brk tl"></div><div class="brk tr"></div><div class="brk bl"></div><div class="brk br"></div>
+    <div class="brand">
+      <span class="core-dot"></span>
+      J.A.R.V.I.S. <small>// CORE SYSTEM ONLINE</small>
+    </div>
+    <div class="topbar-right">
+      <div class="loc"><span class="pin"></span><span id="loc-text">ISTANBUL · SECTOR 04</span></div>
+      <div class="stack">
+        <span class="clock" id="clock">23:57:46</span>
+        <span class="sub" id="date-text">WED 26 AUG 2026</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-left">
+
+    <div class="panel glass">
+      <div class="brk tl"></div><div class="brk br"></div>
+      <div class="p-title"><span class="label">CPU Load</span><span class="val" id="cpu-val">30%</span></div>
+      <div class="track"><div class="fill" id="cpu-bar" style="width: 30.3989%;"></div></div>
+      <div class="meta"><b>AMD RYZEN 5 PRO 4650U</b><br>6C / 12T · 2.10 GHz BASE · 47°C</div>
+    </div>
+
+    <div class="panel glass">
+      <div class="brk tl"></div><div class="brk br"></div>
+      <div class="p-title"><span class="label">Memory</span><span class="val" id="ram-val">59%</span></div>
+      <div class="track"><div class="fill" id="ram-bar" style="width: 58.9892%;"></div></div>
+      <div class="spark" id="ram-spark"><i style="height: 42.9009%;"></i><i style="height: 46.4846%;"></i><i style="height: 39.7302%;"></i><i style="height: 38.7143%;"></i><i style="height: 52.4322%;"></i><i style="height: 42.8153%;"></i><i style="height: 60.8765%;"></i><i style="height: 39.949%;"></i><i style="height: 54.559%;"></i><i style="height: 47.6323%;"></i><i style="height: 52.428%;"></i><i style="height: 47.3954%;"></i><i style="height: 48.5913%;"></i><i style="height: 56.2912%;"></i><i style="height: 60.4797%;"></i><i style="height: 65.4452%;"></i><i style="height: 43.2092%;"></i><i style="height: 59.1396%;"></i></div>
+      <div class="meta"><b>13.2 GB</b> / 16 GB DDR4-3200</div>
+    </div>
+
+    <div class="panel glass">
+      <div class="brk tl"></div><div class="brk br"></div>
+      <div class="p-title"><span class="label">Network</span><span class="val" id="net-lat">13 ms</span></div>
+      <div class="spark" id="net-spark"><i style="height: 70%;"></i><i style="height: 63%;"></i><i style="height: 27%;"></i><i style="height: 58%;"></i><i style="height: 51%;"></i><i style="height: 28%;"></i><i style="height: 82%;"></i><i style="height: 70%;"></i><i style="height: 52%;"></i><i style="height: 19%;"></i><i style="height: 70%;"></i><i style="height: 27%;"></i><i style="height: 20%;"></i><i style="height: 55%;"></i><i style="height: 34%;"></i><i style="height: 43%;"></i><i style="height: 73%;"></i><i style="height: 15%;"></i></div>
+      <div class="net-row">
+        <span class="up" id="net-up">↑ 16 KB/s</span>
+        <span class="dn" id="net-dn">↓ 15 KB/s</span>
+      </div>
+    </div>
+
+    <div class="panel glass">
+      <div class="brk tl"></div><div class="brk br"></div>
+      <div class="p-title"><span class="label">Subsystems</span></div>
+      <div class="status-list">
+        <div class="status-item"><span class="led"></span> Speech Recognition</div>
+        <div class="status-item"><span class="led"></span> Vision Module</div>
+        <div class="status-item"><span class="led warn"></span> Home Automation</div>
+        <div class="status-item"><span class="led"></span> Neural Router</div>
+        <div class="status-item"><span class="led"></span> Vector Store</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="core-wrap glass">
+    <div class="brk tl"></div><div class="brk tr"></div><div class="brk bl"></div><div class="brk br"></div>
+    <canvas id="core-canvas" width="1510" height="1151" style="width: 1510px; height: 1151px;"></canvas>
+
+    <div class="core-status" id="core-status">
+      <div class="state" id="state-label">IDLE</div>
+      <div class="sub" id="state-sub">NEURAL CORE · AWAITING INPUT</div>
+    </div>
+
+    <div class="now-playing glass" id="now-playing">
+      <div class="brk tl"></div><div class="brk br"></div>
+      <div class="np-head">
+        <span>♪ NOW PLAYING</span>
+        <button id="np-close" aria-label="Close now playing">✕</button>
+      </div>
+      <div class="np-title">🎵 Holy Diver</div>
+      <div class="np-artist">Ronnie James Dio</div>
+      <div class="np-viz" id="np-viz"><i style="animation-delay: -1.39s; animation-duration: 0.96s;"></i><i style="animation-delay: -0.79s; animation-duration: 0.98s;"></i><i style="animation-delay: -0.1s; animation-duration: 1.23s;"></i><i style="animation-delay: -0.59s; animation-duration: 1.07s;"></i><i style="animation-delay: -1.21s; animation-duration: 1.5s;"></i><i style="animation-delay: -0.07s; animation-duration: 0.89s;"></i><i style="animation-delay: -1.39s; animation-duration: 1.49s;"></i><i style="animation-delay: -1.17s; animation-duration: 0.96s;"></i><i style="animation-delay: -1.39s; animation-duration: 1.02s;"></i><i style="animation-delay: -0.27s; animation-duration: 1.42s;"></i><i style="animation-delay: -0.35s; animation-duration: 1.02s;"></i><i style="animation-delay: -0.32s; animation-duration: 1.17s;"></i><i style="animation-delay: -1.12s; animation-duration: 1.29s;"></i><i style="animation-delay: -0.37s; animation-duration: 1.34s;"></i><i style="animation-delay: -0.1s; animation-duration: 1.61s;"></i><i style="animation-delay: -1.36s; animation-duration: 0.78s;"></i><i style="animation-delay: -1.2s; animation-duration: 1.63s;"></i><i style="animation-delay: -0.67s; animation-duration: 0.79s;"></i><i style="animation-delay: -1.29s; animation-duration: 0.76s;"></i><i style="animation-delay: -0.36s; animation-duration: 1.6s;"></i><i style="animation-delay: -0.74s; animation-duration: 1s;"></i><i style="animation-delay: -1.19s; animation-duration: 1.55s;"></i><i style="animation-delay: -0.12s; animation-duration: 1.55s;"></i><i style="animation-delay: -1.25s; animation-duration: 1.4s;"></i><i style="animation-delay: 0s; animation-duration: 1.61s;"></i><i style="animation-delay: -0.8s; animation-duration: 1.09s;"></i></div>
+    </div>
+
+    <div class="core-controls">
+      <button class="hud-btn active" data-state="idle">Idle</button>
+      <button class="hud-btn" data-state="listening">Listening</button>
+      <button class="hud-btn" data-state="processing">Processing</button>
+      <button class="hud-btn" data-state="speaking">Speaking</button>
+      <button class="hud-btn accent" id="play-music-btn">▶ Test: Play Music</button>
+    </div>
+  </div>
+
+  <div class="terminal glass">
+    <div class="brk tl"></div><div class="brk tr"></div><div class="brk bl"></div><div class="brk br"></div>
+    <div class="term-head">
+      <span class="label">System Console</span>
+      <div class="rail"><span></span><span></span><span></span><span></span></div>
+    </div>
+    <div class="term-log" id="term-log"><div class="line"><span class="ts">23:49:02</span><span class="tag info">[SYS]</span><span class="msg">Boot sequence complete · kernel 6.8.0-jarvis</span></div><div class="line"><span class="ts">23:49:02</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: system integrity verified</span></div><div class="line"><span class="ts">23:49:02</span><span class="tag route">[ROUTE]</span><span class="msg">Router: idle_listener armed</span></div><div class="line"><span class="ts">23:49:06</span><span class="tag route">[ROUTE]</span><span class="msg">Router: home_automation</span></div><div class="line"><span class="ts">23:49:09</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:49:12</span><span class="tag info">[SYS]</span><span class="msg">Context window trimmed to 8192 tokens</span></div><div class="line"><span class="ts">23:49:15</span><span class="tag route">[ROUTE]</span><span class="msg">Router: home_automation</span></div><div class="line"><span class="ts">23:49:19</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: rate_limit within bounds</span></div><div class="line"><span class="ts">23:49:22</span><span class="tag info">[SYS]</span><span class="msg">Wake-word model heartbeat OK</span></div><div class="line"><span class="ts">23:49:25</span><span class="tag route">[ROUTE]</span><span class="msg">Router: home_automation</span></div><div class="line"><span class="ts">23:49:28</span><span class="tag route">[ROUTE]</span><span class="msg">Router: weather_tool</span></div><div class="line"><span class="ts">23:49:32</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: intent_classifier.check()</span></div><div class="line"><span class="ts">23:49:35</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: intent_classifier.check()</span></div><div class="line"><span class="ts">23:49:38</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: no PII detected</span></div><div class="line"><span class="ts">23:49:41</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:49:44</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: rate_limit within bounds</span></div><div class="line"><span class="ts">23:49:48</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: rate_limit within bounds</span></div><div class="line"><span class="ts">23:49:51</span><span class="tag info">[SYS]</span><span class="msg">Vector store sync complete (Δ 214 embeddings)</span></div><div class="line"><span class="ts">23:49:54</span><span class="tag info">[SYS]</span><span class="msg">Telemetry batch flushed to ring buffer</span></div><div class="line"><span class="ts">23:49:57</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: no PII detected</span></div><div class="line"><span class="ts">23:50:00</span><span class="tag route">[ROUTE]</span><span class="msg">Router: home_automation</span></div><div class="line"><span class="ts">23:50:04</span><span class="tag info">[SYS]</span><span class="msg">Vector store sync complete (Δ 214 embeddings)</span></div><div class="line"><span class="ts">23:50:07</span><span class="tag info">[SYS]</span><span class="msg">Telemetry batch flushed to ring buffer</span></div><div class="line"><span class="ts">23:50:10</span><span class="tag route">[ROUTE]</span><span class="msg">Router: home_automation</span></div><div class="line"><span class="ts">23:50:13</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:50:16</span><span class="tag warn">[WARN]</span><span class="msg">Home Automation: device offline (kitchen_hub)</span></div><div class="line"><span class="ts">23:50:32</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:50:32</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:50:35</span><span class="tag route">[ROUTE]</span><span class="msg">Router: home_automation</span></div><div class="line"><span class="ts">23:50:38</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:50:42</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: rate_limit within bounds</span></div><div class="line"><span class="ts">23:50:45</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:50:48</span><span class="tag info">[SYS]</span><span class="msg">Wake-word model heartbeat OK</span></div><div class="line"><span class="ts">23:50:51</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:50:54</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:50:58</span><span class="tag info">[SYS]</span><span class="msg">Vector store sync complete (Δ 214 embeddings)</span></div><div class="line"><span class="ts">23:51:01</span><span class="tag warn">[WARN]</span><span class="msg">Home Automation: device offline (kitchen_hub)</span></div><div class="line"><span class="ts">23:51:04</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: rate_limit within bounds</span></div><div class="line"><span class="ts">23:51:08</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: intent_classifier.check()</span></div><div class="line"><span class="ts">23:51:11</span><span class="tag route">[ROUTE]</span><span class="msg">Router: weather_tool</span></div><div class="line"><span class="ts">23:51:14</span><span class="tag route">[ROUTE]</span><span class="msg">Router: weather_tool</span></div><div class="line"><span class="ts">23:51:17</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:51:20</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:51:24</span><span class="tag warn">[WARN]</span><span class="msg">Home Automation: device offline (kitchen_hub)</span></div><div class="line"><span class="ts">23:51:27</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:51:30</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: no PII detected</span></div><div class="line"><span class="ts">23:51:33</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: rate_limit within bounds</span></div><div class="line"><span class="ts">23:51:36</span><span class="tag route">[ROUTE]</span><span class="msg">Router: weather_tool</span></div><div class="line"><span class="ts">23:51:40</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:51:43</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: rate_limit within bounds</span></div><div class="line"><span class="ts">23:51:46</span><span class="tag info">[SYS]</span><span class="msg">Context window trimmed to 8192 tokens</span></div><div class="line"><span class="ts">23:51:49</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:51:52</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:52:46</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:53:46</span><span class="tag info">[SYS]</span><span class="msg">Telemetry batch flushed to ring buffer</span></div><div class="line"><span class="ts">23:54:46</span><span class="tag info">[SYS]</span><span class="msg">Telemetry batch flushed to ring buffer</span></div><div class="line"><span class="ts">23:55:35</span><span class="tag route">[ROUTE]</span><span class="msg">Router: home_automation</span></div><div class="line"><span class="ts">23:55:36</span><span class="tag route">[ROUTE]</span><span class="msg">Router: weather_tool</span></div><div class="line"><span class="ts">23:55:39</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: no PII detected</span></div><div class="line"><span class="ts">23:55:42</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:55:46</span><span class="tag info">[SYS]</span><span class="msg">Telemetry batch flushed to ring buffer</span></div><div class="line"><span class="ts">23:55:49</span><span class="tag route">[ROUTE]</span><span class="msg">Router: home_automation</span></div><div class="line"><span class="ts">23:55:52</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:55:55</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:55:58</span><span class="tag warn">[WARN]</span><span class="msg">Home Automation: device offline (kitchen_hub)</span></div><div class="line"><span class="ts">23:56:02</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: no PII detected</span></div><div class="line"><span class="ts">23:56:05</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:56:08</span><span class="tag warn">[WARN]</span><span class="msg">Home Automation: device offline (kitchen_hub)</span></div><div class="line"><span class="ts">23:56:11</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:56:14</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: intent_classifier.check()</span></div><div class="line"><span class="ts">23:56:18</span><span class="tag info">[SYS]</span><span class="msg">Context window trimmed to 8192 tokens</span></div><div class="line"><span class="ts">23:56:21</span><span class="tag info">[SYS]</span><span class="msg">Wake-word model heartbeat OK</span></div><div class="line"><span class="ts">23:56:24</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: intent_classifier.check()</span></div><div class="line"><span class="ts">23:56:27</span><span class="tag route">[ROUTE]</span><span class="msg">Router: weather_tool</span></div><div class="line"><span class="ts">23:56:30</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:56:34</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:56:37</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:56:40</span><span class="tag info">[SYS]</span><span class="msg">Wake-word model heartbeat OK</span></div><div class="line"><span class="ts">23:56:43</span><span class="tag route">[ROUTE]</span><span class="msg">Router: media_tool</span></div><div class="line"><span class="ts">23:56:46</span><span class="tag info">[SYS]</span><span class="msg">Telemetry batch flushed to ring buffer</span></div><div class="line"><span class="ts">23:56:50</span><span class="tag info">[SYS]</span><span class="msg">Telemetry batch flushed to ring buffer</span></div><div class="line"><span class="ts">23:56:53</span><span class="tag route">[ROUTE]</span><span class="msg">Router: weather_tool</span></div><div class="line"><span class="ts">23:56:56</span><span class="tag info">[SYS]</span><span class="msg">Telemetry batch flushed to ring buffer</span></div><div class="line"><span class="ts">23:56:59</span><span class="tag info">[SYS]</span><span class="msg">Context window trimmed to 8192 tokens</span></div><div class="line"><span class="ts">23:57:02</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:57:06</span><span class="tag route">[ROUTE]</span><span class="msg">Router: home_automation</span></div><div class="line"><span class="ts">23:57:09</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: no PII detected</span></div><div class="line"><span class="ts">23:57:12</span><span class="tag route">[ROUTE]</span><span class="msg">Router: home_automation</span></div><div class="line"><span class="ts">23:57:15</span><span class="tag info">[SYS]</span><span class="msg">Wake-word model heartbeat OK</span></div><div class="line"><span class="ts">23:57:18</span><span class="tag warn">[WARN]</span><span class="msg">Home Automation: device offline (kitchen_hub)</span></div><div class="line"><span class="ts">23:57:22</span><span class="tag route">[ROUTE]</span><span class="msg">Router: weather_tool</span></div><div class="line"><span class="ts">23:57:25</span><span class="tag info">[SYS]</span><span class="msg">Telemetry batch flushed to ring buffer</span></div><div class="line"><span class="ts">23:57:28</span><span class="tag info">[SYS]</span><span class="msg">Context window trimmed to 8192 tokens</span></div><div class="line"><span class="ts">23:57:31</span><span class="tag pass">[PASS]</span><span class="msg">Guardrail PASS: rate_limit within bounds</span></div><div class="line"><span class="ts">23:57:34</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:57:38</span><span class="tag info">[SYS]</span><span class="msg">Neural core idle cycle · coherence 0.94</span></div><div class="line"><span class="ts">23:57:41</span><span class="tag info">[SYS]</span><span class="msg">Wake-word model heartbeat OK</span></div><div class="line"><span class="ts">23:57:44</span><span class="tag info">[SYS]</span><span class="msg">Wake-word model heartbeat OK</span></div><div class="line"><span class="ts">23:57:47</span><span class="tag route">[ROUTE]</span><span class="msg">Router: weather_tool</span></div></div>
+    <div class="term-input-row">
+      <span class="term-prompt">&lt;Siz_&gt;</span>
+      <input class="term-input" id="term-input" type="text" placeholder="komut yazın… /status" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var TAU = Math.PI*2;
+  function pad(n){ return n<10 ? '0'+n : ''+n; }
+  function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+  function lerp(a,b,t){ return a + (b-a)*t; }
+
+  /* ============ CLOCK ============ */
+  var clockEl = document.getElementById('clock');
+  var dateEl  = document.getElementById('date-text');
+  var locEl   = document.getElementById('loc-text');
+  var DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  var MON  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+  function tickClock(){
+    var d = new Date();
+    clockEl.textContent = pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+    dateEl.textContent  = DAYS[d.getDay()]+' '+pad(d.getDate())+' '+MON[d.getMonth()]+' '+d.getFullYear();
+  }
+  tickClock(); setInterval(tickClock, 1000);
+  try{
+    var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    locEl.textContent = (tz.split('/').pop() || 'UNKNOWN').replace(/_/g,' ').toUpperCase() + ' · SECTOR 04';
+  }catch(e){ locEl.textContent = 'UNKNOWN SECTOR'; }
+
+  /* ============ TELEMETRY ============ */
+  var cpuVal=document.getElementById('cpu-val'), cpuBar=document.getElementById('cpu-bar');
+  var ramVal=document.getElementById('ram-val'), ramBar=document.getElementById('ram-bar');
+  var netUp=document.getElementById('net-up'), netDn=document.getElementById('net-dn'), netLat=document.getElementById('net-lat');
+
+  function buildSpark(el, n){
+    var arr=[];
+    for(var i=0;i<n;i++){ var b=document.createElement('i'); b.style.height='12%'; el.appendChild(b); arr.push(b); }
+    return arr;
+  }
+  var ramBars = buildSpark(document.getElementById('ram-spark'), 18);
+  var netBars = buildSpark(document.getElementById('net-spark'), 18);
+  function pushSpark(bars, v){
+    for(var i=0;i<bars.length-1;i++){ bars[i].style.height = bars[i+1].style.height; }
+    bars[bars.length-1].style.height = v+'%';
+  }
+
+  var cpuCur=24, ramCur=62;
+  function stepTelemetry(){
+    var bias = coreState==='processing' ? 34 : (coreState==='speaking' ? 12 : (coreState==='listening' ? 6 : 0));
+    cpuCur = lerp(cpuCur, clamp(18 + bias + Math.random()*26, 8, 96), 0.45);
+    cpuVal.textContent = Math.round(cpuCur)+'%';
+    cpuBar.style.width = cpuCur+'%';
+
+    ramCur = clamp(ramCur + (Math.random()-0.5)*2.6, 44, 86);
+    ramVal.textContent = Math.round(ramCur)+'%';
+    ramBar.style.width = ramCur+'%';
+    pushSpark(ramBars, clamp(ramCur - 20 + Math.random()*30, 10, 100));
+
+    var up = Math.round(6 + Math.random()*36 + (coreState==='processing'?55:0));
+    var dn = Math.round(12 + Math.random()*70 + (coreState==='speaking'?46:0));
+    netUp.textContent = '↑ '+up+' KB/s';
+    netDn.textContent = '↓ '+dn+' KB/s';
+    netLat.textContent = (8 + Math.round(Math.random()*22))+' ms';
+    pushSpark(netBars, clamp(dn, 6, 100));
+  }
+  setInterval(stepTelemetry, 1100); stepTelemetry();
+
+  /* ============================================================
+     NEURAL CORE — ember filament sphere
+     ============================================================ */
+  var canvas = document.getElementById('core-canvas');
+  var ctx = canvas.getContext('2d');
+  var DPR = Math.min(window.devicePixelRatio||1, 2);
+  var W=0,H=0,CX=0,CY=0,R=0;
+
+  var coreState = 'idle';
+
+  /* every visual quantity is a lerped parameter — no state ever snaps */
+  var P = { spin:0.55, breath:0.5, listen:0, process:0, speak:0, glow:0.8, expand:1.0, density:0.55 };
+  var TARGETS = {
+    idle:       { spin:0.55, breath:0.50, listen:0.00, process:0.00, speak:0.00, glow:0.80, expand:1.00, density:0.55 },
+    listening:  { spin:0.78, breath:0.80, listen:1.00, process:0.00, speak:0.00, glow:1.00, expand:1.06, density:0.72 },
+    processing: { spin:1.70, breath:0.45, listen:0.30, process:1.00, speak:0.00, glow:1.16, expand:0.97, density:1.00 },
+    speaking:   { spin:0.86, breath:1.00, listen:0.55, process:0.18, speak:1.00, glow:1.10, expand:1.03, density:0.80 }
+  };
+  var target = TARGETS.idle;
+
+  /* --- geometry: fibonacci sphere + precomputed neighbour filaments --- */
+  var pts = [], edges = [], NP = 300;
+  var innerPts = [], innerEdges = [];
+
+  function fib(n, jitter){
+    var out = [], ga = Math.PI*(3-Math.sqrt(5));
+    for(var i=0;i<n;i++){
+      var y = 1 - (i/(n-1))*2;
+      var rad = Math.sqrt(Math.max(0,1-y*y));
+      var th = ga*i;
+      var j = jitter || 0;
+      out.push({
+        x: Math.cos(th)*rad + (Math.random()-0.5)*j,
+        y: y + (Math.random()-0.5)*j,
+        z: Math.sin(th)*rad + (Math.random()-0.5)*j,
+        s: 0.5 + Math.random()*1.1,
+        ph: Math.random()*TAU,
+        sp: 0.006 + Math.random()*0.012,
+        seed: Math.random()
+      });
+    }
+    return out;
+  }
+
+  function linkNeighbours(list, k, maxD){
+    var e = [], seen = {};
+    for(var i=0;i<list.length;i++){
+      var cand = [];
+      for(var j=0;j<list.length;j++){
+        if(i===j) continue;
+        var dx=list[i].x-list[j].x, dy=list[i].y-list[j].y, dz=list[i].z-list[j].z;
+        var d = dx*dx+dy*dy+dz*dz;
+        if(d < maxD) cand.push([d,j]);
+      }
+      cand.sort(function(a,b){ return a[0]-b[0]; });
+      for(var c=0;c<Math.min(k,cand.length);c++){
+        var jj = cand[c][1];
+        var key = i<jj ? i+'_'+jj : jj+'_'+i;
+        if(seen[key]) continue;
+        seen[key]=1;
+        e.push({ a:i, b:jj, w: 0.35+Math.random()*0.65 });
+      }
+    }
+    return e;
+  }
+
+  pts = fib(NP, 0.055);
+  edges = linkNeighbours(pts, 3, 0.10);
+  innerPts = fib(90, 0.16);
+  innerEdges = linkNeighbours(innerPts, 2, 0.22);
+
+  /* --- great-circle rings (the concentric arcs in the plate) --- */
+  var rings = [];
+  for(var ri=0; ri<7; ri++){
+    rings.push({
+      tilt: (ri/7)*Math.PI + Math.random()*0.35,
+      roll: Math.random()*TAU,
+      spin: (Math.random()-0.5)*0.0016,
+      r: 0.86 + Math.random()*0.30,
+      w: ri%3===0 ? 1.1 : 0.6,
+      dash: Math.random()<0.45,
+      op: 0.18 + Math.random()*0.30
+    });
+  }
+
+  /* --- rotation state --- */
+  var rotY = 0, rotX = -0.28, tick = 0;
+  var particles = [];
+
+  function resize(){
+    var rect = canvas.parentElement.getBoundingClientRect();
+    W = rect.width; H = rect.height;
+    canvas.width = Math.max(1, Math.round(W*DPR));
+    canvas.height= Math.max(1, Math.round(H*DPR));
+    canvas.style.width = W+'px'; canvas.style.height = H+'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    CX = W/2; CY = H/2;
+    R  = Math.min(W,H) * 0.315;
+  }
+
+  function project(p, scale){
+    var cy = Math.cos(rotY), sy = Math.sin(rotY);
+    var cx = Math.cos(rotX), sx = Math.sin(rotX);
+    var x1 = p.x*cy - p.z*sy;
+    var z1 = p.x*sy + p.z*cy;
+    var y1 = p.y*cx - z1*sx;
+    var z2 = p.y*sx + z1*cx;
+    var persp = 1 / (1 + z2*0.28);
+    return { x: CX + x1*scale*persp, y: CY + y1*scale*persp, z: z2, p: persp };
+  }
+
+  function ember(op, hotness){
+    // hotness 0 → deep copper, 1 → hot gold-white
+    var r = Math.round(lerp(210, 255, hotness));
+    var g = Math.round(lerp(88,  225, hotness));
+    var b = Math.round(lerp(14,  170, hotness));
+    return 'rgba('+r+','+g+','+b+','+op+')';
+  }
+
+  function drawFrame(){
+    /* retro instrument frame drawn into the canvas: corner reticles,
+       edge rulers and a small gauge — the plate's chrome vocabulary */
+    var m = 10;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,122,24,0.28)';
+    ctx.lineWidth = 1;
+
+    // side rulers
+    ctx.beginPath();
+    for(var y=m+18; y<H-m-18; y+=9){
+      var long = (Math.round((y-m)/9) % 5 === 0);
+      ctx.moveTo(m, y); ctx.lineTo(m + (long?9:4), y);
+      ctx.moveTo(W-m, y); ctx.lineTo(W-m-(long?9:4), y);
+    }
+    ctx.stroke();
+
+    // top segmented bar
+    ctx.fillStyle = 'rgba(255,122,24,0.16)';
+    var barW = Math.min(180, W*0.28);
+    ctx.fillRect(m+16, m+4, barW, 3);
+    ctx.fillStyle = 'rgba(255,200,92,0.55)';
+    ctx.fillRect(m+16, m+4, barW * (0.35 + 0.25*Math.sin(tick*0.008)), 3);
+
+    // bottom-right gauge
+    var gx = W-m-34, gy = H-m-34, gr = 20;
+    ctx.strokeStyle = 'rgba(255,122,24,0.35)';
+    ctx.beginPath(); ctx.arc(gx,gy,gr,0,TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(gx,gy,gr*0.62, tick*0.004, tick*0.004 + 2.1); ctx.stroke();
+    ctx.beginPath(); ctx.arc(gx,gy,gr*0.34, -tick*0.007, -tick*0.007 + 3.4); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,200,92,0.5)';
+    ctx.beginPath();
+    for(var a=0;a<TAU;a+=TAU/16){
+      ctx.moveTo(gx+Math.cos(a)*(gr+3), gy+Math.sin(a)*(gr+3));
+      ctx.lineTo(gx+Math.cos(a)*(gr+6), gy+Math.sin(a)*(gr+6));
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawRings(scale){
+    for(var i=0;i<rings.length;i++){
+      var rg = rings[i];
+      rg.roll += rg.spin * P.spin;
+      var steps = 88;
+      var ct = Math.cos(rg.tilt), st = Math.sin(rg.tilt);
+      var prev = null;
+      for(var s=0;s<=steps;s++){
+        var a = (s/steps)*TAU + rg.roll;
+        var px = Math.cos(a)*rg.r;
+        var pz = Math.sin(a)*rg.r*ct;
+        var py = Math.sin(a)*rg.r*st;
+        var pr = project({x:px,y:py,z:pz}, scale);
+        if(prev){
+          if(!(rg.dash && s%4>1)){
+            var depth = (pr.z+1)/2;               // 0 back → 1 front
+            var op = rg.op * lerp(0.18, 1, depth);
+            ctx.strokeStyle = ember(op, 0.25 + depth*0.35);
+            ctx.lineWidth = rg.w * lerp(0.55,1.15,depth);
+            ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(pr.x,pr.y); ctx.stroke();
+          }
+        }
+        prev = pr;
+      }
+    }
+  }
+
+  function drawWeb(list, edgeList, scale, baseOp, hot){
+    var proj = new Array(list.length);
+    for(var i=0;i<list.length;i++){
+      var n = list[i];
+      var breathe = 1 + Math.sin(tick*n.sp + n.ph) * 0.035 * (0.4 + P.breath);
+      proj[i] = project({ x:n.x*breathe, y:n.y*breathe, z:n.z*breathe }, scale);
+    }
+
+    // filaments
+    for(var e=0;e<edgeList.length;e++){
+      var ed = edgeList[e];
+      var a = proj[ed.a], b = proj[ed.b];
+      var depth = ((a.z+b.z)/2 + 1)/2;
+      var flick = 0.72 + 0.28*Math.sin(tick*0.02 + ed.a*0.7);
+      var op = baseOp * ed.w * lerp(0.10, 1, depth) * flick * (0.6 + P.density*0.6);
+      if(op < 0.012) continue;
+      ctx.strokeStyle = ember(op, hot*depth);
+      ctx.lineWidth = lerp(0.35, 0.95, depth);
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    }
+
+    // nodes
+    for(var k=0;k<list.length;k++){
+      var pr = proj[k], nd = list[k];
+      var depth = (pr.z+1)/2;
+      var tw = 0.6 + 0.4*Math.sin(tick*nd.sp*1.6 + nd.ph*2);
+      var op = lerp(0.12, 0.95, depth) * tw * (0.55 + P.glow*0.5);
+      var sz = nd.s * lerp(0.5, 1.25, depth) * pr.p;
+      ctx.fillStyle = ember(op, clamp(hot*depth + tw*0.25, 0, 1));
+      ctx.beginPath(); ctx.arc(pr.x, pr.y, sz, 0, TAU); ctx.fill();
+      if(depth > 0.72 && nd.seed > 0.78){
+        ctx.shadowColor = 'rgba(255,140,40,0.9)';
+        ctx.shadowBlur = 8 * P.glow;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+    return proj;
+  }
+
+  function drawContour(scale){
+    /* LISTENING: the palette never switches — an outer contour line
+       fades in and breathes instead */
+    var amt = P.listen;
+    if(amt < 0.01) return;
+    var steps = 190;
+    var baseR = scale * 1.30;
+    var speakAmp = P.speak;
+    ctx.beginPath();
+    for(var s=0;s<=steps;s++){
+      var a = (s/steps)*TAU;
+      var wob = Math.sin(a*3 + tick*0.012)*0.012 + Math.sin(a*7 - tick*0.008)*0.007;
+      var wave = speakAmp * (Math.sin(a*9 + tick*0.09)*0.035 + Math.sin(a*15 - tick*0.13)*0.022);
+      var rr = baseR * (1 + wob + wave) * lerp(1, 1.03, Math.sin(tick*0.014)*0.5+0.5);
+      var x = CX + Math.cos(a)*rr;
+      var y = CY + Math.sin(a)*rr*0.995;
+      if(s===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = ember(0.42*amt, 0.85);
+    ctx.lineWidth = 1.1;
+    ctx.shadowColor = 'rgba(255,166,43,'+(0.55*amt)+')';
+    ctx.shadowBlur = 14*amt;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // slow sweep arc riding the contour
+    var sweepA = tick*0.006;
+    ctx.beginPath();
+    ctx.arc(CX, CY, baseR*1.055, sweepA, sweepA + 0.85);
+    ctx.strokeStyle = ember(0.5*amt, 1);
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    // tick marks around it
+    ctx.strokeStyle = ember(0.22*amt, 0.6);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(var t2=0;t2<TAU;t2+=TAU/48){
+      var lr = baseR*1.10, lr2 = lr + (Math.round(t2/(TAU/48))%4===0 ? 8 : 4);
+      ctx.moveTo(CX+Math.cos(t2)*lr, CY+Math.sin(t2)*lr);
+      ctx.lineTo(CX+Math.cos(t2)*lr2, CY+Math.sin(t2)*lr2);
+    }
+    ctx.stroke();
+  }
+
+  function drawSpeakRings(scale){
+    if(P.speak < 0.01) return;
+    for(var s=0;s<4;s++){
+      var prog = ((tick*0.9 + s*52) % 210) / 210;
+      var rr = scale*0.55 + prog * scale*0.95;
+      var op = (1-prog) * 0.40 * P.speak;
+      ctx.beginPath();
+      ctx.arc(CX, CY, rr, 0, TAU);
+      ctx.strokeStyle = ember(op, 0.7);
+      ctx.lineWidth = lerp(2.0, 0.5, prog);
+      ctx.stroke();
+    }
+  }
+
+  function drawCore(scale){
+    var breath = 1 + Math.sin(tick*0.016)*0.09*(0.5+P.breath);
+    var cr = scale*0.085 * breath * lerp(0.9, 1.12, P.glow);
+
+    var g = ctx.createRadialGradient(CX,CY,0,CX,CY,cr*7);
+    g.addColorStop(0,   'rgba(255,225,170,'+(0.55*P.glow)+')');
+    g.addColorStop(0.25,'rgba(255,138,30,'+(0.28*P.glow)+')');
+    g.addColorStop(1,   'rgba(255,110,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(CX,CY,cr*7,0,TAU); ctx.fill();
+
+    // tangled bright filaments at the centre (the plate's knotted heart)
+    ctx.strokeStyle = ember(0.55 + 0.25*P.glow, 1);
+    ctx.lineWidth = 1;
+    for(var l=0;l<5;l++){
+      ctx.beginPath();
+      for(var s=0;s<=64;s++){
+        var a = (s/64)*TAU;
+        var rr = cr*(1.6 + l*0.55) * (1 + 0.28*Math.sin(a*(2+l) + tick*(0.01+l*0.004)));
+        var x = CX + Math.cos(a+l)*rr*1.25;
+        var y = CY + Math.sin(a*1.3+l)*rr*0.72;
+        if(s===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    }
+
+    ctx.beginPath(); ctx.arc(CX,CY,cr,0,TAU);
+    ctx.fillStyle = 'rgba(255,240,205,'+(0.85+0.15*P.glow)+')';
+    ctx.shadowColor = 'rgba(255,140,35,1)';
+    ctx.shadowBlur = 26*P.glow;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  function drawParticles(proj, scale){
+    if(P.process > 0.04 && Math.random() < P.process*0.55){
+      var tI = Math.floor(Math.random()*proj.length);
+      particles.push({ t: proj[tI], p:0, sp: 0.018 + Math.random()*0.022 });
+    }
+    for(var i=particles.length-1;i>=0;i--){
+      var pt = particles[i];
+      pt.p += pt.sp * (0.5 + P.spin);
+      if(pt.p>=1 || !pt.t){ particles.splice(i,1); continue; }
+      var e = pt.p*pt.p*(3-2*pt.p);   // smoothstep — no linear snap
+      var x = CX + (pt.t.x-CX)*e, y = CY + (pt.t.y-CY)*e;
+      var op = Math.sin(pt.p*Math.PI) * 0.95;
+      ctx.beginPath(); ctx.arc(x,y,1.5,0,TAU);
+      ctx.fillStyle = 'rgba(255,235,190,'+op+')';
+      ctx.shadowColor='rgba(255,150,45,0.9)'; ctx.shadowBlur=7; ctx.fill(); ctx.shadowBlur=0;
+
+      // trail
+      var e0 = clamp(e-0.07,0,1);
+      ctx.strokeStyle = 'rgba(255,170,60,'+(op*0.4)+')';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(CX+(pt.t.x-CX)*e0, CY+(pt.t.y-CY)*e0);
+      ctx.lineTo(x,y); ctx.stroke();
+    }
+  }
+
+  function render(){
+    tick++;
+
+    // ease every parameter toward its target — this is what makes
+    // state changes read as a system settling, not a switch flipping
+    for(var key in TARGETS.idle){
+      P[key] += (target[key] - P[key]) * 0.028;
+    }
+
+    rotY += 0.0011 * P.spin;
+    rotX  = -0.28 + Math.sin(tick*0.0026)*0.12;
+
+    ctx.clearRect(0,0,W,H);
+    ctx.globalCompositeOperation = 'lighter';
+
+    var scale = R * P.expand;
+
+    drawRings(scale*0.98);
+    drawWeb(innerPts, innerEdges, scale*0.52, 0.16, 0.55);
+    var proj = drawWeb(pts, edges, scale, 0.30, 0.62);
+    drawSpeakRings(scale);
+    drawContour(scale);
+    drawParticles(proj, scale);
+    drawCore(scale);
+
+    ctx.globalCompositeOperation = 'source-over';
+    drawFrame();
+
+    requestAnimationFrame(render);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(render);
+
+  /* ============ STATE SWITCHING ============ */
+  var stateLabel = document.getElementById('state-label');
+  var stateSub   = document.getElementById('state-sub');
+  var statusBox  = document.getElementById('core-status');
+  var SUBS = {
+    idle:       'NEURAL CORE · AWAITING INPUT',
+    listening:  'AUDIO CHANNEL OPEN · GAIN 0.72',
+    processing: 'ANALYZING REQUEST · 12 THREADS',
+    speaking:   'RESPONSE OUTBOUND · TTS ACTIVE'
+  };
+  var btns = document.querySelectorAll('.hud-btn[data-state]');
+
+  function setState(s){
+    if(s === coreState) return;
+    coreState = s;
+    target = TARGETS[s];
+    statusBox.classList.add('swapping');
+    setTimeout(function(){
+      stateLabel.textContent = s.toUpperCase();
+      stateSub.textContent = SUBS[s];
+      statusBox.classList.remove('swapping');
+    }, 380);
+    for(var i=0;i<btns.length;i++){
+      btns[i].classList.toggle('active', btns[i].getAttribute('data-state')===s);
+    }
+    logLine('route', 'Router: core_state → '+s);
+  }
+  for(var bi=0; bi<btns.length; bi++){
+    btns[bi].addEventListener('click', function(){ setState(this.getAttribute('data-state')); });
+  }
+
+  /* ============ NOW PLAYING ============ */
+  var np = document.getElementById('now-playing');
+  var npViz = document.getElementById('np-viz');
+  for(var v=0; v<26; v++){
+    var b2 = document.createElement('i');
+    b2.style.animationDelay = (Math.random()*-1.4).toFixed(2)+'s';
+    b2.style.animationDuration = (0.75 + Math.random()*0.9).toFixed(2)+'s';
+    npViz.appendChild(b2);
+  }
+  document.getElementById('play-music-btn').addEventListener('click', function(){
+    np.classList.add('show');
+    setState('speaking');
+    logLine('pass',  'Guardrail PASS: media_tool.play("Holy Diver")');
+    logLine('route', 'Router: media_tool → local_player');
+    logLine('info',  'Now playing: Holy Diver — Ronnie James Dio (1983)');
+  });
+  document.getElementById('np-close').addEventListener('click', function(){
+    np.classList.remove('show');
+    setState('idle');
+    logLine('info', 'Playback widget dismissed');
+  });
+
+  /* ============ TERMINAL ============ */
+  var termLog = document.getElementById('term-log');
+  var termInput = document.getElementById('term-input');
+  var TAGS = { pass:'PASS', info:'SYS', route:'ROUTE', warn:'WARN' };
+
+  function nowTs(){
+    var d = new Date();
+    return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+  }
+  function logLine(kind, msg, cls){
+    var row = document.createElement('div');
+    row.className = 'line'+(cls?' '+cls:'');
+    var a = document.createElement('span'); a.className='ts'; a.textContent = nowTs();
+    var b = document.createElement('span'); b.className='tag '+kind; b.textContent = '['+(TAGS[kind]||kind.toUpperCase())+']';
+    var c = document.createElement('span'); c.className='msg'; c.textContent = msg;
+    row.appendChild(a); row.appendChild(b); row.appendChild(c);
+    termLog.appendChild(row);
+    while(termLog.children.length > 160) termLog.removeChild(termLog.firstChild);
+    termLog.scrollTop = termLog.scrollHeight;
+  }
+
+  logLine('info',  'Boot sequence complete · kernel 6.8.0-jarvis');
+  logLine('pass',  'Guardrail PASS: system integrity verified');
+  logLine('route', 'Router: idle_listener armed');
+
+  var AMBIENT = [
+    ['pass','Guardrail PASS: intent_classifier.check()'],
+    ['route','Router: media_tool'],
+    ['route','Router: home_automation'],
+    ['info','Vector store sync complete (Δ 214 embeddings)'],
+    ['info','Wake-word model heartbeat OK'],
+    ['pass','Guardrail PASS: no PII detected'],
+    ['warn','Home Automation: device offline (kitchen_hub)'],
+    ['info','Context window trimmed to 8192 tokens'],
+    ['route','Router: weather_tool'],
+    ['pass','Guardrail PASS: rate_limit within bounds'],
+    ['info','Telemetry batch flushed to ring buffer'],
+    ['info','Neural core idle cycle · coherence 0.94']
+  ];
+  setInterval(function(){
+    var e = AMBIENT[Math.floor(Math.random()*AMBIENT.length)];
+    logLine(e[0], e[1]);
+  }, 3200);
+
+  var CMDS = {
+    '/status': function(){ logLine('info','CPU '+Math.round(cpuCur)+'% · RAM '+Math.round(ramCur)+'% · CORE '+coreState.toUpperCase()); },
+    '/help':   function(){ logLine('info','Commands: /status /clear /whoami /uptime /core <idle|listening|processing|speaking>'); },
+    '/whoami': function(){ logLine('info','operator@jarvis-local — clearance ADMIN'); },
+    '/uptime': function(){ logLine('info','Uptime 04:12:37 · 0 restarts'); },
+    '/clear':  function(){ termLog.innerHTML=''; logLine('info','Console cleared.'); }
+  };
+
+  var history = [], histIdx = -1;
+
+  termInput.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      var val = termInput.value.trim();
+      if(!val) return;
+      var isCmd = val.charAt(0) === '/';
+
+      var row = document.createElement('div');
+      row.className = 'line ' + (isCmd ? 'cmd-line' : 'user-line');
+      var a = document.createElement('span'); a.className='ts'; a.textContent = nowTs();
+      var b = document.createElement('span'); b.className='tag info'; b.textContent='<Siz_>';
+      var c = document.createElement('span'); c.className='msg'; c.textContent = val;
+      row.appendChild(a); row.appendChild(b); row.appendChild(c);
+      termLog.appendChild(row);
+      termLog.scrollTop = termLog.scrollHeight;
+
+      history.push(val); histIdx = history.length;
+
+      if(isCmd){
+        var lower = val.toLowerCase();
+        if(lower.indexOf('/core ') === 0){
+          var s = lower.slice(6).trim();
+          if(TARGETS[s]) setState(s);
+          else logLine('warn','Unknown core state: '+s);
+        } else if(CMDS[lower]){ CMDS[lower](); }
+        else { logLine('warn','Unknown command: '+val+' — try /help'); }
+      } else {
+        logLine('route','Router: nlp_intent');
+        logLine('pass','Guardrail PASS: input accepted');
+      }
+      termInput.value = '';
+    }
+    else if(e.key === 'ArrowUp'){
+      if(history.length){
+        histIdx = clamp(histIdx-1, 0, history.length-1);
+        termInput.value = history[histIdx];
+        setTimeout(function(){ termInput.selectionStart = termInput.selectionEnd = termInput.value.length; },0);
+      }
+      e.preventDefault();
+    }
+    else if(e.key === 'ArrowDown'){
+      if(history.length){
+        histIdx = clamp(histIdx+1, 0, history.length);
+        termInput.value = histIdx === history.length ? '' : history[histIdx];
+      }
+      e.preventDefault();
+    }
+  });
+
+})();
+</script>
+
+</body></html>

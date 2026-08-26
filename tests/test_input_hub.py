@@ -148,9 +148,10 @@ def test_mic_producer_forwards_speaking_event_to_listen_loop_as_mute_event(monke
 
     captured = {}
 
-    def fake_listen_loop(stop_event=None, mute_event=None):
+    def fake_listen_loop(stop_event=None, mute_event=None, on_state_change=None):
         captured["stop_event"] = stop_event
         captured["mute_event"] = mute_event
+        captured["on_state_change"] = on_state_change
         return iter(())  # hicbir transkript uretmeden hemen biter
 
     fake_listener_module = types.ModuleType("src.jarvis.ears.listener")
@@ -163,3 +164,6 @@ def test_mic_producer_forwards_speaking_event_to_listen_loop_as_mute_event(monke
 
     assert captured["stop_event"] is stop_event
     assert captured["mute_event"] is speaking_event
+    from src.jarvis.core import hud_bus
+
+    assert captured["on_state_change"] is hud_bus.publish_state

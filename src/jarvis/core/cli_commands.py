@@ -15,13 +15,10 @@ import logging
 import threading
 from typing import Optional
 
-from rich.panel import Panel
-from rich.table import Table
-
 from src.jarvis.adapters.tool_schema import validate_arguments
 from src.jarvis.brain.llm import MAX_HISTORY_MESSAGES, SYSTEM_PROMPT
 from src.jarvis.brain.llm import MODEL_NAME as BRAIN_MODEL_NAME
-from src.jarvis.core.console import console, print_system
+from src.jarvis.core.console import console, print_panel, print_system, print_table
 from src.jarvis.core.dispatcher import Intent
 from src.jarvis.core.input_hub import InputEvent, InputHub
 from src.jarvis.tools.base import Tool
@@ -92,12 +89,11 @@ def _tool_risk_label(tool: Tool) -> str:
 
 
 def _cmd_help() -> None:
-    commands_table = Table(title="Jarvis Geliştirici Komutları")
-    commands_table.add_column("Komut", style="bold cyan", no_wrap=True)
-    commands_table.add_column("Açıklama")
-    for command, description in _COMMANDS.items():
-        commands_table.add_row(command, description)
-    console.print(commands_table)
+    print_table(
+        "Jarvis Geliştirici Komutları",
+        ["Komut", "Açıklama"],
+        list(_COMMANDS.items()),
+    )
 
     console.print(
         "\n[dim]Aşağıdaki yetenekler hem SESLİ (mikrofon) hem YAZILI (doğal dil) "
@@ -106,13 +102,11 @@ def _cmd_help() -> None:
         "router'ı atlayıp bir aracı DOĞRUDAN çalıştırmanın yoludur (örnek "
         "parametreler için isim üstüne gelin ya da /status'a bakın).[/dim]"
     )
-    tools_table = Table(title="Jarvis Yetenekleri (araçlar)")
-    tools_table.add_column("Araç", style="bold cyan", no_wrap=True)
-    tools_table.add_column("Ne yapar (sesli/yazılı aynı cümleyle)")
-    tools_table.add_column("Risk", justify="center")
-    for name, tool in sorted(all_tools().items()):
-        tools_table.add_row(name, tool.description, tool.risk_level.value)
-    console.print(tools_table)
+    print_table(
+        "Jarvis Yetenekleri (araçlar)",
+        ["Araç", "Ne yapar (sesli/yazılı aynı cümleyle)", "Risk"],
+        [(name, tool.description, tool.risk_level.value) for name, tool in sorted(all_tools().items())],
+    )
 
 
 def _cmd_status(history: list[dict]) -> None:
@@ -134,7 +128,7 @@ def _cmd_status(history: list[dict]) -> None:
     ]
     for _, tool in sorted(tools.items()):
         lines.append(f"  - {_tool_risk_label(tool)}")
-    console.print(Panel("\n".join(lines), title="Jarvis Durumu", border_style="bold cyan"))
+    print_panel("Jarvis Durumu", "\n".join(lines), border_style="bold cyan")
 
 
 def _cmd_debug() -> None:

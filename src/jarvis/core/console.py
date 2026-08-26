@@ -22,6 +22,15 @@ kararlari, bekleme durumlari) buradan gecmeli. Amac ug bolgeye ayrilir:
    cagirir ki structured log kaybolmasin.
 3. `status_spinner`/`print_boot_sequence` - I/O beklemeleri (model yukleme,
    LLM cagrisi, transkripsiyon) ve acilis ekrani icin.
+4. JARVIS HUD (web-ui) entegrasyonu: bu dosyanin "tum terminal ciktisi
+   buradan gecmeli" ilkesi sayesinde, HER print_* fonksiyonu ayrica
+   `core/hud_bus.py:publish_log(...)` cagirir - boylece web arayuzu, bu
+   modulun disindaki ONLARCA cagri noktasina TEK BIR DOKUNMADAN Rich
+   terminaliyle AYNI ciktiyi gorur (bkz. hud_bus.py modul docstring'i).
+   `_cmd_help()`/`_cmd_status()` (core/cli_commands.py) `console.print(...)`'i
+   DOGRUDAN cagirdigi icin (asagidaki isimli fonksiyonlarin HICBIRINI
+   kullanmiyorlardi) bu ilkeye eskiden UYMUYORLARDI - `print_table`/
+   `print_panel` bu bosluk icin eklendi, o iki komut artik bunlari kullaniyor.
 
 Kullanicidan gelen metin (transkript, tool ciktisi, hata mesaji) `rich`
 markup'iyla CAKISABILECEGI icin (orn. bir dosya adi "[error]" iceriyorsa),
@@ -36,6 +45,9 @@ from rich.console import Console
 from rich.markup import escape as _escape
 from rich.panel import Panel
 from rich.status import Status
+from rich.table import Table
+
+from src.jarvis.core import hud_bus
 
 console = Console()
 
@@ -94,10 +106,14 @@ def setup_logging(level: int = logging.INFO) -> None:
     )
 
 
+_LEVEL_TO_HUD_KIND = {"info": "info", "success": "pass", "warning": "warn", "error": "error"}
+
+
 def print_system(msg: str, level: str = "info") -> None:
     """Sistem durumu/basari/uyari/hata mesaji - renk+ikonla, kullaniciya dogrudan gorunur."""
     color, icon = _SYSTEM_STYLES.get(level, _SYSTEM_STYLES["info"])
     console.print(f"[bold {color}]{icon} {_escape(msg)}[/bold {color}]")
+    hud_bus.publish_log(_LEVEL_TO_HUD_KIND.get(level, "info"), msg)
 
 
 _USER_NAMES = {"user", "kullanici", "kullanıcı", "siz"}
@@ -105,8 +121,10 @@ _USER_NAMES = {"user", "kullanici", "kullanıcı", "siz"}
 
 def print_agent(agent_name: str, text: str) -> None:
     """Kullanici/Jarvis diyalogunu renkle ayirir - kullanici sari, Jarvis/Hermes cyan."""
-    style = "bold yellow" if agent_name.strip().lower() in _USER_NAMES else "bold cyan"
+    is_user = agent_name.strip().lower() in _USER_NAMES
+    style = "bold yellow" if is_user else "bold cyan"
     console.print(f"[{style}]{_escape(agent_name)}:[/{style}] {_escape(text)}")
+    hud_bus.publish_log("user" if is_user else "agent", text)
 
 
 def print_guardrail(check_name: str, passed: bool, reason: str) -> None:
@@ -124,9 +142,11 @@ def print_guardrail(check_name: str, passed: bool, reason: str) -> None:
     if passed:
         console.print(f"[dim]Guardrail[/dim] [bold]{_escape(check_name)}[/bold] [bold green][PASS][/bold green] - {_escape(reason)}")
         _logger.debug("Guardrail [%s]: kabul - %s", check_name, reason)
+        hud_bus.publish_log("pass", f"Guardrail {check_name}: {reason}")
     else:
         console.print(f"[dim]Guardrail[/dim] [bold]{_escape(check_name)}[/bold] [bold red][REJECTED][/bold red] - {_escape(reason)}")
         _logger.debug("Guardrail [%s]: RED - %s", check_name, reason)
+        hud_bus.publish_log("warn", f"Guardrail {check_name}: RED - {reason}")
 
 
 def _format_parameters(parameters: dict) -> str:
@@ -152,6 +172,9 @@ def print_approval_panel(tool_name: str, risk_level: str, parameters: dict) -> N
             expand=False,
         )
     )
+    hud_bus.publish_log(
+        "panel", _format_parameters(parameters), title=f"ONAY GEREKLİ - {tool_name} (risk: {risk_level})"
+    )
 
 
 def print_approval_prompt(prompt: str) -> None:
@@ -164,6 +187,7 @@ def print_approval_prompt(prompt: str) -> None:
     input_hub.py modül docstring'indeki stdin-tek-sahip ilkesi).
     """
     console.print(f"\n[bold yellow][!] ONAY GEREKLİ[/bold yellow] {_escape(prompt)} [Y/N]:")
+    hud_bus.publish_log("prompt", f"{prompt} [Y/N]")
 
 
 def print_router_decision(tool_name: str, confidence: float, parameters: dict) -> None:
@@ -180,6 +204,7 @@ def print_router_decision(tool_name: str, confidence: float, parameters: dict) -
             expand=False,
         )
     )
+    hud_bus.publish_log("route", f"Router: {tool_name} (güven: {confidence:.2f}) {_format_parameters(visible_params)}")
 
 
 def _strip_control_characters(text: str) -> str:
@@ -213,6 +238,35 @@ def print_mcp_result(tool_name: str, content: str) -> None:
             expand=False,
         )
     )
+    hud_bus.publish_log("panel", _strip_control_characters(content), title=f"MCP Sonucu - {tool_name}")
+
+
+def print_table(title: str, columns: list[str], rows: list[tuple[str, ...]]) -> None:
+    """Basit bir Rich Table basar VE ayni satirlari duz metin olarak
+    hud_bus'a `"panel"` turunde yayinlar.
+
+    NEDEN GEREKLI (bkz. modul docstring'i "4"): `core/cli_commands.py`'nin
+    `_cmd_help()` fonksiyonu eskiden kendi Table'ini insa edip DOGRUDAN
+    `console.print(table)` cagiriyordu - bu dosyadaki isimli print_*
+    fonksiyonlarinin HICBIRINDEN gecmedigi icin JARVIS HUD'a hic ulasmiyordu.
+    Bu fonksiyon o bosluk icin var - `/help`/`/status` gibi komutlar artik
+    bunu kullanarak ayni zamanda web arayuzune de gorunur oluyor.
+    """
+    table = Table(title=title)
+    for column in columns:
+        table.add_column(column)
+    for row in rows:
+        table.add_row(*row)
+    console.print(table)
+    body = "\n".join(" | ".join(row) for row in rows)
+    hud_bus.publish_log("panel", body, title=title)
+
+
+def print_panel(title: str, body: str, border_style: str = "bold cyan") -> None:
+    """`_cmd_status()` gibi komutlarin serbest metin panelleri icin -
+    `print_table`'la ayni gerekceyle (bkz. onun docstring'i) eklendi."""
+    console.print(Panel(body, title=title, border_style=border_style, expand=False))
+    hud_bus.publish_log("panel", body, title=title)
 
 
 def status_spinner(msg: str) -> Status:

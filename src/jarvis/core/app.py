@@ -3,6 +3,7 @@ import threading
 from typing import Callable, Iterator, Optional
 
 from src.jarvis.brain.llm import SYSTEM_PROMPT, think_and_respond_stream
+from src.jarvis.core import hud_bus
 from src.jarvis.core.cli_commands import handle_cli_command, is_cli_command
 from src.jarvis.core.console import (
     print_agent,
@@ -62,6 +63,42 @@ def _localized(messages: dict[str, str], lang: str) -> str:
 
 
 def _execute_tool(
+    tool: Tool,
+    intent,
+    stop_event: Optional[threading.Event],
+    input_hub: Optional[InputHub] = None,
+    pending: Optional[list[InputEvent]] = None,
+    on_start: Optional[Callable[[], None]] = None,
+    speaking_event: Optional[threading.Event] = None,
+) -> str:
+    """`_run_tool_pipeline()`'i JARVIS HUD (web-ui) icin "start"/"end" olay
+    yayinlarina sarmalayan ince bir kabuk.
+
+    NEDEN AYRI BIR FONKSIYON (gercek govdeye DOKUNMADAN): `_run_tool_pipeline()`
+    (asagida) guvenlik-kritik kontrol akisi boyunca BIRDEN FAZLA `return`
+    noktasina sahip (guardrail red, onay reddi, execute hatasi, cikti guardrail
+    red, basari). O akisin icine tek tek `hud_bus.publish_tool("end", ...)`
+    serpistirmek hem hataya acik (bir donus noktasi unutulabilir) hem de
+    guvenlik mantigiyla HUD bildirim mantigini karistirir. Bunun yerine TEK
+    bir `try/finally` ile HANGI donus yolundan cikilirse cikilsin tam olarak
+    bir "start" ve bir "end" olayi garanti edilir - guvenlik akisi asagida
+    hicbir sekilde degismedi.
+    """
+    visible_params = {
+        key: str(value) for key, value in intent.parameters.items() if key != "lang" and value not in (None, "")
+    }
+    hud_bus.publish_tool("start", tool.name, params=visible_params)
+    result: Optional[str] = None
+    try:
+        result = _run_tool_pipeline(
+            tool, intent, stop_event, input_hub=input_hub, pending=pending, on_start=on_start, speaking_event=speaking_event
+        )
+        return result
+    finally:
+        hud_bus.publish_tool("end", tool.name, result=result)
+
+
+def _run_tool_pipeline(
     tool: Tool,
     intent,
     stop_event: Optional[threading.Event],
@@ -347,6 +384,11 @@ def run_jarvis() -> None:
                 continue
 
             print_agent("Siz" if event.source == "text" else "User", event.text)
+
+            # JARVIS HUD (web-ui): NeuralCore'un "processing" gorsel durumu -
+            # tool baslarsa/ilk cumle uretilirse zaten "speaking"/tool olaylari
+            # bunun uzerine yazacak (son-yazan-kazanir, bkz. hud_bus.py).
+            hud_bus.publish_state("processing")
 
             # Step 2 + 3: guardrail + dispatcher + Brain (streaming) -> Mouth, cumle cumle.
             # Spinner ilk cumle uretilene kadar acik kalir - sonraki cumleler icin

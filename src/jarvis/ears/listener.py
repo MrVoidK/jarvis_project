@@ -20,7 +20,7 @@ import threading
 import time
 from collections import deque
 from enum import Enum, auto
-from typing import Iterator, Optional
+from typing import Callable, Iterator, Optional
 
 import numpy as np
 import sounddevice as sd
@@ -469,6 +469,7 @@ def transcribe_once() -> Optional[str]:
 def listen_loop(
     stop_event: Optional[threading.Event] = None,
     mute_event: Optional[threading.Event] = None,
+    on_state_change: Optional[Callable[[str], None]] = None,
 ) -> Iterator[str]:
     """State machine over a single persistent stream: IDLE (wake-word) -> ACTIVE (VAD
     capture + transcription) -> FOLLOWUP (brief re-listen without wake word) -> back to
@@ -498,17 +499,30 @@ def listen_loop(
     aynen iletilir - Jarvis konusurken yeni bir tetiklemenin ARANMAMASI icin
     (bkz. o iki fonksiyonun kendi mute_event notlari). `listen_loop()` bunun
     disinda bu event'e dokunmaz/degistirmez, SADECE okur.
+
+    `on_state_change`, if given (JARVIS HUD - web-ui entegrasyonu, bkz.
+    `core/input_hub.py:_mic_producer`'in bunu `core/hud_bus.publish_state`
+    ile dogrudan bagladigi yer), `state` degistigi HER noktada ("idle"/
+    "listening" - ACTIVE ve FOLLOWUP ikisi de disaridan "dinliyor" olarak
+    gorunur, ayirt edilmez) cagrilir. `stop_event`/`mute_event`'le AYNI
+    "sadece opsiyonel bir kanca, bu modul ne oldugunu bilmez" deseninde -
+    `ears/listener.py` `hud_bus`'i (veya baska bir ust katmani) import ETMEZ,
+    sadece verilen callback'i cagirir (bagimlilik yonu her zaman yukari dogru).
     """
     state = ListenState.IDLE
     try:
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16") as stream:
             while stop_event is None or not stop_event.is_set():
                 state = ListenState.IDLE
+                if on_state_change is not None:
+                    on_state_change("idle")
                 trailing = _wait_for_wakeword(stream, stop_event=stop_event, mute_event=mute_event)
                 if trailing is None:  # shutdown requested while waiting
                     break
 
                 state = ListenState.ACTIVE
+                if on_state_change is not None:
+                    on_state_change("listening")
                 audio = _vad_record(stream, trailing=trailing, stop_event=stop_event, mute_event=mute_event)
                 # The turn that triggered ACTIVE always earns one full follow-up
                 # window, whether or not it produced text - matches the previous
@@ -524,6 +538,8 @@ def listen_loop(
                         break
 
                     state = ListenState.FOLLOWUP
+                    if on_state_change is not None:
+                        on_state_change("listening")
                     remaining_ms = int((followup_deadline - time.perf_counter()) * 1000)
                     if remaining_ms <= 0:
                         break

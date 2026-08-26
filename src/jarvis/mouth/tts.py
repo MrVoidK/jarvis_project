@@ -8,6 +8,7 @@ from typing import Optional
 import numpy as np
 import sounddevice as sd
 
+from src.jarvis.core import hud_bus
 from src.jarvis.core.language import detect_language as _detect_language
 
 # XTTS-v2 (Coqui) CPML lisansi altinda; ilk indirmede interaktif bir
@@ -263,6 +264,10 @@ def speak(
 
     if speaking_event is not None:
         speaking_event.set()
+    # JARVIS HUD (web-ui): NeuralCore'un "speaking" gorsel durumu icin - bkz.
+    # core/hud_bus.py. speaking_event ile AYNI anda yayinlanir, yeni bir
+    # event/kilit gerekmiyor (bkz. speaking_event'in docstring notu).
+    hud_bus.publish_state("speaking")
     try:
         with _PLAYBACK_LOCK:
             try:
@@ -360,6 +365,10 @@ def speak(
             if stop_event is None or not stop_event.is_set():
                 time.sleep(MIC_MUTE_COOLDOWN_S)
             speaking_event.clear()
+        # `speaking_event`den BAGIMSIZ olarak her zaman yayinlanir (yukaridaki
+        # "speaking" yayiniyla simetrik) - speaking_event verilmese bile
+        # (ör. hibrit-disi bir cagiran) hud_bus'in son bilinen durumu dogru kalsin.
+        hud_bus.publish_state("idle")
 
 
 if __name__ == "__main__":
