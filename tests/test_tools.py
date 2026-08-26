@@ -140,6 +140,11 @@ def test_dispatcher_returns_none_for_plain_chat():
 
 
 def test_dispatcher_matches_music_intents():
+    """Dispatcher SADECE ham icerigi yakalar - "the"/"song"/"via spotify" gibi
+    dolgu kelimelerini ayiklamak tools/spotify.py:_clean_query()'nin isi (bkz.
+    test_play_music_query_cleanup), burada sadece dogru intent'e yonlendigi ve
+    HAM content'in kaybolmadan tasindigi test ediliyor.
+    """
     dispatcher = Dispatcher()
 
     play = dispatcher.match_rule("şarkı çal: Bohemian Rhapsody")
@@ -149,7 +154,7 @@ def test_dispatcher_matches_music_intents():
 
     play_en = dispatcher.match_rule("play song: Shape of You")
     assert play_en.name == "play_music"
-    assert play_en.parameters["content"] == "Shape of You"
+    assert play_en.parameters["content"] == "song: Shape of You"
 
     for text, expected_name, expected_lang in [
         ("müziği duraklat", "pause_music", "tr"),
@@ -163,38 +168,84 @@ def test_dispatcher_matches_music_intents():
         assert intent.parameters["lang"] == expected_lang
 
 
+def test_dispatcher_matches_real_world_music_phrasings():
+    """Gercek kullanim testinde ILK haliyle eslesmeyen iki gercek deneme - regresyon.
+
+    Ikisi de Brain'e dusup LLM'in sarkiyi CALMADIGI halde "caliyor" diye
+    halusinasyon gormesine yol acmisti (bkz. core/dispatcher.py _RULES yorumu).
+    """
+    dispatcher = Dispatcher()
+
+    # "Sarki calin." - formal/cogul cekim, sarki adi SOYLENMEDI (bos icerik beklenir)
+    play_formal = dispatcher.match_rule("Şarkı çalın.")
+    assert play_formal is not None
+    assert play_formal.name == "play_music"
+    assert play_formal.parameters["lang"] == "tr"
+
+    # "Play the X via Spotify?" - "the"/"via Spotify" dolgu ifadeleri iceriyor
+    play_natural = dispatcher.match_rule("Play the Should I Stay or Should I Go via Spotify?")
+    assert play_natural is not None
+    assert play_natural.name == "play_music"
+
+
 # --- spotify ---
 
 
 class _FakeSpotifyClient:
-    """spotipy.Spotify'in test icin sahte, ag'e cikmayan bir yerine gecirimi."""
+    """spotipy.Spotify'in test icin sahte, ag'e cikmayan bir yerine gecirimi.
 
-    def __init__(self, track: dict | None = None, raise_status: int | None = None):
+    Gercek kullanim testinde Spotify ACIKKEN bile ilk playback cagrisi 404 "No
+    active device" donebiliyor (Spotify Connect'in "aktif" kavrami sadece acik
+    olmayi yetmiyor) - `raise_status`/`raise_on_retry`/`available_devices`
+    kombinasyonu bu senaryoyu (ve tools/spotify.py:_with_device_fallback()'in
+    devices()'tan bulup ACIKCA hedefleyerek kurtarmasini) simule ediyor.
+    """
+
+    def __init__(
+        self,
+        track: dict | None = None,
+        raise_status: int | None = None,
+        raise_on_retry: bool = True,
+        available_devices: list[dict] | None = None,
+    ):
         self._track = track
         self._raise_status = raise_status
+        self._raise_on_retry = raise_on_retry
+        self._available_devices = available_devices if available_devices is not None else []
         self.started_uris: list[str] | None = None
+        self.started_device_id: str | None = "NOT_CALLED"
+        self.last_search_query: str | None = None
         self.paused = False
         self.skipped = False
 
-    def _maybe_raise(self):
-        if self._raise_status is not None:
+    def _maybe_raise(self, device_id):
+        if self._raise_status is None:
+            return
+        # Ilk deneme (device_id=None) her zaman "aktif cihaz yok" senaryosunu
+        # tetikler; fallback (device_id ACIKCA verilmis) sadece raise_on_retry=True
+        # ise patlamaya devam eder (yani cihaz bulunsa da hala kullanilamiyor).
+        if device_id is None or self._raise_on_retry:
             raise spotipy.SpotifyException(self._raise_status, -1, "test", headers={})
 
+    def devices(self):
+        return {"devices": self._available_devices}
+
     def search(self, q, type, limit):
-        self._maybe_raise()
+        self.last_search_query = q
         items = [self._track] if self._track else []
         return {"tracks": {"items": items}}
 
-    def start_playback(self, uris):
-        self._maybe_raise()
+    def start_playback(self, uris, device_id=None):
+        self._maybe_raise(device_id)
         self.started_uris = uris
+        self.started_device_id = device_id
 
-    def pause_playback(self):
-        self._maybe_raise()
+    def pause_playback(self, device_id=None):
+        self._maybe_raise(device_id)
         self.paused = True
 
-    def next_track(self):
-        self._maybe_raise()
+    def next_track(self, device_id=None):
+        self._maybe_raise(device_id)
         self.skipped = True
 
 
@@ -245,7 +296,44 @@ def test_play_music_not_found(monkeypatch):
 
 
 def test_play_music_no_active_device(monkeypatch):
-    fake = _FakeSpotifyClient(track=_SAMPLE_TRACK, raise_status=404)
+    """Hic listelenen cihaz da yoksa (devices() bos) fallback denenmeden hata donmeli."""
+    fake = _FakeSpotifyClient(track=_SAMPLE_TRACK, raise_status=404, available_devices=[])
+    monkeypatch.setattr(spotify_module, "get_client", lambda: (fake, None))
+
+    result = spotify_module.PlayMusicTool().execute({"lang": "tr", "content": "Bohemian Rhapsody"})
+    assert "Spotify" in result and "aç" in result
+    assert fake.started_uris is None  # fallback denenmedi cunku hic cihaz yoktu
+
+
+def test_play_music_falls_back_to_listed_device_when_none_active(monkeypatch):
+    """Gercek kullanim testinde gozlemlendi: Spotify ACIKKEN bile ilk cagri 404 "No
+    active device" donuyordu. devices() o cihazi (aktif olmasa da) listeliyor -
+    ona ACIKCA device_id ile hedefleyerek kurtarmasi gerekiyor (bkz. tools/
+    spotify.py:_with_device_fallback).
+    """
+    fake = _FakeSpotifyClient(
+        track=_SAMPLE_TRACK,
+        raise_status=404,
+        raise_on_retry=False,
+        available_devices=[{"id": "device-123", "name": "DESKTOP-ABC"}],
+    )
+    monkeypatch.setattr(spotify_module, "get_client", lambda: (fake, None))
+
+    result = spotify_module.PlayMusicTool().execute({"lang": "en", "content": "Bohemian Rhapsody"})
+
+    assert fake.started_device_id == "device-123"
+    assert "Bohemian Rhapsody" in result
+
+
+def test_play_music_no_active_device_even_after_fallback(monkeypatch):
+    """Cihaz listelense bile ona hedeflenen tekrar deneme de basarisiz olursa hala
+    net bir hata mesaji donmeli - sessizce takilip kalmamali."""
+    fake = _FakeSpotifyClient(
+        track=_SAMPLE_TRACK,
+        raise_status=404,
+        raise_on_retry=True,
+        available_devices=[{"id": "device-123", "name": "DESKTOP-ABC"}],
+    )
     monkeypatch.setattr(spotify_module, "get_client", lambda: (fake, None))
 
     result = spotify_module.PlayMusicTool().execute({"lang": "tr", "content": "Bohemian Rhapsody"})
@@ -263,3 +351,44 @@ def test_pause_and_skip_music(monkeypatch):
     skip_result = spotify_module.SkipTrackTool().execute({"lang": "en"})
     assert fake.skipped
     assert "skipped" in skip_result.lower()
+
+
+def test_clean_query_strips_filler_and_trailing_spotify_mention():
+    assert spotify_module._clean_query("song: Shape of You") == "Shape of You"
+    assert (
+        spotify_module._clean_query("the Should I Stay or Should I Go via Spotify?")
+        == "Should I Stay or Should I Go"
+    )
+    assert spotify_module._clean_query(".") == ""  # "Sarki calin." -> icerik yok
+    assert spotify_module._clean_query("  ") == ""
+    assert spotify_module._clean_query("Bohemian Rhapsody") == "Bohemian Rhapsody"
+
+
+def test_play_music_end_to_end_with_real_world_phrasing(monkeypatch):
+    """Gercek kullanim testinde basarisiz olan tam ifade - dispatcher'dan PlayMusicTool'a
+    kadar butun zinciri (regex eslesme + _clean_query temizligi) tek testte dogrular.
+    """
+    fake = _FakeSpotifyClient(track=_SAMPLE_TRACK)
+    monkeypatch.setattr(spotify_module, "get_client", lambda: (fake, None))
+
+    intent = Dispatcher().match_rule("Play the Should I Stay or Should I Go via Spotify?")
+    assert intent is not None and intent.name == "play_music"
+
+    result = spotify_module.PlayMusicTool().execute(intent.parameters)
+
+    assert fake.last_search_query == "Should I Stay or Should I Go"
+    assert fake.started_uris == ["spotify:track:abc123"]
+    assert "Bohemian Rhapsody" in result  # _SAMPLE_TRACK'in adi (arama sonucu sabit)
+
+
+def test_play_music_empty_song_name_asks_which_song(monkeypatch):
+    """"Sarki calin." (sarki adi soylenmeden) - Spotify'a hic gidilmemeli, net bir
+    "hangi sarki?" mesaji donmeli."""
+    monkeypatch.setattr(
+        spotify_module, "get_client", lambda: (_ for _ in ()).throw(AssertionError("cagrilmamali"))
+    )
+    intent = Dispatcher().match_rule("Şarkı çalın.")
+    assert intent is not None and intent.name == "play_music"
+
+    result = spotify_module.PlayMusicTool().execute(intent.parameters)
+    assert "anlamadım" in result

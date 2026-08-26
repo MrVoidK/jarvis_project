@@ -490,12 +490,31 @@ Alt adımlar:
       ÖNCE diskteki cache'e bakıyor (ağ/tarayıcı gerektirmez) — hiç
       yetkilendirme yapılmamışsa spotipy'nin sesli bir komutun ortasında
       beklenmedik şekilde tarayıcı açıp bloke olmasını önlemek için "önce
-      yetkilendirin" mesajı dönüyor. Hedef cihaz mantığı yazılmadı —
-      `device_id` verilmezse Web API otomatik olarak o an aktif cihazı
-      (bu makinede açık Spotify uygulaması) hedefliyor. Birim testleri
-      sahte bir Spotify client'ıyla (gerçek ağ/hesap gerektirmeden) tüm
-      yolları (başarı, cihaz yok, bulunamadı, yapılandırılmamış,
-      yetkilendirilmemiş) kapsıyor.
+      yetkilendirin" mesajı dönüyor. Birim testleri sahte bir Spotify
+      client'ıyla (gerçek ağ/hesap gerektirmeden) tüm yolları (başarı,
+      cihaz yok, bulunamadı, yapılandırılmamış, yetkilendirilmemiş)
+      kapsıyor.
+      **Gerçek kullanım testinde bulunan iki hata, ikisi de düzeltildi:**
+      (1) İlk regex kalıpları ("şarkı çal: X", "play song: X") çok dardı —
+      kullanıcının gerçek iki denemesi de ("Şarkı çalın.", "Play the ...
+      via Spotify?") eşleşmedi, istek Brain'e düşüp LLM şarkıyı ÇALMADIĞI
+      halde "çalınıyor" diye halüsinasyon gördü. Kalıplar Türkçe fiil
+      çekimlerini (çal/çalın/çalınız) ve "the"/"via Spotify" gibi dolgu
+      ifadelerini kapsayacak şekilde genişletildi; dolgu temizliği
+      dispatcher'da değil `tools/spotify.py:_clean_query()`'de tek yerde
+      toplandı (regex'te sıralı optional group'larla yapmak kırılgan
+      çıkmıştı). `system_prompt.txt`'e de bir kural eklendi: Brain artık
+      müzik/not/komut gibi işlemleri kendisinin YAPMADIĞINI biliyor, bir
+      istek ona ulaştıysa (dispatcher tanımadıysa) "anlamadım" diyor,
+      "yaptım" diye uydurmuyor. (2) Kalıplar düzelince de gerçek testte
+      Spotify AÇIKKEN bile Web API "No active device found" (404)
+      döndürdü — Spotify Connect'in "aktif cihaz" kavramı sadece
+      uygulamanın açık olmasıyla dolmuyor. `_with_device_fallback()`
+      eklendi: `device_id` olmadan başarısız olan her playback çağrısı,
+      `devices()`'ın listelediği (aktif olmasa da) bir cihazı AÇIKÇA
+      hedefleyerek bir kez daha deneniyor — bu, gerçek testte cihazı
+      fiilen aktif hale getirip çalmayı başlattı. İkisi de gerçek
+      mikrofonla, gerçek Spotify hesabıyla uçtan uca doğrulandı.
 - [ ] **Takvim entegrasyonu (Google Calendar)**: aynı gerekçeyle (OAuth
       uygulaması kaydı kullanıcının kendisi tarafından yapılmalı) bu turun
       kapsamı dışında — Spotify'daki desen (opsiyonel, `.env` tabanlı,

@@ -59,17 +59,30 @@ _RULES: dict[str, list[tuple[str, re.Pattern]]] = {
         ("tr", re.compile(r"\bsistem durumu\b", re.IGNORECASE)),
         ("en", re.compile(r"\bsystem status\b", re.IGNORECASE)),
     ],
+    # Muzik kaliplari, gercek kullanim testinde iki dogal deneme de ("Sarki calin.",
+    # "Play the Should I Stay or Should I Go via Spotify?") ilk (cok dar) haliyle
+    # ESLESMEDI - ikisi de Brain'e dustu ve LLM sarkiyi CALMADIGI halde "caliniyor"
+    # diye halusinasyon gordu (bkz. system_prompt.txt madde 5, ayni turda eklendi).
+    # Bu yuzden fiil coklu-cekim (calin/calalim vb.) ve "the"/"via spotify" gibi
+    # dolgu kelimeler kapsanacak sekilde genisletildi; content artik OPSIYONEL
+    # (`.*`) - PlayMusicTool bos sorguda zaten "hangi sarkiyi?" diye soruyor,
+    # bu da kullanicinin sarki adi soylemeden sadece "muzik ac" demesini
+    # duzgun karsiliyor.
     "play_music": [
-        ("tr", re.compile(r"\bşarkı çal\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
-        ("en", re.compile(r"\bplay (?:music|song)\b[:,]?\s*(?P<content>.+)", re.IGNORECASE)),
+        ("tr", re.compile(r"\b(?:şarkı\s+)?çal(?:ın|ınız)?\b[:,]?\s*(?P<content>.*)", re.IGNORECASE)),
+        # "the"/"song" gibi dolgu kelimelerini burada regex'le ayiklamaya calismak
+        # ("play song: X" vs "play the song X" gibi kombinasyonlarda) sirali
+        # optional group'larla kirilgan oluyordu - butun kuyruk yakalanip filtreleme
+        # tools/spotify.py:_clean_query()'ye birakildi (tek yerde, test edilebilir).
+        ("en", re.compile(r"\bplay\b[:,]?\s*(?P<content>.*)", re.IGNORECASE)),
     ],
     "pause_music": [
-        ("tr", re.compile(r"\bmüziği duraklat\b", re.IGNORECASE)),
-        ("en", re.compile(r"\bpause music\b", re.IGNORECASE)),
+        ("tr", re.compile(r"\b(?:müziği\s+)?duraklat(?:ın|ınız)?\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bpause\b\s*(?:the\s+)?(?:music|song)?\b", re.IGNORECASE)),
     ],
     "skip_track": [
-        ("tr", re.compile(r"\bşarkıyı geç\b", re.IGNORECASE)),
-        ("en", re.compile(r"\bskip (?:song|track)\b", re.IGNORECASE)),
+        ("tr", re.compile(r"\b(?:şarkıyı\s+)?geç(?:in|iniz)?\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bskip\b\s*(?:the\s+)?(?:song|track)?\b", re.IGNORECASE)),
     ],
 }
 

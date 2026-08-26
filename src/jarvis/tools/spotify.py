@@ -16,6 +16,7 @@ istememesi butun Jarvis'i kirmamalidir.
 
 import logging
 import os
+import re
 from typing import Optional
 
 import spotipy
@@ -65,6 +66,75 @@ _ERROR_MESSAGES = {
 
 def _localized(messages: dict[str, str], lang: str) -> str:
     return messages.get(lang, messages["en"])
+
+
+def _find_available_device_id(client: spotipy.Spotify) -> Optional[str]:
+    """`devices()` ile listelenen (aktif olmasa da) ilk cihazin id'sini dondurur.
+
+    Gercek testte gozlemlendi: Spotify masaustu uygulamasi ACIK olsa bile Web
+    API'nin "aktif cihaz" kavrami sadece uygulamanin acik olmasiyla dolmuyor -
+    once bir Spotify Connect etkilesimi gerekiyor. device_id=None ile cagrilan
+    play/pause/next 404 "No active device found" donuyordu. devices() ise ayni
+    o an, uygulamayi ACIK ama "aktif degil" olarak DOGRU sekilde listeliyor -
+    o cihazi ACIKCA hedeflemek (bkz. _with_device_fallback) onu fiilen aktif
+    hale getiriyor.
+    """
+    try:
+        devices = client.devices().get("devices", [])
+    except spotipy.SpotifyException as exc:
+        logger.warning("Spotify devices() basarisiz: %s", exc)
+        return None
+    return devices[0]["id"] if devices else None
+
+
+def _with_device_fallback(client: spotipy.Spotify, call, lang: str) -> Optional[str]:
+    """`call(device_id)`'i once device_id=None ile (mevcut aktif cihazi hedefler)
+    dener; 404 "aktif cihaz yok" hatasi alirsa `_find_available_device_id()`'in
+    bulduğu cihazi ACIKCA hedefleyerek bir kez daha dener. Basarili olursa None,
+    olmazsa TR/EN hata mesaji doner. 404 disindaki hatalar oldugu gibi yukari
+    firlatilir (cagiran taraf zaten genel bir SpotifyException handler'ina sahip).
+    """
+    try:
+        call(None)
+        return None
+    except spotipy.SpotifyException as exc:
+        if exc.http_status != 404:
+            raise
+
+    device_id = _find_available_device_id(client)
+    if device_id is None:
+        return _localized(_NO_ACTIVE_DEVICE_MESSAGES, lang)
+
+    try:
+        call(device_id)
+        return None
+    except spotipy.SpotifyException as exc:
+        logger.warning("Cihaz fallback'i de basarisiz oldu: %s", exc)
+        return _localized(_NO_ACTIVE_DEVICE_MESSAGES, lang)
+
+
+# Dispatcher'in "play" kalibi (bkz. core/dispatcher.py) "play" kelimesinden sonraki
+# HER SEYI content olarak yakalıyor - "Play the Should I Stay or Should I Go via
+# Spotify?" gibi bir transkriptte content = "the Should I Stay or Should I Go via
+# Spotify?" olarak geliyor. Dolgu kelimelerini regex'te sirali optional group'larla
+# ayiklamak ("play song: X" vs "play the song X" kombinasyonlarinda) kirilgan
+# oldugundan, butun temizlik BURADA, tek ve test edilebilir bir yerde yapiliyor.
+_TRAILING_SPOTIFY_RE = re.compile(r"\s*(?:via|on)\s+spotify\s*", re.IGNORECASE)
+_LEADING_FILLER_RE = re.compile(r"^(?:the|a|song|music|bir|şu|bu)\b[:,]?\s*", re.IGNORECASE)
+_TRAILING_PUNCT_RE = re.compile(r"[.?!,;:]+$")
+
+
+def _clean_query(text: str) -> str:
+    text = _TRAILING_SPOTIFY_RE.sub(" ", text)
+    text = _TRAILING_PUNCT_RE.sub("", text).strip()
+    # Birden fazla dolgu kelimesi ust uste gelebilir ("the song: X" gibi) - hicbiri
+    # kalmayana kadar tekrar tekrar ayikla.
+    while True:
+        stripped = _LEADING_FILLER_RE.sub("", text)
+        if stripped == text:
+            break
+        text = stripped
+    return _TRAILING_PUNCT_RE.sub("", text).strip()
 
 
 _auth_manager: Optional[SpotifyOAuth] = None  # modul-seviyesi, tek seferlik olusturma
@@ -124,7 +194,7 @@ class PlayMusicTool(Tool):
 
     def execute(self, params: dict) -> str:
         lang = params.get("lang", "en")
-        query = (params.get("content") or "").strip()
+        query = _clean_query((params.get("content") or "").strip())
         if not query:
             return _localized(_EMPTY_QUERY_MESSAGES, lang)
 
@@ -140,11 +210,14 @@ class PlayMusicTool(Tool):
                 return _localized(_NOT_FOUND_MESSAGES, lang)
 
             track = items[0]
-            client.start_playback(uris=[track["uri"]])
+            error_message = _with_device_fallback(
+                client,
+                lambda device_id: client.start_playback(uris=[track["uri"]], device_id=device_id),
+                lang,
+            )
+            if error_message is not None:
+                return error_message
         except spotipy.SpotifyException as exc:
-            if exc.http_status == 404:
-                logger.info("Aktif Spotify cihazi yok.")
-                return _localized(_NO_ACTIVE_DEVICE_MESSAGES, lang)
             logger.error("Spotify play_music basarisiz: %s", exc)
             return _localized(_ERROR_MESSAGES, lang)
 
@@ -170,12 +243,14 @@ class PauseMusicTool(Tool):
             return _localized(messages, lang)
 
         try:
-            client.pause_playback()
+            error_message = _with_device_fallback(
+                client, lambda device_id: client.pause_playback(device_id=device_id), lang
+            )
         except spotipy.SpotifyException as exc:
-            if exc.http_status == 404:
-                return _localized(_NO_ACTIVE_DEVICE_MESSAGES, lang)
             logger.error("Spotify pause_music basarisiz: %s", exc)
             return _localized(_ERROR_MESSAGES, lang)
+        if error_message is not None:
+            return error_message
 
         return _localized(_PAUSED_MESSAGES, lang)
 
@@ -195,12 +270,16 @@ class SkipTrackTool(Tool):
             return _localized(messages, lang)
 
         try:
-            client.next_track()
+            error_message = _with_device_fallback(
+                client, lambda device_id: client.next_track(device_id=device_id), lang
+            )
         except spotipy.SpotifyException as exc:
-            if exc.http_status == 404:
-                return _localized(_NO_ACTIVE_DEVICE_MESSAGES, lang)
             logger.error("Spotify skip_track basarisiz: %s", exc)
             return _localized(_ERROR_MESSAGES, lang)
+        if error_message is not None:
+            return error_message
+
+        return _localized(_SKIPPED_MESSAGES, lang)
 
         return _localized(_SKIPPED_MESSAGES, lang)
 
