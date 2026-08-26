@@ -18,9 +18,9 @@ from src.jarvis.tools.media_tool import (
     MediaVolumeUpTool,
 )
 from src.jarvis.tools.notes_tool import CreateNoteTool, ReadNotesTool
-from src.jarvis.tools.shell import RunCommandTool
 from src.jarvis.tools.spotify import PauseMusicTool, PlayMusicTool, SkipTrackTool
 from src.jarvis.tools.system_info import SystemInfoTool
+from src.jarvis.tools.terminal_tool import LaunchAppTool, RunCommandTool
 
 TOOL_REGISTRY: dict[str, Tool] = {
     tool.name: tool
@@ -29,6 +29,7 @@ TOOL_REGISTRY: dict[str, Tool] = {
         ReadNotesTool(),
         ListFilesTool(),
         RunCommandTool(),
+        LaunchAppTool(),
         SystemInfoTool(),
         PlayMusicTool(),
         PauseMusicTool(),

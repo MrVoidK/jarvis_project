@@ -18,7 +18,7 @@ from src.jarvis.tools import files as files_module
 from src.jarvis.tools import notes_tool as notes_module
 from src.jarvis.tools import spotify as spotify_module
 from src.jarvis.tools.registry import TOOL_REGISTRY
-from src.jarvis.tools.shell import RunCommandTool
+from src.jarvis.tools.terminal_tool import LaunchAppTool, RunCommandTool
 
 # --- risk puanlama ---
 
@@ -31,7 +31,7 @@ def test_only_low_risk_skips_approval():
 
 def test_shell_tool_is_always_high_risk():
     # Terminal komutu, icerigi ne olursa olsun ISTISNASIZ onay istemeli
-    # (bkz. tools/shell.py modul docstring'i, 1. katman).
+    # (bkz. tools/terminal_tool.py modul docstring'i, 1. katman).
     assert RunCommandTool.risk_level is RiskLevel.HIGH
 
 
@@ -101,25 +101,62 @@ def test_list_files_reports_empty_and_populated(monkeypatch, tmp_path):
     assert "rapor.txt" in tool.execute({"lang": "en"})
 
 
-# --- shell ---
+# --- terminal (run_command) ---
 
 
 def test_run_command_executes_and_returns_output():
-    result = RunCommandTool().execute({"lang": "en", "content": "echo jarvis_test_ok"})
+    result = RunCommandTool().execute({"lang": "en", "command": "echo jarvis_test_ok"})
     assert "jarvis_test_ok" in result
 
 
 def test_run_command_rejects_empty_command():
-    result = RunCommandTool().execute({"lang": "en", "content": ""})
+    result = RunCommandTool().execute({"lang": "en", "command": ""})
     assert "didn't get a command" in result.lower()
 
 
 def test_run_command_strips_trailing_punctuation():
     """Regresyon: docs/TODO.md madde 1 - "Run command ls." icin STT'nin ekledigi
-    sondaki nokta content'e karisip Windows'ta 'ls.' calistirilmaya calisiliyordu."""
-    result = RunCommandTool().execute({"lang": "en", "content": "echo jarvis_test_ok."})
+    sondaki nokta command'a karisip Windows'ta 'ls.' calistirilmaya calisiliyordu."""
+    result = RunCommandTool().execute({"lang": "en", "command": "echo jarvis_test_ok."})
     assert "jarvis_test_ok" in result
     assert "not recognized" not in result.lower()
+
+
+# --- terminal (launch_app) ---
+
+
+def test_launch_app_starts_known_application(monkeypatch):
+    from src.jarvis.tools import terminal_tool as terminal_module
+
+    monkeypatch.setattr(terminal_module, "resolve_app_command", lambda name: "code")
+    calls: list[tuple] = []
+    monkeypatch.setattr(
+        terminal_module.subprocess, "Popen", lambda command, shell=False: calls.append((command, shell))
+    )
+
+    result = LaunchAppTool().execute({"lang": "en", "app_name": "vs code"})
+
+    assert calls == [("code", True)]
+    assert "vs code" in result.lower()
+    assert "code" not in result.lower().replace("vs code", "")  # cozulmus binary ismi konusmaya SIZMAMALI
+
+
+def test_launch_app_rejects_unknown_application(monkeypatch):
+    from src.jarvis.tools import terminal_tool as terminal_module
+
+    monkeypatch.setattr(terminal_module, "resolve_app_command", lambda name: None)
+    monkeypatch.setattr(
+        terminal_module.subprocess,
+        "Popen",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("bilinmeyen uygulamada Popen cagrilmamali")),
+    )
+
+    result = LaunchAppTool().execute({"lang": "tr", "app_name": "discord"})
+    assert "bilmiyorum" in result.lower() or "bulamadım" in result.lower()
+
+
+def test_launch_app_is_medium_risk():
+    assert LaunchAppTool.risk_level is RiskLevel.MEDIUM
 
 
 # --- dispatcher kalip eslesmesi ---

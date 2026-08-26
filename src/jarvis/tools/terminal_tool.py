@@ -1,4 +1,4 @@
-"""Terminal komutu calistirma araci - sistemin EN riskli yuzeyi.
+"""Terminal komutu calistirma + uygulama baslatma - sistemin EN riskli yuzeyi.
 
 Katmanli savunma (defense-in-depth), hicbiri tek basina yeterli sayilmadan:
 
@@ -23,17 +23,19 @@ kabuk yerlesiklerinin (builtin) calisabilmesi icin gerekli. Bunun bedeli, kabuk
 metakarakterleriyle (`&&`, `|`, `;`) komut zincirlenebilmesidir - bu risk yukaridaki
 2. katmanla (kullanici tam metni gorur) ve 3. katmanla karsilaniyor.
 
-!! KRITIK MIMARI VARSAYIM (bkz. security-reviewer bulgusu, Faz 3) !!
-Yukaridaki gerekce YALNIZCA `params["content"]`'in su anki kaynagi gecerli oldugu
-surece dogrudur: icerik SADECE core/dispatcher.py'deki regex'in (?P<content>.+)
-grubundan, yani dogrudan kullanici transkriptinden geliyor - LLM (Dispatcher.
-classify(), AgentFactory) canli dongude bu alana HIC dokunmuyor. Eger ileride
-intent/parametre cikarimi LLM'e tasinirsa (orn. Hermes function-calling ile
-`content`'i serbest metinden doldurmak), bu savunma ANINDA gecersiz olur ve klasik
-prompt-injection -> RCE zinciri acilir: o noktada HIGH risk + [Y/N] onayi TEK
-basina yeterli degildir (kullanici, LLM'in urettigi ve kendi soylediginden farkli
-bir komutu onayliyor olabilir). O gecis yapilirsa bu dosya yeniden guvenlik
-incelemesinden gecirilmeli.
+!! GECIS TAMAMLANDI (Faz 3.3, semantic router) !!
+Bu dosyanin eski hali (tools/shell.py) burada, aynen bu geciste, gecerliligini
+yitirecegi ONCEDEN belgelenmis bir varsayima dayaniyordu: "icerik SADECE
+dispatcher regex'inden geliyor; intent/parametre cikarimi LLM'e tasinirsa bu
+savunma gecersiz olur." Artik `command` parametresi Ollama native tool-calling
+(core/dispatcher.py:Dispatcher.classify()) uzerinden LLM tarafindan uretiliyor -
+klasik prompt-injection -> RCE zinciri teorik olarak acik. Somut mitigasyon:
+(a) core/app.py:_execute_tool artik intent.parameters'taki TUM string degerleri
+(sadece bu aracin degil) OutputSafetyCheck'ten geciriyor, (b) core/console.py:
+print_approval_panel() onay ekraninda LLM'in urettigi TAM parametreyi buyuk ve
+net gosteriyor - kullanici kendi soylediginden farkli bir komutu onayliyor olsa
+bile bunu GORUR, (c) bu dosya + dispatcher.py + app.py, security-reviewer
+subagent'i ile bu gecisin hemen ardindan incelendi (bkz. CLAUDE.md).
 """
 
 import logging
@@ -41,10 +43,11 @@ import subprocess
 
 from src.jarvis.core.console import print_system
 from src.jarvis.core.risk import RiskLevel
+from src.jarvis.core.security_config import resolve_app_command
 from src.jarvis.core.text import strip_trailing_punct
 from src.jarvis.tools.base import Tool
 
-logger = logging.getLogger("jarvis.tools.shell")
+logger = logging.getLogger("jarvis.tools.terminal")
 
 COMMAND_TIMEOUT_S = 15
 KILL_TIMEOUT_S = 5  # zaman asimi sonrasi surec agacini oldurmek icin verilen sure
@@ -104,14 +107,17 @@ class RunCommandTool(Tool):
     name = "run_command"
     description = "Kullanicinin soyledigi terminal komutunu calistirir."
     risk_level = RiskLevel.HIGH  # ISTISNASIZ - bkz. modul docstring'i, 1. katman
+    parameters_schema: dict = {
+        "command": {"type": "string", "description": "Calistirilacak Windows terminal komutu."}
+    }
+    required_parameters: list[str] = ["command"]
 
     def execute(self, params: dict) -> str:
         lang = params.get("lang", "en")
-        # STT cumle sonuna noktalama ekliyor ("Run command ls." -> content="ls.") -
+        # STT cumle sonuna noktalama ekliyor ("Run command ls." -> command="ls.") -
         # Windows'ta "ls." taninmiyor, bu yuzden komut olarak calistirilmadan once
-        # noktalama temizleniyor (bkz. tools/spotify.py:_clean_query() ile paylasilan
-        # core/text.py:strip_trailing_punct, docs/TODO.md madde 1).
-        command = strip_trailing_punct((params.get("content") or "").strip())
+        # noktalama temizleniyor (core/text.py:strip_trailing_punct, docs/TODO.md madde 1).
+        command = strip_trailing_punct((params.get("command") or "").strip())
         if not command:
             return _localized(_EMPTY_MESSAGES, lang)
 
@@ -146,3 +152,63 @@ class RunCommandTool(Tool):
         if not output:
             return _localized(_NO_OUTPUT_MESSAGES, lang)
         return _localized(_OK_TEMPLATES, lang).format(output=output)
+
+
+_UNKNOWN_APP_TEMPLATES = {
+    "tr": "'{app_name}' adında bilinen bir uygulama bulamadım.",
+    "en": "I don't know an application called '{app_name}'.",
+}
+_LAUNCHED_TEMPLATES = {
+    "tr": "{app_name} açılıyor.",
+    "en": "Opening {app_name}.",
+}
+_LAUNCH_FAILED_TEMPLATES = {
+    "tr": "{app_name} açılırken bir hata oluştu.",
+    "en": "Something went wrong while opening {app_name}.",
+}
+
+
+class LaunchAppTool(Tool):
+    """config/security.yaml'daki known_applications allowlist'inden bir uygulama baslatir.
+
+    LLM asla keyfi bir binary/path uretip calistiramaz - SADECE allowlist'teki
+    isimler cozulur (bkz. core/security_config.py:resolve_app_command);
+    eslesme yoksa subprocess HIC cagrilmaz. risk_level MEDIUM secildi (LOW
+    degil): allowlist bugun kucuk olsa da, ileride genel-amacli bir uygulama
+    eklenirse beklenmedik bir yan etki riskini onceden karsilamak icin -
+    projede zaten "salt-okunur olsa da MEDIUM" gibi ihtiyatli emsaller var
+    (bkz. notes_tool.py:ReadNotesTool).
+    """
+
+    name = "launch_app"
+    description = "Bilinen (allowlist'teki) bir masaustu uygulamasini baslatir."
+    risk_level = RiskLevel.MEDIUM
+    parameters_schema: dict = {
+        "app_name": {
+            "type": "string",
+            "description": "Baslatilacak uygulamanin kullanici dostu adi (orn. 'vs code', 'steam').",
+        }
+    }
+    required_parameters: list[str] = ["app_name"]
+
+    def execute(self, params: dict) -> str:
+        lang = params.get("lang", "en")
+        app_name = (params.get("app_name") or "").strip()
+        if not app_name:
+            return _localized(_UNKNOWN_APP_TEMPLATES, lang).format(app_name="")
+
+        command = resolve_app_command(app_name)
+        if command is None:
+            logger.warning("Bilinmeyen uygulama istendi: %r", app_name)
+            return _localized(_UNKNOWN_APP_TEMPLATES, lang).format(app_name=app_name)
+
+        logger.info("Uygulama baslatiliyor (onaylandi): %r -> %r", app_name, command)
+        # Cozulmus binary path ASLA TTS'e/kullaniciya gosterilmez - sadece
+        # kullanici dostu app_name konusulur (bkz. core/console.py TTS disiplini).
+        try:
+            subprocess.Popen(command, shell=True)
+        except OSError as exc:
+            logger.error("Uygulama baslatilamadi (%r): %s", app_name, exc)
+            return _localized(_LAUNCH_FAILED_TEMPLATES, lang).format(app_name=app_name)
+
+        return _localized(_LAUNCHED_TEMPLATES, lang).format(app_name=app_name)
