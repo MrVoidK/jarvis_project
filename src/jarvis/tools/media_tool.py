@@ -115,7 +115,12 @@ class MediaPlayPauseTool(Tool):
     """Fiziksel play/pause medya tusunu (TOGGLE) gonderir."""
 
     name = "media_play_pause"
-    description = "Muzik oynatmayi/duraklatmayi acip kapatir (toggle)."
+    description = (
+        "Muzik oynatmayi/duraklatmayi acip kapatir (toggle - fiziksel bir "
+        "tus, ayri 'play' ve 'pause' yoktur). Kullanici 'muzigi durdur', "
+        "'duraklat', 'stop music', 'pause' gibi bir sey soyledigi HER "
+        "SEFERINDE bu araci kullan."
+    )
     risk_level = RiskLevel.LOW
     parameters_schema: dict = {}
     required_parameters: list[str] = []
@@ -131,7 +136,14 @@ class MediaNextTrackTool(Tool):
     """Sonraki parcaya gecer."""
 
     name = "media_next_track"
-    description = "Muzik calarda bir sonraki parcaya gecer."
+    description = (
+        "Muzik calarda bir sonraki parcaya gecer (belirli bir sarki adi "
+        "SOYLENMEDEN, sadece mevcut kuyrukta ilerler). Kullanici 'sarki "
+        "degistir', 'sonraki sarki', 'gec', 'next song', 'skip', 'change "
+        "song' gibi bir sey soyledigi HER SEFERINDE bu araci kullan - "
+        "belirli bir sarki/sanatci ADI soylerse onun yerine search_music "
+        "kullan."
+    )
     risk_level = RiskLevel.LOW
     parameters_schema: dict = {}
     required_parameters: list[str] = []
@@ -147,7 +159,11 @@ class MediaPreviousTrackTool(Tool):
     """Onceki parcaya doner."""
 
     name = "media_previous_track"
-    description = "Muzik calarda bir onceki parcaya doner."
+    description = (
+        "Muzik calarda bir onceki parcaya doner. Kullanici 'onceki sarki', "
+        "'geri git', 'previous song', 'go back' gibi bir sey soyledigi HER "
+        "SEFERINDE bu araci kullan."
+    )
     risk_level = RiskLevel.LOW
     parameters_schema: dict = {}
     required_parameters: list[str] = []
@@ -163,7 +179,11 @@ class MediaVolumeUpTool(Tool):
     """Sistem sesini bir kademe artirir."""
 
     name = "media_volume_up"
-    description = "Sistem ses seviyesini artirir."
+    description = (
+        "Sistem ses seviyesini artirir. Kullanici 'sesi ac', 'sesi artir', "
+        "'sesi yukselt', 'volume up', 'louder', 'turn it up' gibi bir sey "
+        "soyledigi HER SEFERINDE bu araci kullan."
+    )
     risk_level = RiskLevel.LOW
     parameters_schema: dict = {}
     required_parameters: list[str] = []
@@ -179,7 +199,11 @@ class MediaVolumeDownTool(Tool):
     """Sistem sesini bir kademe azaltir."""
 
     name = "media_volume_down"
-    description = "Sistem ses seviyesini azaltir."
+    description = (
+        "Sistem ses seviyesini azaltir. Kullanici 'sesi kis', 'sesi azalt', "
+        "'sesi dusur', 'volume down', 'quieter', 'turn it down' gibi bir "
+        "sey soyledigi HER SEFERINDE bu araci kullan."
+    )
     risk_level = RiskLevel.LOW
     parameters_schema: dict = {}
     required_parameters: list[str] = []
