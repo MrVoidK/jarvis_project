@@ -40,6 +40,7 @@ import logging
 import subprocess
 
 from src.jarvis.core.risk import RiskLevel
+from src.jarvis.core.text import strip_trailing_punct
 from src.jarvis.tools.base import Tool
 
 logger = logging.getLogger("jarvis.tools.shell")
@@ -105,7 +106,11 @@ class RunCommandTool(Tool):
 
     def execute(self, params: dict) -> str:
         lang = params.get("lang", "en")
-        command = (params.get("content") or "").strip()
+        # STT cumle sonuna noktalama ekliyor ("Run command ls." -> content="ls.") -
+        # Windows'ta "ls." taninmiyor, bu yuzden komut olarak calistirilmadan once
+        # noktalama temizleniyor (bkz. tools/spotify.py:_clean_query() ile paylasilan
+        # core/text.py:strip_trailing_punct, docs/TODO.md madde 1).
+        command = strip_trailing_punct((params.get("content") or "").strip())
         if not command:
             return _localized(_EMPTY_MESSAGES, lang)
 

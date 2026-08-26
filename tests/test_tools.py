@@ -98,6 +98,14 @@ def test_run_command_rejects_empty_command():
     assert "didn't get a command" in result.lower()
 
 
+def test_run_command_strips_trailing_punctuation():
+    """Regresyon: docs/TODO.md madde 1 - "Run command ls." icin STT'nin ekledigi
+    sondaki nokta content'e karisip Windows'ta 'ls.' calistirilmaya calisiliyordu."""
+    result = RunCommandTool().execute({"lang": "en", "content": "echo jarvis_test_ok."})
+    assert "jarvis_test_ok" in result
+    assert "not recognized" not in result.lower()
+
+
 # --- dispatcher kalip eslesmesi ---
 
 
@@ -166,6 +174,21 @@ def test_dispatcher_matches_music_intents():
         assert intent is not None, f"eslesmedi: {text!r}"
         assert intent.name == expected_name
         assert intent.parameters["lang"] == expected_lang
+
+
+def test_dispatcher_pause_music_tolerates_pass_mishearing():
+    """Regresyon: docs/TODO.md madde 2 - Whisper "pause"u bazen "pass" diye
+    transkribe ediyor. Bare "pass" (yaygin kelime, yanlis pozitif riski yuksek)
+    tetiklenmemeli ama "pass music"/"pass the song" gibi acikca muzikle
+    birlikte gecen hali pause_music'e eslesmeli."""
+    dispatcher = Dispatcher()
+
+    pass_music = dispatcher.match_rule("Pass music.")
+    assert pass_music is not None
+    assert pass_music.name == "pause_music"
+    assert pass_music.parameters["lang"] == "en"
+
+    assert dispatcher.match_rule("I'll pass on that, thanks.") is None
 
 
 def test_dispatcher_matches_real_world_music_phrasings():
@@ -362,6 +385,48 @@ def test_clean_query_strips_filler_and_trailing_spotify_mention():
     assert spotify_module._clean_query(".") == ""  # "Sarki calin." -> icerik yok
     assert spotify_module._clean_query("  ") == ""
     assert spotify_module._clean_query("Bohemian Rhapsody") == "Bohemian Rhapsody"
+
+
+def test_clean_query_strips_this_that_some_filler():
+    """Regresyon: docs/TODO.md madde 4 - "this" gibi dolgu kelimeleri temizlenmeden
+    Spotify aramasina karisip alakasiz sonuclara yol aciyordu (orn. "this should I
+    stay or should I go" -> "This Charming Man")."""
+    assert (
+        spotify_module._clean_query("this should I stay or should I go")
+        == "should I stay or should I go"
+    )
+    assert spotify_module._clean_query("that Back in Black") == "Back in Black"
+    assert spotify_module._clean_query("some Shape of You") == "Shape of You"
+
+
+def test_play_music_picks_most_popular_result(monkeypatch):
+    """Regresyon: docs/TODO.md madde 4 - limit=1 + kor kor ilk sonuca guvenmek
+    alakasiz sarkilar buluyordu (orn. "Back in Black" -> "Iron Man - Black Sabbath").
+    Birden fazla aday arasindan en yuksek popularity'ye sahip olan secilmeli."""
+    obscure = {
+        "uri": "spotify:track:obscure",
+        "name": "Back in Black (cover)",
+        "artists": [{"name": "Nobody"}],
+        "popularity": 5,
+    }
+    famous = {
+        "uri": "spotify:track:famous",
+        "name": "Back in Black",
+        "artists": [{"name": "AC/DC"}],
+        "popularity": 90,
+    }
+
+    class _MultiResultClient(_FakeSpotifyClient):
+        def search(self, q, type, limit):
+            self.last_search_query = q
+            return {"tracks": {"items": [obscure, famous]}}
+
+    fake = _MultiResultClient()
+    monkeypatch.setattr(spotify_module, "get_client", lambda: (fake, None))
+
+    result = spotify_module.PlayMusicTool().execute({"lang": "en", "content": "Back in Black"})
+    assert "AC/DC" in result
+    assert fake.started_uris == ["spotify:track:famous"]
 
 
 def test_play_music_end_to_end_with_real_world_phrasing(monkeypatch):

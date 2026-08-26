@@ -25,6 +25,7 @@ from spotipy.oauth2 import SpotifyOAuth
 
 from src.jarvis.core.paths import PROJECT_ROOT
 from src.jarvis.core.risk import RiskLevel
+from src.jarvis.core.text import strip_trailing_punct
 from src.jarvis.tools.base import Tool
 
 logger = logging.getLogger("jarvis.tools.spotify")
@@ -120,13 +121,17 @@ def _with_device_fallback(client: spotipy.Spotify, call, lang: str) -> Optional[
 # ayiklamak ("play song: X" vs "play the song X" kombinasyonlarinda) kirilgan
 # oldugundan, butun temizlik BURADA, tek ve test edilebilir bir yerde yapiliyor.
 _TRAILING_SPOTIFY_RE = re.compile(r"\s*(?:via|on)\s+spotify\s*", re.IGNORECASE)
-_LEADING_FILLER_RE = re.compile(r"^(?:the|a|song|music|bir|şu|bu)\b[:,]?\s*", re.IGNORECASE)
-_TRAILING_PUNCT_RE = re.compile(r"[.?!,;:]+$")
+# "this"/"that"/"some" eklendi (bkz. docs/TODO.md madde 4) - gercek kullanim testinde
+# "Play this should I stay or should I go?" sorgusuna karisan "this" kelimesi Spotify
+# aramasini alakasiz bir sonuca ("This Charming Man") kaydiriyordu.
+_LEADING_FILLER_RE = re.compile(
+    r"^(?:the|a|song|music|this|that|some|bir|şu|bu)\b[:,]?\s*", re.IGNORECASE
+)
 
 
 def _clean_query(text: str) -> str:
     text = _TRAILING_SPOTIFY_RE.sub(" ", text)
-    text = _TRAILING_PUNCT_RE.sub("", text).strip()
+    text = strip_trailing_punct(text)
     # Birden fazla dolgu kelimesi ust uste gelebilir ("the song: X" gibi) - hicbiri
     # kalmayana kadar tekrar tekrar ayikla.
     while True:
@@ -134,7 +139,7 @@ def _clean_query(text: str) -> str:
         if stripped == text:
             break
         text = stripped
-    return _TRAILING_PUNCT_RE.sub("", text).strip()
+    return strip_trailing_punct(text)
 
 
 _auth_manager: Optional[SpotifyOAuth] = None  # modul-seviyesi, tek seferlik olusturma
@@ -204,12 +209,18 @@ class PlayMusicTool(Tool):
             return _localized(messages, lang)
 
         try:
-            results = client.search(q=query, type="track", limit=1)
+            # limit=1 + Spotify'in ham siralamasina kor kor guvenmek, gercek testte
+            # alakasiz sonuclara yol acti (bkz. docs/TODO.md madde 4: "Back in Black"
+            # -> "Iron Man - Black Sabbath"). Birden fazla aday cekip en yuksek
+            # `popularity`'ye sahip olani secmek, Spotify'in sira dizilimindeki
+            # (relevance) gurultuye karsi daha dayanikli - "en bilinen" versiyon
+            # genelde en populer olandir.
+            results = client.search(q=query, type="track", limit=5)
             items = results.get("tracks", {}).get("items", [])
             if not items:
                 return _localized(_NOT_FOUND_MESSAGES, lang)
 
-            track = items[0]
+            track = max(items, key=lambda item: item.get("popularity", 0))
             error_message = _with_device_fallback(
                 client,
                 lambda device_id: client.start_playback(uris=[track["uri"]], device_id=device_id),
@@ -278,8 +289,6 @@ class SkipTrackTool(Tool):
             return _localized(_ERROR_MESSAGES, lang)
         if error_message is not None:
             return error_message
-
-        return _localized(_SKIPPED_MESSAGES, lang)
 
         return _localized(_SKIPPED_MESSAGES, lang)
 

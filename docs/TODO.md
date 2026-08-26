@@ -1,9 +1,13 @@
 # Yarın Yapılacaklar — Gerçek Kullanım Testinden Çıkan Sorunlar
 
 Bu liste, 2026-08-26 tarihli iki uzun canlı mikrofon test oturumunun terminal
-loglarının analizinden çıkarıldı. Kod değişikliği YAPILMADI — sadece kayıt.
+loglarının analizinden çıkarıldı.
 
-## 1. [DOĞRULANDI] `run_command` sondaki noktalama işaretini komuta dahil ediyor
+**Durum (2026-08-26 takibi):** Madde 1, 2 ve 4 kodda düzeltildi + regresyon
+testi eklendi (`tests/test_tools.py`, `python -m pytest tests/ -v` → 34/34
+yeşil). Madde 3 bilinçli tasarım kararı olduğu için dokunulmadı.
+
+## 1. [DÜZELTİLDİ] `run_command` sondaki noktalama işaretini komuta dahil ediyor
 
 **Gözlem:** "Run command ls." dendiğinde dispatcher `content="ls."` yakaladı
 (sondaki nokta dahil), komut Windows'ta `ls.` olarak çalıştırılmaya çalışıldı
@@ -14,14 +18,13 @@ _clean_query()`'nin yaptığı sondaki noktalama temizliğini yapmıyor —
 `command = (params.get("content") or "").strip()` sadece baştaki/sondaki
 boşluğu siliyor, noktalama işaretini değil.
 
-**Önerilen düzeltme:** `_clean_query`'deki `_TRAILING_PUNCT_RE` mantığını
-paylaşılan bir yere (örn. yeni bir `core/text.py` ya da `core/dispatcher.py`
-içinde küçük bir yardımcı fonksiyon) çıkarıp hem `tools/spotify.py` hem
-`tools/shell.py`'nin kullanmasını sağla. **Dikkat:** `tools/notes.py`'ye
-uygulama — bir notun içeriğinde noktalama işareti silinmemeli, bu sadece
-"komut olarak çalıştırılacak" içerikler için gerekli.
+**Uygulanan düzeltme:** `_clean_query`'deki noktalama temizleme mantığı yeni
+`core/text.py:strip_trailing_punct()`'a çıkarıldı; hem `tools/spotify.py`
+hem `tools/shell.py:RunCommandTool.execute()` bunu kullanıyor.
+`tools/notes.py`'ye bilinçli olarak DOKUNULMADI — bir notun içeriğinde
+noktalama işareti silinmemeli.
 
-## 2. [NET TEST GEREKİYOR] EN "pause music" / "skip track" çalışmıyor gibi görünüyor
+## 2. [ÇÖZÜLDÜ — REGEX'TE BUG YOKTU] EN "pause music" / "skip track" çalışmıyor gibi görünüyor
 
 **Gözlem:** Kullanıcı bildirdi: "pause music ve skip track deyince
 çalışmıyor ama türkçelerini deyince çalışıyor." Ancak bu oturumun loglarında
@@ -31,13 +34,18 @@ etti) ve regex `\bpause\b...` "pass" ile eşleşmediği için normal sohbete
 düştü (beklenen davranış, çünkü gerçekten "pause" değil "pass" transkribe
 edildi).
 
-**Yarın yapılacak:** Net ve yavaş telaffuzla "pause music" ve "skip track"
-ayrı ayrı tekrar denenmeli. Eğer bu net denemede de eşleşmiyorsa
-`core/dispatcher.py`'deki `pause_music`/`skip_track` EN kalıplarında gerçek
-bir regex hatası var demektir — o zaman düzeltilmeli. Eşleşiyorsa sorun
-sadece STT (Whisper'ın "pause"u yanlış duyması) idi; bu durumda "pass
-music"i de `pause_music`'in TOLERANS'lı bir varyantı olarak kabul etmek
-düşünülebilir (STT hatasına karşı esneklik).
+**Doğrulama:** Mikrofon/STT'yi devre dışı bırakıp `Dispatcher.match_rule()`'a
+doğrudan `"pause music"`, `"Pause music."`, `"skip track"`, `"Skip track."`
+metinleri verildi — hepsi doğru intent'e (`pause_music`/`skip_track`,
+`lang="en"`) eşleşti. Yani regex'te bug YOKTU; gerçek test oturumundaki sorun
+sadece STT'nin "pause"u "pass" diye yanlış transkribe etmesiydi.
+
+**Uygulanan düzeltme:** `pause_music`'in EN kalıbına, "pass" bare kelime
+olarak DEĞİL (çok yaygın kelime, yanlış pozitif riski yüksek — "I'll pass on
+that" gibi cümleleri yanlışlıkla tetikler) ama "pass music"/"pass the song"
+gibi açıkça müzikle birlikte geçtiğinde eşleşen ayrı bir alternatif eklendi
+(`core/dispatcher.py`). Regresyon testi:
+`test_dispatcher_pause_music_tolerates_pass_mishearing`.
 
 ## 3. [BUG DEĞİL, DAVRANIŞ AÇIKLAMASI] "Dosyaları listele" hep boş dönüyor
 
@@ -57,7 +65,7 @@ istiyorsa, bu bilinçli bir kapsam genişletme kararı olur (yeni izin verilen
 dizin(ler) tanımlanmalı) — mevcut haliyle "bug" değil, "beklenmedik ama
 kasıtlı davranış".
 
-## 4. [EK GÖZLEM, düşük öncelik] Spotify bazen bariz yanlış şarkı buluyor
+## 4. [DÜZELTİLDİ] Spotify bazen bariz yanlış şarkı buluyor
 
 **Gözlem:** "Play Back in Black." → "Iron Man - Black Sabbath" çaldı (AC/DC'nin
 "Back in Black"i değil); "Play this should I stay or should I go?" → "This
@@ -72,6 +80,9 @@ Charming Man - Nouvelle Vague" çaldı. Aynı istekler "ACDC" eklenince veya
   ona kör kör güveniyor; Spotify'ın kendi sıralaması her zaman "en bilinen"
   şarkıyı ilk sıraya koymayabiliyor.
 
-**Önerilen düzeltme yönü:** `_LEADING_FILLER_RE`'ye "this"/"that"/"some"
-ekle; `limit`'i artırıp (örn. 5) dönen sonuçlar arasından `popularity` alanı
-en yüksek olanı seçmeyi değerlendir.
+**Uygulanan düzeltme:** `_LEADING_FILLER_RE`'ye "this"/"that"/"some" eklendi;
+`client.search(...)` `limit=1` yerine `limit=5` ile çağrılıp dönen adaylar
+arasından `popularity` alanı en yüksek olan seçiliyor
+(`tools/spotify.py:PlayMusicTool.execute()`). Regresyon testleri:
+`test_clean_query_strips_this_that_some_filler`,
+`test_play_music_picks_most_popular_result`.

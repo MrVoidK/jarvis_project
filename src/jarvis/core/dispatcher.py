@@ -78,7 +78,20 @@ _RULES: dict[str, list[tuple[str, re.Pattern]]] = {
     ],
     "pause_music": [
         ("tr", re.compile(r"\b(?:müziği\s+)?duraklat(?:ın|ınız)?\b", re.IGNORECASE)),
-        ("en", re.compile(r"\bpause\b\s*(?:the\s+)?(?:music|song)?\b", re.IGNORECASE)),
+        # Regex "pause music"/"pause"i tek basina zaten dogru eslestiriyor (bkz.
+        # docs/TODO.md madde 2 - gercek test testte eslesmedigi zannedilen durum
+        # aslinda Whisper'in "pause"u "pass" diye yanlis transkribe etmesiydi, regex
+        # DEGIL). "pass" ise cok yaygin bir kelime oldugundan tek basina eklenmedi
+        # (yanlis pozitif riski yuksek) - sadece acikca "music"/"song" ile birlikte
+        # gecerse STT-toleransli bir varyant olarak kabul ediliyor.
+        (
+            "en",
+            re.compile(
+                r"\bpause\b\s*(?:the\s+)?(?:music|song)?\b"
+                r"|\bpass\b\s+(?:the\s+)?(?:music|song)\b",
+                re.IGNORECASE,
+            ),
+        ),
     ],
     "skip_track": [
         ("tr", re.compile(r"\b(?:şarkıyı\s+)?geç(?:in|iniz)?\b", re.IGNORECASE)),
