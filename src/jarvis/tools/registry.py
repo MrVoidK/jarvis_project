@@ -10,6 +10,13 @@ Anahtarlar core/dispatcher.py'deki _RULES intent adlariyla birebir eslesmeli.
 
 from src.jarvis.tools.base import Tool
 from src.jarvis.tools.files import ListFilesTool
+from src.jarvis.tools.media_tool import (
+    MediaNextTrackTool,
+    MediaPlayPauseTool,
+    MediaPreviousTrackTool,
+    MediaVolumeDownTool,
+    MediaVolumeUpTool,
+)
 from src.jarvis.tools.notes import CreateNoteTool, ReadNotesTool
 from src.jarvis.tools.shell import RunCommandTool
 from src.jarvis.tools.spotify import PauseMusicTool, PlayMusicTool, SkipTrackTool
@@ -26,5 +33,10 @@ TOOL_REGISTRY: dict[str, Tool] = {
         PlayMusicTool(),
         PauseMusicTool(),
         SkipTrackTool(),
+        MediaPlayPauseTool(),
+        MediaNextTrackTool(),
+        MediaPreviousTrackTool(),
+        MediaVolumeUpTool(),
+        MediaVolumeDownTool(),
     )
 }
