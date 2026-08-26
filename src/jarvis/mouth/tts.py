@@ -156,6 +156,16 @@ logger.info(
 )
 
 
+def get_active_device() -> str:
+    """XTTS-v2'nin çalıştığı cihazı döndürür (`"cuda"`/`"cpu"`).
+
+    `core/cli_commands.py`'nin `/status` komutu için - `ears/listener.py:
+    get_active_device()` ile simetrik, modül-seviyesi özel `_device`'ı dışa
+    açan tek satırlık bir erişimci.
+    """
+    return _device
+
+
 _PLAYBACK_LOCK = threading.Lock()  # speak() cagrilarinin ses cikisini seri hale
     # getirir - normal akista run_jarvis() zaten speak()'i tek tek, sirayla cagiriyor,
     # ama bu kilit gelecekte concurrent bir cagri yolu (veya ayni anda iki speak()

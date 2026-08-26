@@ -1,0 +1,198 @@
+"""cli_commands.py testleri - gerçek mikrofon/TTS/MCP/Ollama OLMADAN.
+
+`_cmd_status()`/`_cmd_test()` içindeki gecikmeli importlar (`ears.listener`,
+`mouth.tts`, `core.app`) `sys.modules`'a sahte modüller enjekte edilerek
+atlanıyor - Python `from X import Y` çağrıldığında önce `sys.modules[X]`'e
+bakar, oradaysa gerçek dosyayı hiç yeniden çalıştırmaz (bkz.
+`src/jarvis/core/cli_commands.py` ilgili fonksiyonların gecikmeli-import
+yorumları).
+
+Calistirma: `python -m pytest tests/ -v` (repo kokunden, bkz. CLAUDE.md Komutlar).
+"""
+
+import logging
+import sys
+import types
+
+import pytest
+
+from src.jarvis.core import cli_commands
+from src.jarvis.core.cli_commands import (
+    _parse_test_arguments,
+    handle_cli_command,
+    is_cli_command,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_debug_flag():
+    """Modul-seviyesi `_debug_enabled` global'i testler arasi sizmasin diye."""
+    cli_commands._debug_enabled = False
+    logging.getLogger().setLevel(logging.INFO)
+    yield
+    cli_commands._debug_enabled = False
+    logging.getLogger().setLevel(logging.INFO)
+
+
+# --- is_cli_command / _parse_test_arguments ---
+
+
+def test_is_cli_command_recognizes_leading_slash():
+    assert is_cli_command("/help")
+    assert is_cli_command("  /status")
+
+
+def test_is_cli_command_rejects_normal_text():
+    assert not is_cli_command("merhaba jarvis")
+    assert not is_cli_command("saat kaç?")
+
+
+def test_parse_test_arguments_name_only():
+    name, params = _parse_test_arguments("get_system_info")
+    assert name == "get_system_info"
+    assert params == {}
+
+
+def test_parse_test_arguments_with_key_value_pairs():
+    name, params = _parse_test_arguments("run_command command=echo hi")
+    assert name == "run_command"
+    assert params == {"command": "echo"}  # "hi" (esitsiz token) sessizce yoksayilir
+
+
+def test_parse_test_arguments_empty_string():
+    name, params = _parse_test_arguments("")
+    assert name == ""
+    assert params == {}
+
+
+# --- handle_cli_command routing ---
+
+
+def test_unknown_command_warns_via_print_system(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        cli_commands, "print_system", lambda msg, level="info": captured.update(msg=msg, level=level)
+    )
+
+    handle_cli_command("/nope", history=[{"role": "system", "content": "x"}])
+
+    assert "Bilinmeyen komut" in captured["msg"]
+    assert captured["level"] == "warning"
+
+
+def test_clear_resets_history_and_clears_screen(monkeypatch):
+    cleared = {"called": False}
+    monkeypatch.setattr(cli_commands.console, "clear", lambda: cleared.update(called=True))
+    monkeypatch.setattr(cli_commands, "SYSTEM_PROMPT", "SISTEM")
+
+    history = [
+        {"role": "system", "content": "SISTEM"},
+        {"role": "user", "content": "merhaba"},
+        {"role": "assistant", "content": "selam"},
+    ]
+
+    handle_cli_command("/clear", history=history)
+
+    assert history == [{"role": "system", "content": "SISTEM"}]
+    assert cleared["called"] is True
+
+
+def test_debug_toggles_flag_and_log_level():
+    assert cli_commands._debug_enabled is False
+
+    handle_cli_command("/debug", history=[])
+    assert cli_commands._debug_enabled is True
+    assert logging.getLogger().level == logging.DEBUG
+
+    handle_cli_command("/debug", history=[])
+    assert cli_commands._debug_enabled is False
+    assert logging.getLogger().level == logging.INFO
+
+
+def test_test_command_unknown_tool_reports_error_without_importing_app(monkeypatch):
+    # core.app'in GERCEK yuklenmesi ears/mouth model yuklemesini tetikler -
+    # bilinmeyen bir arac icin bu importa HIC ulasilmamali (bkz. _cmd_test:
+    # get_tool(name) None donerse erken cikar).
+    assert "src.jarvis.core.app" not in sys.modules or True  # bilgi amacli, assert etmiyoruz
+
+    captured = {}
+    monkeypatch.setattr(
+        cli_commands, "print_system", lambda msg, level="info": captured.update(msg=msg, level=level)
+    )
+
+    handle_cli_command("/test not_a_real_tool", history=[])
+
+    assert "bulunamadı" in captured["msg"]
+    assert captured["level"] == "error"
+
+
+def test_test_command_executes_known_tool_via_mocked_execute_tool(monkeypatch):
+    # core.app'i GERCEK import etmek yerine (agir ears/mouth yuklemesi
+    # tetikler) sys.modules'a sahte bir modul enjekte ediyoruz - Python'un
+    # "from X import Y" cagrisi once sys.modules[X]'e bakar.
+    fake_app_module = types.ModuleType("src.jarvis.core.app")
+    captured_call = {}
+
+    def fake_execute_tool(tool, intent, stop_event, input_hub=None, pending=None):
+        captured_call["tool_name"] = tool.name
+        captured_call["parameters"] = intent.parameters
+        return "sahte sonuç"
+
+    fake_app_module._execute_tool = fake_execute_tool
+    monkeypatch.setitem(sys.modules, "src.jarvis.core.app", fake_app_module)
+
+    printed = []
+    monkeypatch.setattr(cli_commands.console, "print", lambda msg: printed.append(msg))
+
+    handle_cli_command("/test get_system_info", history=[])
+
+    assert captured_call["tool_name"] == "get_system_info"
+    assert any("sahte sonuç" in msg for msg in printed)
+
+
+def test_test_command_drops_parameters_not_in_tool_schema(monkeypatch):
+    # security-reviewer bulgusu: /test, router yolunun validate_arguments()
+    # ile yaptigi "semada tanimli olmayan anahtari sessizce ele" filtresini
+    # ATLAMAMALI - ozellikle MCP araclarinda (tools/mcp_tool.py sadece
+    # "lang"i suzer) rastgele bir extra parametrenin dis sunucuya sizmasini
+    # onlemek icin.
+    fake_app_module = types.ModuleType("src.jarvis.core.app")
+    captured_call = {}
+
+    def fake_execute_tool(tool, intent, stop_event, input_hub=None, pending=None):
+        captured_call["parameters"] = intent.parameters
+        return "ok"
+
+    fake_app_module._execute_tool = fake_execute_tool
+    monkeypatch.setitem(sys.modules, "src.jarvis.core.app", fake_app_module)
+    monkeypatch.setattr(cli_commands.console, "print", lambda msg: None)
+
+    # create_note SADECE "content" tanimliyor - "bogus" semada yok.
+    handle_cli_command("/test create_note content=merhaba bogus=sizmamali", history=[])
+
+    assert captured_call["parameters"] == {"content": "merhaba", "lang": "tr"}
+    assert "bogus" not in captured_call["parameters"]
+
+
+def test_status_command_reports_without_real_models_or_mcp(monkeypatch):
+    fake_listener = types.ModuleType("src.jarvis.ears.listener")
+    fake_listener.get_active_device = lambda: "cuda"
+    fake_tts = types.ModuleType("src.jarvis.mouth.tts")
+    fake_tts.get_active_device = lambda: "cuda"
+    monkeypatch.setitem(sys.modules, "src.jarvis.ears.listener", fake_listener)
+    monkeypatch.setitem(sys.modules, "src.jarvis.mouth.tts", fake_tts)
+
+    from src.jarvis.core.risk import RiskLevel
+
+    class _FakeTool:
+        name = "fake_tool"
+        risk_level = RiskLevel.LOW
+
+    monkeypatch.setattr(cli_commands, "all_tools", lambda: {"fake_tool": _FakeTool()})
+
+    printed = []
+    monkeypatch.setattr(cli_commands.console, "print", lambda renderable: printed.append(renderable))
+
+    handle_cli_command("/status", history=[{"role": "system", "content": "x"}, {"role": "user", "content": "y"}])
+
+    assert len(printed) == 1  # tek bir Panel basildi

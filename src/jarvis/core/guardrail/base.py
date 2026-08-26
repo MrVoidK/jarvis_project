@@ -6,10 +6,14 @@ ses biyometrisi dogrulamasi) mevcut kontrollere hic dokunmadan zincire bir elema
 ibarettir - Chain of Responsibility'nin SOLID'deki Open/Closed prensibiyle ortusen tarafi.
 """
 
+import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from src.jarvis.core.console import print_guardrail
+
+logger = logging.getLogger("jarvis.guardrail.timing")
 
 
 @dataclass
@@ -44,7 +48,12 @@ class GuardrailChain:
 
     def run(self, text: str) -> GuardrailResult:
         for check in self._checks:
+            # /debug (core/cli_commands.py) icin sure olcumu - varsayilan
+            # INFO seviyesinde gorunmez, sadece DEBUG'a gecildiginde.
+            start = time.perf_counter()
             result = check.check(text)
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.debug("Guardrail '%s' %.2fms surdu.", result.check_name, elapsed_ms)
             print_guardrail(result.check_name, result.allowed, result.reason)
             if not result.allowed:
                 return result

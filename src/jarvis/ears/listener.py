@@ -165,6 +165,16 @@ wakeword_model = _load_wakeword_model()
 logger.info("openWakeWord '%s' modeli yuklendi.", WAKEWORD_MODEL_NAME)
 
 
+def get_active_device() -> str:
+    """faster-whisper'ın çalıştığı cihazı döndürür (`"cuda"`/`"cpu"`).
+
+    `core/cli_commands.py`'nin `/status` komutu için - modül-seviyesi özel
+    `_device`'ı (yukarıda `_load_model_with_fallback()` tarafından atanır)
+    dışa açan tek satırlık bir erişimci.
+    """
+    return _device
+
+
 def _vad_record(
     stream: sd.InputStream,
     trailing: Optional[np.ndarray] = None,

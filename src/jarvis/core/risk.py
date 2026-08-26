@@ -60,3 +60,21 @@ def request_approval(prompt: str) -> bool:
     approved = answer in _AFFIRMATIVE
     logger.info("Onay istemi: %r -> %s", answer, "ONAYLANDI" if approved else "REDDEDILDI")
     return approved
+
+
+def evaluate_approval_answer(answer: str) -> bool:
+    """`request_approval()`nin kullandığı ayni evet/hayır kuralını, DIŞARIDAN
+    zaten okunmuş bir cevap metni üzerinde uygular - stdin'i KENDİSİ okumaz.
+
+    Hibrit girdi modunda (`core/app.py`/`core/input_hub.py`) kullanılır: onay
+    bekleyen ana thread kendi `console.input()`'unu çağırmaz (bu, arka planda
+    sürekli stdin okuyan metin-girdi thread'iyle YARIŞIRDI - bkz.
+    input_hub.py modül docstring'i); cevap paylaşılan girdi kuyruğundan
+    alınıp burada yorumlanır. Varsayılan RED ilkesi (bkz. modül docstring'i)
+    burada da geçerli - `answer` boş/tanınmayan bir şeyse `False` döner.
+    """
+    approved = answer.strip().lower() in _AFFIRMATIVE
+    logger.info(
+        "Onay istemi (hibrit girdi): %r -> %s", answer, "ONAYLANDI" if approved else "REDDEDILDI"
+    )
+    return approved

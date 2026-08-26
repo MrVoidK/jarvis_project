@@ -130,6 +130,12 @@ class Dispatcher:
         with status_spinner("Yönlendiriliyor..."):
             response = orchestrator.call_tools(text, tools=tools_schema, context=context)
 
+        # /debug (core/cli_commands.py) icin: router'in HAM cevabi - varsayilan
+        # INFO seviyesinde gorunmez, sadece log seviyesi DEBUG'a cekildiginde.
+        logger.debug(
+            "Router ham yanıtı: tool_calls=%r content=%r", response.tool_calls, response.content
+        )
+
         if not response.tool_calls:
             logger.info("Dispatcher: router hicbir arac secmedi -> chat.")
             return Intent(name=DEFAULT_INTENT_NAME, confidence=0.4, source="llm")

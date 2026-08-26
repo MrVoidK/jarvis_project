@@ -1,11 +1,13 @@
 import logging
 import threading
-from typing import Iterator, Optional
+from typing import Callable, Iterator, Optional
 
 from src.jarvis.brain.llm import SYSTEM_PROMPT, think_and_respond_stream
+from src.jarvis.core.cli_commands import handle_cli_command, is_cli_command
 from src.jarvis.core.console import (
     print_agent,
     print_approval_panel,
+    print_approval_prompt,
     print_router_decision,
     print_system,
     status_spinner,
@@ -15,9 +17,9 @@ from src.jarvis.core.guardrail.base import GuardrailChain
 from src.jarvis.core.guardrail.input_checks import InputInjectionCheck
 from src.jarvis.core.guardrail.output_checks import OutputSafetyCheck
 from src.jarvis.core.handlers import HANDLERS
+from src.jarvis.core.input_hub import InputEvent, InputHub
 from src.jarvis.core.language import detect_language
-from src.jarvis.core.risk import request_approval, requires_approval
-from src.jarvis.ears.listener import listen_loop
+from src.jarvis.core.risk import evaluate_approval_answer, request_approval, requires_approval
 from src.jarvis.mouth.tts import speak
 from src.jarvis.tools.base import Tool
 from src.jarvis.tools.registry import get_tool
@@ -59,13 +61,37 @@ def _localized(messages: dict[str, str], lang: str) -> str:
     return messages.get(lang, messages["en"])
 
 
-def _execute_tool(tool: Tool, intent, stop_event: Optional[threading.Event]) -> str:
+def _execute_tool(
+    tool: Tool,
+    intent,
+    stop_event: Optional[threading.Event],
+    input_hub: Optional[InputHub] = None,
+    pending: Optional[list[InputEvent]] = None,
+    on_start: Optional[Callable[[], None]] = None,
+) -> str:
     """Bir tool'u risk kontrolu + insan onayindan gecirerek calistirir.
 
     Guvenlik karari BURADA, tek merkezde veriliyor - tool'un kendisine birakilmiyor
     (bkz. tools/base.py). Sira: (1) tehlikeli komut on-taramasi (girdi), (2) risk
     seviyesine gore [Y/N] onayi, (3) calistirma, (4) sonuc guardrail taramasi (cikti -
     MCP'nin dis/guvenilmeyen verisi icin eklendi, bkz. asagidaki (4) yorumu).
+
+    `input_hub`/`pending` (hibrit girdi modu, bkz. core/input_hub.py): verilirse
+    onay cevabi `core/risk.py:request_approval()`nin KENDI `console.input()`
+    cagrisi yerine paylasilan girdi kuyrugundan okunur - iki thread'in (onay
+    bekleyen ana thread + surekli input() donen metin thread'i) ayni anda
+    stdin okumaya calismasini (tanimsiz bir yaris) onlemenin tek yolu bu
+    (bkz. input_hub.py modul docstring'i). `input_hub=None` (varsayilan) eski
+    davranisi korur - hibrit-disi/gelecekteki cagiranlar icin geriye donuk uyumlu.
+
+    `on_start` (security-reviewer bulgusu): tool calistirmaya baslamadan
+    ONCE (onay paneli/istemi basilmadan once) cagrilir - run_jarvis() bunu
+    "Jarvis dusunuyor..." spinner'ini durdurmak icin kullanir. Eskiden
+    spinner sadece _handle_turn()'un YIELD ettigi ILK cumlede duruyordu,
+    ama tool-calistiran turlarda tek yield onay TAMAMEN bittikten SONRA
+    geliyordu - yani onay paneli/[Y/N] istemi, rich'in kendi kendini
+    yenileyen Status/Live render'i AKTIFKEN basiliyordu (gorsel karisma/
+    guvenlik-kritik onay isteminin gizlenme riski).
 
     GENELLESTIRME NOTU (Faz 3.3, semantic router): eskiden SADECE
     `intent.parameters["content"]` guardrail'den geciyordu (parametreler tek bir
@@ -85,6 +111,9 @@ def _execute_tool(tool: Tool, intent, stop_event: Optional[threading.Event]) -> 
     deger buraya kadar sizarsa bile hicbir sey sessizce gizlenmez" seklinde
     ikinci bir savunma katmani.
     """
+    if on_start is not None:
+        on_start()
+
     lang = intent.parameters.get("lang", "en")
     risky_values = {
         key: str(value)
@@ -110,7 +139,23 @@ def _execute_tool(tool: Tool, intent, stop_event: Optional[threading.Event]) -> 
         speak(_localized(_APPROVAL_PENDING_MESSAGES, lang), language=lang, stop_event=stop_event)
         print_approval_panel(tool.name, tool.risk_level.value, risky_values)
         prompt = f"'{tool.name}' calistirilsin mi? (risk: {tool.risk_level.value})"
-        if not request_approval(prompt):
+        if input_hub is not None:
+            print_approval_prompt(prompt)
+            answer = input_hub.wait_for_text_answer(pending if pending is not None else [])
+            if is_cli_command(answer):
+                # security-reviewer bulgusu (DX): onay bekleniyorken yazilan
+                # bir "/..." komutu fail-closed olarak "hayir" sayilir (guvenli
+                # yon) ama sessizce yutulmamali - kullaniciya ne oldugunu
+                # soyluyoruz, komutu tekrar yazmasi gerekiyor.
+                print_system(
+                    "Onay beklenirken bir komut yazdınız, 'hayır' olarak sayıldı - "
+                    "onay sonrası tekrar deneyin.",
+                    level="warning",
+                )
+            approved = evaluate_approval_answer(answer)
+        else:
+            approved = request_approval(prompt)
+        if not approved:
             return _localized(_APPROVAL_DENIED_MESSAGES, lang)
 
     # (3) Calistir - tek bir kotu tool cagrisi run_jarvis()'in dongusunu cokertmemeli
@@ -141,7 +186,12 @@ def _execute_tool(tool: Tool, intent, stop_event: Optional[threading.Event]) -> 
 
 
 def _handle_turn(
-    user_text: str, history: list[dict], stop_event: Optional[threading.Event] = None
+    user_text: str,
+    history: list[dict],
+    stop_event: Optional[threading.Event] = None,
+    input_hub: Optional[InputHub] = None,
+    pending: Optional[list[InputEvent]] = None,
+    on_tool_start: Optional[Callable[[], None]] = None,
 ) -> Iterator[tuple[str, Optional[str]]]:
     """Bir kullanici turunu guardrail + dispatcher'dan gecirip (metin, dil) ciftleri uretir.
 
@@ -181,7 +231,10 @@ def _handle_turn(
 
         tool = get_tool(intent.name)
         if tool is not None:
-            yield _execute_tool(tool, intent, stop_event), intent.parameters.get("lang", "en")
+            result = _execute_tool(
+                tool, intent, stop_event, input_hub=input_hub, pending=pending, on_start=on_tool_start
+            )
+            yield result, intent.parameters.get("lang", "en")
             return
 
     for sentence in think_and_respond_stream(user_text, history):
@@ -196,32 +249,57 @@ def _handle_turn(
 
 
 def run_jarvis() -> None:
-    """The main execution loop for the MVP pipeline (Ears -> guardrail/dispatcher -> Brain -> Mouth).
+    """The main execution loop for the MVP pipeline (Ears + terminal -> guardrail/dispatcher -> Brain -> Mouth).
 
-    Ctrl+C (KeyboardInterrupt) burada yakalanip `stop_event` set edilir; bu event
-    listen_loop() (ears/listener.py) ve speak() (mouth/tts.py) icine geciliyor, ikisi de
-    kendi ic dongulerinde bunu periyodik kontrol edip erken cikiyor - kapatma boylece
-    disaridan bir exception'in olur olmaz yayilmasina degil, ic bilesenlerin isbirligine
-    dayaniyor (graceful shutdown). ONEMLI SINIRLAMA: bu, halihazirda calismakta olan TEK
-    bir bloklayici model cagrisini (bir faster-whisper transkripsiyonu, bir Ollama isteği,
-    bir XTTS inference chunk'i) yarida kesemez - GPU/senkron cagrilar Python'un sinyal
-    kontrol noktalarina donene kadar beklenir; sadece bu cagrilar ARASINDAKI (ve VAD/
-    wake-word'un kisa ses-frame'i dongulerindeki) bekleme sürelerini aninda kisaltir.
+    HİBRİT GİRDİ (bkz. core/input_hub.py): mikrofon (wake-word + VAD) ve
+    terminal metni ARTIK EŞ ZAMANLI dinleniyor - `InputHub` ikisini de kendi
+    arka plan thread'inde çalıştırıp TEK bir sıralı kuyrukta birleştiriyor;
+    bu fonksiyon (ana thread) sadece kuyruktan okur, ne mikrofona ne stdin'e
+    doğrudan dokunur. Girdi kaynağı ne olursa olsun (ses/metin) pipeline'a
+    aynı standart `(text, lang)` formatında girer - `/` ile başlayan metin
+    turları TEK istisna: Guardrail/Dispatcher/Brain/TTS'e hiç uğramadan
+    `core/cli_commands.py`'ye yönlendirilir (bkz. aşağıdaki döngü).
+
+    Ctrl+C (KeyboardInterrupt) burada yakalanip `stop_event` set edilir; bu
+    event `InputHub`'ın arka plan thread'lerine ve `speak()`'e (mouth/tts.py)
+    geçiriliyor, hepsi kendi iç döngülerinde bunu periyodik kontrol edip erken
+    çıkıyor - kapatma böylece dışarıdan bir exception'ın olur olmaz
+    yayılmasına değil, iç bileşenlerin işbirliğine dayanıyor (graceful
+    shutdown). ÖNEMLİ SINIRLAMA: bu, halihazırda çalışmakta olan TEK bir
+    bloklayıcı çağrıyı (bir faster-whisper transkripsiyonu, bir Ollama
+    isteği, bir XTTS inference chunk'ı, `input_hub.py`'nin metin thread'indeki
+    tek bir `input()` çağrısı) yarıda kesemez - senkron çağrılar Python'un
+    sinyal kontrol noktalarına dönene kadar beklenir; sadece bu çağrılar
+    ARASINDAKI bekleme sürelerini anında kısaltır.
     """
     # Boot ekrani (ASCII art + gercek Ears/Mouth/Brain yukleme spinner'lari) artik
     # main.py'de, bu fonksiyon cagrilmadan ONCE calisiyor (bkz. main.py) - o noktada
     # modeller zaten gercekten hazir, bu yuzden burada SADECE "dinlemeye basliyorum"
     # bildirimi kaliyor (eskiden buradaki "ONLINE" banner'i hicbir sey yuklenmeden
     # basiliyordu, bkz. docs/TODO.md/plan notlari - yaniltici oldugu icin kaldirildi).
-    print_system("Jarvis dinlemeye hazir.", level="success")
+    print_system("Jarvis dinlemeye hazır (mikrofon + '[Siz] >>>' terminal girişi).", level="success")
 
     stop_event = threading.Event()
     history: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
+    hub = InputHub(stop_event)
+    hub.start()
+    # Bir onay bekleme sirasinda gelen "voice" olaylari burada birikir (bkz.
+    # InputHub.wait_for_text_answer()) - asagidaki dongu her turda ONCE
+    # burayi bosaltir, kullanicinin o sirada soyledigi soz kaybolmaz.
+    pending: list[InputEvent] = []
+
     try:
-        # Step 1: Listen (Ears - VAD-bounded utterances via ears.listener.listen_loop)
-        for user_text in listen_loop(stop_event=stop_event):
-            print_agent("User", user_text)
+        while True:
+            event = pending.pop(0) if pending else hub.next_event()
+
+            if event.source == "text" and is_cli_command(event.text):
+                handle_cli_command(
+                    event.text, history=history, stop_event=stop_event, input_hub=hub, pending=pending
+                )
+                continue
+
+            print_agent("Siz" if event.source == "text" else "User", event.text)
 
             # Step 2 + 3: guardrail + dispatcher + Brain (streaming) -> Mouth, cumle cumle.
             # Spinner ilk cumle uretilene kadar acik kalir - sonraki cumleler icin
@@ -230,10 +308,27 @@ def run_jarvis() -> None:
             # gereksiz titreme yaratirdi).
             with status_spinner("Jarvis düşünüyor...") as spinner:
                 first_sentence = True
-                for sentence, lang in _handle_turn(user_text, history, stop_event=stop_event):
+
+                def _stop_spinner_once() -> None:
+                    # nonlocal + idempotent: hem tool-calistiran yolun
+                    # on_tool_start callback'inden (onay panelinden ONCE,
+                    # bkz. _execute_tool docstring'i "on_start"), hem de
+                    # asagidaki normal ilk-cumle yolundan cagrilabilir -
+                    # ikisi de calissa spinner sadece BIR KEZ durur.
+                    nonlocal first_sentence
                     if first_sentence:
                         spinner.stop()
                         first_sentence = False
+
+                for sentence, lang in _handle_turn(
+                    event.text,
+                    history,
+                    stop_event=stop_event,
+                    input_hub=hub,
+                    pending=pending,
+                    on_tool_start=_stop_spinner_once,
+                ):
+                    _stop_spinner_once()
                     print_agent("Jarvis", sentence)
                     speak(sentence, language=lang, stop_event=stop_event)
     except KeyboardInterrupt:

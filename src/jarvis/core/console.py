@@ -100,7 +100,7 @@ def print_system(msg: str, level: str = "info") -> None:
     console.print(f"[bold {color}]{icon} {_escape(msg)}[/bold {color}]")
 
 
-_USER_NAMES = {"user", "kullanici", "kullanıcı"}
+_USER_NAMES = {"user", "kullanici", "kullanıcı", "siz"}
 
 
 def print_agent(agent_name: str, text: str) -> None:
@@ -152,6 +152,18 @@ def print_approval_panel(tool_name: str, risk_level: str, parameters: dict) -> N
             expand=False,
         )
     )
+
+
+def print_approval_prompt(prompt: str) -> None:
+    """[Y/N] onay istemi metnini gösterir (hibrit girdi modu).
+
+    `core/risk.py:request_approval()`in KENDİ `console.input()` çağrısıyla
+    hem soruyu basıp hem cevabı okuduğu deseninin aksine, hibrit modda cevap
+    `core/input_hub.py:InputHub.wait_for_text_answer()` üzerinden (paylaşılan
+    kuyruktan) okunuyor - burası SADECE soruyu basar, stdin'e dokunmaz (bkz.
+    input_hub.py modül docstring'indeki stdin-tek-sahip ilkesi).
+    """
+    console.print(f"\n[bold yellow][!] ONAY GEREKLİ[/bold yellow] {_escape(prompt)} [Y/N]:")
 
 
 def print_router_decision(tool_name: str, confidence: float, parameters: dict) -> None:

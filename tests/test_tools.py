@@ -7,7 +7,7 @@ Calistirma: `python -m pytest tests/ -v` (repo kokunden, bkz. CLAUDE.md Komutlar
 """
 
 from src.jarvis.core.dispatcher import Dispatcher
-from src.jarvis.core.risk import RiskLevel, requires_approval
+from src.jarvis.core.risk import RiskLevel, evaluate_approval_answer, requires_approval
 from src.jarvis.tools import files as files_module
 from src.jarvis.tools import notes_tool as notes_module
 from src.jarvis.tools.registry import TOOL_REGISTRY
@@ -31,6 +31,19 @@ def test_shell_tool_is_always_high_risk():
 def test_registry_keys_match_tool_names():
     for name, tool in TOOL_REGISTRY.items():
         assert name == tool.name
+
+
+def test_evaluate_approval_answer_accepts_known_affirmatives():
+    # core/input_hub.py'nin hibrit onay yolunun kullandigi fonksiyon -
+    # request_approval()'in stdin okumadan, disaridan hazir bir cevap
+    # metnini yorumlayan karsiligi.
+    for answer in ("y", "Y", "yes", "YES", "e", "evet", " Evet "):
+        assert evaluate_approval_answer(answer), f"{answer!r} onay sayilmali"
+
+
+def test_evaluate_approval_answer_defaults_to_reject():
+    for answer in ("n", "no", "hayir", "", "  ", "maybe"):
+        assert not evaluate_approval_answer(answer), f"{answer!r} red sayilmali"
 
 
 # --- notes ---
