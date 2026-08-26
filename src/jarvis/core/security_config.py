@@ -35,6 +35,7 @@ EXAMPLE_CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "security.example.yam
 class SecurityConfig:
     allowed_directories: list[Path] = field(default_factory=list)
     known_applications: dict[str, str] = field(default_factory=dict)
+    obsidian_vault: Optional[Path] = None
 
 
 _config_cache: Optional[SecurityConfig] = None
@@ -71,8 +72,21 @@ def load_security_config(path: str = CONFIG_PATH) -> SecurityConfig:
         str(name).strip().lower(): str(command)
         for name, command in (raw.get("known_applications") or {}).items()
     }
+
+    obsidian_vault: Optional[Path] = None
+    raw_vault = raw.get("obsidian_vault")
+    if raw_vault:
+        obsidian_vault = _resolve_directory(raw_vault)
+        # notes_tool.py'nin is_path_safe() kontrolunden gecebilmesi icin vault
+        # otomatik olarak izinli dizinler listesine de eklenir - security.yaml'da
+        # ayni yolu iki kez yazma zorunlulugu olmasin diye.
+        if obsidian_vault not in allowed_directories:
+            allowed_directories.append(obsidian_vault)
+
     return SecurityConfig(
-        allowed_directories=allowed_directories, known_applications=known_applications
+        allowed_directories=allowed_directories,
+        known_applications=known_applications,
+        obsidian_vault=obsidian_vault,
     )
 
 
@@ -102,3 +116,14 @@ def resolve_app_command(app_name: str, config: Optional[SecurityConfig] = None) 
     """`known_applications` allowlist'inde (case-insensitive) bir eslesme arar."""
     cfg = config or _get_config()
     return cfg.known_applications.get(app_name.strip().lower())
+
+
+def get_obsidian_vault(config: Optional[SecurityConfig] = None) -> Path:
+    """Obsidian vault yolunu dondurur; security.yaml'da tanimli degilse hata verir."""
+    cfg = config or _get_config()
+    if cfg.obsidian_vault is None:
+        raise RuntimeError(
+            "config/security.yaml'da 'obsidian_vault' tanimli degil - "
+            "vault yolunuzu security.yaml'a ekleyin (bkz. security.example.yaml)."
+        )
+    return cfg.obsidian_vault

@@ -5,13 +5,15 @@
 # kisisel/makineye ozel yollar (orn. Obsidian vault'unuz) icerdigi icin
 # commit'lenmez (bkz. src/jarvis/core/security_config.py).
 
-# notes_tool.py ve terminal_tool.py'nin (LaunchAppTool haric) dosya
-# islemlerinin sinirlandigi dizinler. Goreli yollar PROJECT_ROOT'a gore
-# cozulur, mutlak yollar oldugu gibi kullanilir.
+# notes_tool.py'nin notlari kaydettigi/okudugu Obsidian vault'unuzun tam yolu.
+# Otomatik olarak allowed_directories'e de eklenir (is_path_safe() icin).
+obsidian_vault: "C:\\Path\\To\\Your\\Obsidian\\Vault" # KENDI vault yolunuzla degistirin
+
+# Diger arac islemlerinin sinirlandigi ek dizinler. Goreli yollar
+# PROJECT_ROOT'a gore cozulur, mutlak yollar oldugu gibi kullanilir.
 allowed_directories:
   - "jarvis_workspace" # ListFilesTool'un calisma dizini
   - "notes" # eski notes.txt konumu, geriye donuk uyumluluk
-  - "C:\\Path\\To\\Your\\Obsidian\\Vault" # KENDI vault yolunuzla degistirin
 
 # LaunchAppTool SADECE burada listelenen isimleri calistirabilir - LLM'in
 # keyfi bir binary/path uretip calistirmasi mumkun degildir (bkz.

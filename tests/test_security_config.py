@@ -10,6 +10,7 @@ import pytest
 from src.jarvis.core import security_config as security_config_module
 from src.jarvis.core.security_config import (
     SecurityConfig,
+    get_obsidian_vault,
     is_path_safe,
     load_security_config,
     resolve_app_command,
@@ -92,3 +93,25 @@ def test_resolve_app_command_is_case_insensitive(tmp_path):
     config = _config_for(tmp_path)
     assert resolve_app_command("VS Code", config=config) == "code"
     assert resolve_app_command("unknown-app", config=config) is None
+
+
+def test_load_security_config_parses_obsidian_vault_and_adds_to_allowed(tmp_path):
+    vault = tmp_path / "MyVault"
+    vault.mkdir()
+    yaml_path = tmp_path / "security.yaml"
+    yaml_path.write_text(
+        f'obsidian_vault: "{str(vault).replace(chr(92), chr(92) * 2)}"\n'
+        "allowed_directories:\n  - \"jarvis_workspace\"\n",
+        encoding="utf-8",
+    )
+
+    config = load_security_config(str(yaml_path))
+
+    assert config.obsidian_vault == vault.resolve()
+    assert vault.resolve() in config.allowed_directories
+
+
+def test_get_obsidian_vault_raises_when_not_configured(tmp_path):
+    config = SecurityConfig(allowed_directories=[], known_applications={}, obsidian_vault=None)
+    with pytest.raises(RuntimeError):
+        get_obsidian_vault(config=config)

@@ -15,7 +15,7 @@ import spotipy
 from src.jarvis.core.dispatcher import Dispatcher
 from src.jarvis.core.risk import RiskLevel, requires_approval
 from src.jarvis.tools import files as files_module
-from src.jarvis.tools import notes as notes_module
+from src.jarvis.tools import notes_tool as notes_module
 from src.jarvis.tools import spotify as spotify_module
 from src.jarvis.tools.registry import TOOL_REGISTRY
 from src.jarvis.tools.shell import RunCommandTool
@@ -43,10 +43,16 @@ def test_registry_keys_match_tool_names():
 # --- notes ---
 
 
+def _patch_vault(monkeypatch, tmp_path):
+    """notes_tool'u sahte bir vault'a yonlendirir - gercek Obsidian vault'una dokunulmaz."""
+    vault = tmp_path / "vault"
+    monkeypatch.setattr(notes_module, "get_obsidian_vault", lambda: vault)
+    monkeypatch.setattr(notes_module, "is_path_safe", lambda path: True)
+    return vault
+
+
 def test_create_and_read_note(monkeypatch, tmp_path):
-    notes_dir = tmp_path / "notes"
-    monkeypatch.setattr(notes_module, "NOTES_DIR", str(notes_dir))
-    monkeypatch.setattr(notes_module, "NOTES_PATH", str(notes_dir / "notes.txt"))
+    _patch_vault(monkeypatch, tmp_path)
 
     create = notes_module.CreateNoteTool()
     read = notes_module.ReadNotesTool()
@@ -62,13 +68,23 @@ def test_create_and_read_note(monkeypatch, tmp_path):
 
 
 def test_create_note_rejects_empty_content(monkeypatch, tmp_path):
-    notes_dir = tmp_path / "notes"
-    monkeypatch.setattr(notes_module, "NOTES_DIR", str(notes_dir))
-    monkeypatch.setattr(notes_module, "NOTES_PATH", str(notes_dir / "notes.txt"))
+    vault = _patch_vault(monkeypatch, tmp_path)
 
     result = notes_module.CreateNoteTool().execute({"lang": "en", "content": "   "})
     assert "empty" in result.lower()
-    assert not (notes_dir / "notes.txt").exists()  # dosya hic olusturulmamali
+    assert not (vault / notes_module.NOTES_SUBDIR).exists()  # dosya hic olusturulmamali
+
+
+def test_create_note_blocked_by_unsafe_path(monkeypatch, tmp_path):
+    """is_path_safe() False donerse not YAZILMAMALI - security.yaml yanlis
+    yapilandirilsa bile vault disina yazma engellenir (bkz. modul docstring'i)."""
+    vault = tmp_path / "vault"
+    monkeypatch.setattr(notes_module, "get_obsidian_vault", lambda: vault)
+    monkeypatch.setattr(notes_module, "is_path_safe", lambda path: False)
+
+    result = notes_module.CreateNoteTool().execute({"lang": "en", "content": "test"})
+    assert "security" in result.lower() or "güvenlik" in result.lower()
+    assert not vault.exists()
 
 
 # --- files ---

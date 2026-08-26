@@ -17,7 +17,7 @@ from src.jarvis.tools.media_tool import (
     MediaVolumeDownTool,
     MediaVolumeUpTool,
 )
-from src.jarvis.tools.notes import CreateNoteTool, ReadNotesTool
+from src.jarvis.tools.notes_tool import CreateNoteTool, ReadNotesTool
 from src.jarvis.tools.shell import RunCommandTool
 from src.jarvis.tools.spotify import PauseMusicTool, PlayMusicTool, SkipTrackTool
 from src.jarvis.tools.system_info import SystemInfoTool
