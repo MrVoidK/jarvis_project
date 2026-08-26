@@ -21,6 +21,7 @@ from src.jarvis.tools.media_tool import (
     MediaPreviousTrackTool,
     MediaVolumeDownTool,
     MediaVolumeUpTool,
+    SearchMusicTool,
 )
 from src.jarvis.tools.notes_tool import CreateNoteTool, ReadNotesTool
 from src.jarvis.tools.system_info import SystemInfoTool
@@ -40,5 +41,6 @@ TOOL_REGISTRY: dict[str, Tool] = {
         MediaPreviousTrackTool(),
         MediaVolumeUpTool(),
         MediaVolumeDownTool(),
+        SearchMusicTool(),
     )
 }

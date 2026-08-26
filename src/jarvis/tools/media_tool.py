@@ -14,10 +14,24 @@ bir TOGGLE tusu - ayri bir "play" ve "pause" sanal kodu yok (spotipy'nin
 ayri start_playback()/pause_playback() uc noktalarinin aksine). Jarvis,
 tusu gonderdikten sonra muzigin gercekten calip calmadigini BILEMEZ - bu
 yuzden MediaPlayPauseTool'un mesaji kesin bir durum iddia ETMEZ.
+
+KAPSAM SINIRI: VK_MEDIA_* tuslari SADECE su an calan/kuyruktaki parcayi
+kontrol eder - "filanca sarkiyi cal" gibi belirli-parca istekleri
+karsilayamaz (bu, Spotify Web API'sinin arama+oynatma-baslatma yetenegiydi,
+API kaldirilirken bilincli olarak birlikte gitti). Gercek kullanim testinde
+bu bosluk, router'in boyle bir istek icin bir arac bulamayip HALUSINE
+edilmis bir shell komutu (orn. "spotify play '...'") uretmesine yol acti -
+`SearchMusicTool` bu bosluga API'siz bir cevap: Spotify'in kendi `spotify:
+search:` URI semasini `os.startfile()` ile acar (shell=True/subprocess YOK,
+enjeksiyon yuzeyi yok) - kullanici Spotify'da arama sonuclarini gorup
+KENDISI oynatmayi baslatir (tam otomatik degil, ama isimle arama artik
+mumkun ve API/OAuth gerekmiyor).
 """
 
 import ctypes
 import logging
+import os
+from urllib.parse import quote
 
 from src.jarvis.core.risk import RiskLevel
 from src.jarvis.tools.base import Tool
@@ -169,3 +183,52 @@ class MediaVolumeDownTool(Tool):
         _send_vk(VK_VOLUME_DOWN)
         logger.info("Medya ses-azalt tusu gonderildi.")
         return _localized(_VOLUME_DOWN_MESSAGES, lang)
+
+
+_EMPTY_QUERY_MESSAGES = {
+    "tr": "Hangi şarkıyı arayacağımı anlayamadım.",
+    "en": "I didn't catch which song to search for.",
+}
+_SPOTIFY_NOT_INSTALLED_MESSAGES = {
+    "tr": "Spotify yüklü değil gibi görünüyor, açamadım.",
+    "en": "Spotify doesn't seem to be installed, I couldn't open it.",
+}
+_SEARCH_OPENED_MESSAGES = {
+    "tr": "Spotify'da '{query}' aramasını açtım.",
+    "en": "I've opened a Spotify search for '{query}'.",
+}
+
+
+class SearchMusicTool(Tool):
+    """Spotify'i belirli bir sarki/sanatci aramasiyla acar - `spotify:search:`
+    URI semasi, `os.startfile()` ile (shell=True/subprocess YOK, enjeksiyon
+    yuzeyi yok). Kullanici sonucu goruntuleyip oynatmayi KENDISI baslatir -
+    bkz. modul docstring'i, "KAPSAM SINIRI".
+    """
+
+    name = "search_music"
+    description = (
+        "Kullanicinin soyledigi sarki/sanatci adiyla Spotify'da arama acar "
+        "(otomatik calmaz, kullanici sonra kendisi baslatir)."
+    )
+    risk_level = RiskLevel.LOW  # sadece Spotify'i acar, keyfi komut calistirmaz
+    parameters_schema: dict = {
+        "query": {"type": "string", "description": "Aranacak sarki veya sanatci adi."}
+    }
+    required_parameters: list[str] = ["query"]
+
+    def execute(self, params: dict) -> str:
+        lang = params.get("lang", "en")
+        query = (params.get("query") or "").strip()
+        if not query:
+            return _localized(_EMPTY_QUERY_MESSAGES, lang)
+
+        uri = f"spotify:search:{quote(query)}"
+        try:
+            os.startfile(uri)  # noqa: S606 - URI semasi, shell yorumlamasi yok
+        except OSError:
+            logger.warning("Spotify URI-semasi acilamadi (Spotify kurulu degil mi?): %r", uri)
+            return _localized(_SPOTIFY_NOT_INSTALLED_MESSAGES, lang)
+
+        logger.info("Spotify arama URI'si acildi: %r", uri)
+        return _localized(_SEARCH_OPENED_MESSAGES, lang).format(query=query)

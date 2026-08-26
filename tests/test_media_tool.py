@@ -53,6 +53,41 @@ def test_volume_down_sends_correct_vk(monkeypatch):
     assert calls == [media_module.VK_VOLUME_DOWN]
 
 
+def test_search_music_opens_spotify_search_uri(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(media_module.os, "startfile", calls.append)
+
+    result = media_module.SearchMusicTool().execute({"lang": "en", "query": "Bohemian Rhapsody"})
+
+    assert calls == ["spotify:search:Bohemian%20Rhapsody"]
+    assert "Bohemian Rhapsody" in result
+
+
+def test_search_music_rejects_empty_query(monkeypatch):
+    monkeypatch.setattr(
+        media_module.os, "startfile", lambda uri: (_ for _ in ()).throw(AssertionError("cagrilmamali"))
+    )
+
+    result = media_module.SearchMusicTool().execute({"lang": "tr", "query": ""})
+    assert "anla" in result.lower()
+
+
+def test_search_music_handles_missing_spotify_handler(monkeypatch):
+    def _raise(uri):
+        raise OSError("no application associated")
+
+    monkeypatch.setattr(media_module.os, "startfile", _raise)
+
+    result = media_module.SearchMusicTool().execute({"lang": "en", "query": "Bohemian Rhapsody"})
+    assert "install" in result.lower() or "n't" in result.lower()
+
+
+def test_search_music_is_low_risk():
+    from src.jarvis.core.risk import RiskLevel
+
+    assert media_module.SearchMusicTool.risk_level is RiskLevel.LOW
+
+
 def test_all_media_tools_are_low_risk():
     from src.jarvis.core.risk import RiskLevel
 
