@@ -20,7 +20,7 @@ from src.jarvis.core.risk import request_approval, requires_approval
 from src.jarvis.ears.listener import listen_loop
 from src.jarvis.mouth.tts import speak
 from src.jarvis.tools.base import Tool
-from src.jarvis.tools.registry import TOOL_REGISTRY
+from src.jarvis.tools.registry import get_tool
 
 logger = logging.getLogger("jarvis.core.app")
 
@@ -63,8 +63,9 @@ def _execute_tool(tool: Tool, intent, stop_event: Optional[threading.Event]) -> 
     """Bir tool'u risk kontrolu + insan onayindan gecirerek calistirir.
 
     Guvenlik karari BURADA, tek merkezde veriliyor - tool'un kendisine birakilmiyor
-    (bkz. tools/base.py). Sira: (1) tehlikeli komut on-taramasi, (2) risk seviyesine
-    gore [Y/N] onayi, (3) calistirma.
+    (bkz. tools/base.py). Sira: (1) tehlikeli komut on-taramasi (girdi), (2) risk
+    seviyesine gore [Y/N] onayi, (3) calistirma, (4) sonuc guardrail taramasi (cikti -
+    MCP'nin dis/guvenilmeyen verisi icin eklendi, bkz. asagidaki (4) yorumu).
 
     GENELLESTIRME NOTU (Faz 3.3, semantic router): eskiden SADECE
     `intent.parameters["content"]` guardrail'den geciyordu (parametreler tek bir
@@ -115,10 +116,28 @@ def _execute_tool(tool: Tool, intent, stop_event: Optional[threading.Event]) -> 
     # (3) Calistir - tek bir kotu tool cagrisi run_jarvis()'in dongusunu cokertmemeli
     # (_transcribe()/speak()'teki ayni izolasyon deseni).
     try:
-        return tool.execute(intent.parameters)
+        result = tool.execute(intent.parameters)
     except Exception as exc:
         logger.error("Tool calistirilamadi (%s): %s", tool.name, exc)
         return _localized(_TOOL_FAILED_MESSAGES, lang)
+
+    # (4) MCP entegrasyonu (Faz 4.5, bkz. docs/ARCHITECTURE.md SS9.5) DONUS
+    # degerini de guardrail'e sokuyor - eskiden SADECE girdi parametreleri
+    # taraniyordu (yukaridaki (1)), cunku o zamana kadar HER tool'un donus
+    # degeri kod-sabit/kullanicinin kendi yazdigi icerikti (guvenli). MCP
+    # araclarinin donus degeri ise DIS/guvenilmeyen veridir (bir dosya/DB/repo
+    # icerigi) - klasik indirect-prompt-injection/TTS uzerinden sosyal
+    # muhendislik yuzeyi. Chat streaming yolunun zaten yaptigi per-cumle
+    # taramayla (asagida _handle_turn) simetrik hale getiriliyor; yerel
+    # araclar icin davranis degismiyor (donusleri zaten temiz).
+    output_safety = _OUTPUT_GUARDRAIL.run(result)
+    if not output_safety.allowed:
+        logger.warning(
+            "Tool ciktisi guardrail'e takildi (%s): %s", tool.name, output_safety.reason
+        )
+        return _localized(_UNSAFE_COMMAND_MESSAGES, lang)
+
+    return result
 
 
 def _handle_turn(
@@ -160,7 +179,7 @@ def _handle_turn(
             yield text, lang
             return
 
-        tool = TOOL_REGISTRY.get(intent.name)
+        tool = get_tool(intent.name)
         if tool is not None:
             yield _execute_tool(tool, intent, stop_event), intent.parameters.get("lang", "en")
             return

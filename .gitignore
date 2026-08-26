@@ -27,6 +27,12 @@ secrets/
 # bkz. config/security.example.yaml (bu commit'lenir).
 config/security.yaml
 
+# MCP sunucu yapilandirmasi - kisisel/makineye ozel yollar icerebilir
+# (orn. Obsidian vault yolu), sablon icin bkz. config/mcp_servers.example.yaml.
+# security.yaml'in aksine OPSIYONEL: yoksa MCP katmani sadece devre disi
+# kalir, uygulama cokmez (bkz. src/jarvis/core/mcp_config.py).
+config/mcp_servers.yaml
+
 # Kullanici verisi - Jarvis'in kaydettigi notlar ve arac calisma dizini
 # (.env ile ayni mantik: kisisel, makineye ozel, repoya girmemeli)
 notes/

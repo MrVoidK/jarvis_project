@@ -418,10 +418,16 @@ birleştirilmeyecek:
   ilke, ama varsayılan taban daha yüksek.
 
 **Config deseni**: `config/mcp_servers.yaml` (kişisel/makineye özel,
-gitignore'da) + `config/mcp_servers.example.yaml` (şablon, commit'lenir) —
-`core/security_config.py:load_security_config()`'in fail-loud yükleme
-prensibiyle tutarlı (dosya yoksa sessizce boş listeye düşmek yerine net
-bir hata/uyarı).
+gitignore'da) + `config/mcp_servers.example.yaml` (şablon, commit'lenir).
+**Düzeltme (uygulama sırasında bilinçli sapma)**: bu bölüm başta
+`security_config.py:load_security_config()`'in fail-loud (dosya yoksa
+`FileNotFoundError`) desenini öneriyordu; gerçek uygulamada bunun yerine
+**fail-soft** seçildi — MCP, Spotify gibi (bkz. `docs/ROADMAP.md` §3.1)
+opsiyonel bir katman olduğu için `core/mcp_config.py:load_mcp_servers_config()`
+dosya yoksa/hiçbir sunucu etkin değilse sadece net bir `logger.warning`
+basıp boş liste döner — uygulama MCP'siz de çalışmaya devam eder.
+`security.yaml` ise HER tool çağrısının bağlı olduğu bir ön-koşul olduğu
+için fail-loud kalmaya devam ediyor; ikisi bilinçli olarak farklı.
 
 ### 9.3 Kritik Kullanım Senaryoları
 
@@ -470,9 +476,32 @@ MCP sunucuları da tıpkı Claude Code gibi bir **dış sınır**dır (§1
 Zero-Trust ilkesi) — hiçbir MCP sunucusu "güvenilir" varsayılmaz. Her MCP
 tool çağrısı, yerel bir `Tool` çağrısıyla aynı iki denetimden geçer:
 (1) `core/risk.py`'nin risk sınıflandırması + gerekiyorsa `[Y/N]` onayı,
-(2) `core/guardrail/` zinciri (özellikle çıktı tarafı — bir MCP
-sunucusundan dönen içerik de `OutputSafetyCheck`'ten geçer, çünkü
-Zero-Trust'ta "dış kaynaktan gelen veri" ile "LLM çıktısı" arasında ayrım
-yapılmaz). Bu, OWASP LLM Top 10 eşlemesindeki (§6) LLM01/LLM02
-maddelerinin MCP entegrasyonuna da aynı şekilde uygulandığı anlamına
-gelir.
+(2) `core/guardrail/` zinciri — çıktı tarafı: bir MCP sunucusundan dönen
+HAM içerik, `tools/mcp_tool.py:MCPTool.execute()` içinde, konsola
+basılmadan/TTS için kırpılmadan ÖNCE `OutputSafetyCheck`'ten geçer (bkz.
+security-reviewer bulgusu — ilk sürümde bu tarama kırpılmış/yer-tutucu
+metin üzerinde çalışıyordu, gerçek içerik hiç taranmıyordu; düzeltildi).
+Girdi tarafı da genişletildi: bir MCP sunucusunun kendi bildirdiği
+`name`/`description`/parametre açıklamaları ("tool poisoning"/rug-pull
+saldırı sınıfı — sunucu tarafında değişen bir açıklama router LLM'ini
+manipüle edebilir) `adapters/mcp_client_adapter.py:_wrap_mcp_tool()`'da
+keşif anında `InputInjectionCheck`'ten geçer; takılan bir araç sessizce
+atlanır (asla router'a sunulmaz). Bu, OWASP LLM Top 10 eşlemesindeki (§6)
+LLM01/LLM02 maddelerinin MCP entegrasyonuna da aynı şekilde uygulandığı
+anlamına gelir.
+
+**Bilinen açık maddeler (security-reviewer incelemesi, kapsam dışı
+bırakıldı — ⬜):**
+- Filesystem MCP'ye giden `path`/`paths` argümanları için Jarvis
+  tarafında (`security_config.py:is_path_safe()` ile) İKİNCİ bir katman
+  doğrulama YOK — güvenlik tamamen `@modelcontextprotocol/server-filesystem`
+  paketinin kendi sandbox/symlink kontrolüne bırakılmış durumda.
+- `npx -y` ile çekilen paket artık sürüm-PİNLİ (`config/mcp_servers.example.yaml`),
+  ama bu yine de imza/hash doğrulaması değil — tedarik zinciri riski
+  tamamen kapanmadı.
+- Faz 6 (Otonom Ajan Döngüsü) MCP sonuçlarını `history`'ye geri
+  besleyecek şekilde genişlerse, MCP çıktısının SADECE `OutputSafetyCheck`
+  değil `InputInjectionCheck`'ten de geçmesi gerekecek (bugün MCP sonuçları
+  hiçbir zaman `history`'ye girmiyor — bu yüzden bugünkü mimaride indirect-
+  prompt-injection→LLM ele geçirme senaryosu mitige edilmiş durumda, ama bu
+  varsayım Faz 6 ile birlikte yeniden değerlendirilmeli).

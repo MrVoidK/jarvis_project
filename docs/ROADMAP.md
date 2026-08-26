@@ -671,7 +671,7 @@ Alt adımlar:
       veri gönderme) önce onay iste — Faz 3.2'deki risk puanlama/onay
       akışıyla örtüşür, aynı mekanizma kullanılır.
 
-## Faz 4.5 — Hibrit MCP Entegrasyonu (Bilgi Katmanı) ⬜
+## Faz 4.5 — Hibrit MCP Entegrasyonu (Bilgi Katmanı) 🟡 (altyapı + File System MCP tamam, SQLite/GitHub/Claude Code CLI bekliyor)
 
 Faz 3'ün Zero-Trust felsefesiyle tutarlı bir hibrit karar: işletim sistemi
 kontrolü (terminal, uygulama başlatma, medya) YÜKSEK riskli olduğu için
@@ -681,23 +681,63 @@ girer. Mimari gerekçe ve tasarım detayı için `docs/ARCHITECTURE.md` §9'a
 bak — burada sadece eyleme geçirilebilir adımlar var.
 
 Alt adımlar:
-- [ ] `MCPClientAdapter` (`src/jarvis/adapters/mcp_client_adapter.py`) —
+- [x] `MCPClientAdapter` (`src/jarvis/adapters/mcp_client_adapter.py`) —
       MCP sunucularını keşfedip araçlarını `adapters/tool_schema.py:
       build_ollama_tools()` ile aynı şemaya çevirir. **Kritik tasarım
       kararı**: statik `tools/registry.py:TOOL_REGISTRY` (bilinçli olarak
       auto-discovery'siz) ile MCP'nin dinamik doğası asla birleştirilmez —
-      MCP araçları ayrı bir keşif/önbellek yolundan sunulur, hiçbir zaman
-      sessizce `TOOL_REGISTRY`'ye enjekte edilmez; varsayılan risk seviyesi
-      en az `MEDIUM` (dış sunucu verisi = güvenilmeyen girdi).
-- [ ] `config/mcp_servers.yaml` + `config/mcp_servers.example.yaml` —
-      `core/security_config.py`'nin fail-loud yükleme deseniyle tutarlı.
-- [ ] **File System MCP** — Obsidian vault'un (`security.yaml:
-      obsidian_vault`) geniş, arama yapılabilir okunması; `tools/
-      notes_tool.py`'nin bilinçli dar kapsamının (tek sabit dosya) ötesinde,
-      ama aynı ilkeyle (sadece vault kök dizini, tercihen salt-okunur).
+      MCP araçları `tools/registry.py:all_tools()`/`get_tool()` view'i
+      üzerinden sunulur, hiçbir zaman sessizce `TOOL_REGISTRY`'ye enjekte
+      edilmez; varsayılan risk seviyesi en az `MEDIUM` (dış sunucu verisi =
+      güvenilmeyen girdi, `LOW` istekleri `core/mcp_config.py` tarafından
+      otomatik `MEDIUM`'a yükseltilir). Async (mcp SDK) ↔ senkron (proje)
+      köprüsü, arka planda kalıcı TEK bir event-loop thread'i + tek bir
+      uzun-ömürlü `_serve()` coroutine'i (async context manager'ların
+      anyio cancel-scope'larını AYNI Task içinde açıp kapatması gerektiği
+      gerçek testte bulunup düzeltildi) ile kuruldu. `core/app.py:
+      _execute_tool()` artık tool'un DÖNÜŞ değerini de `OutputSafetyCheck`'ten
+      geçiriyor (eskiden sadece girdi taranıyordu) — MCP'nin dış/güvenilmeyen
+      verisi için eklenen bir sertleştirme, yerel araçları etkilemiyor.
+- [x] `config/mcp_servers.yaml` + `config/mcp_servers.example.yaml` —
+      **fail-soft** yükleme (bilinçli sapma, `docs/ARCHITECTURE.md` §9.2'de
+      düzeltildi): MCP, Spotify gibi opsiyonel bir katman — dosya yoksa/
+      hiçbir sunucu etkin değilse `core/mcp_config.py:load_mcp_servers_config()`
+      net bir uyarı loglar ve boş liste döner, `security_config.py`'nin
+      `FileNotFoundError`'ı FIRLATILMAZ (uygulama MCP'siz de çalışmaya devam
+      eder).
+- [x] **File System MCP** — Obsidian vault'un (`security.yaml:
+      obsidian_vault`) geniş, arama yapılabilir okunması; resmi
+      `@modelcontextprotocol/server-filesystem` (npx ile, ek pip bağımlılığı
+      yok) `allowed_tools` allowlist'iyle SADECE okuma araçlarına
+      (`read_text_file`, `list_directory`, `directory_tree`, `search_files`,
+      `get_file_info`, vb.) sınırlandı — `write_file`/`edit_file`/
+      `create_directory`/`move_file` bilinçli olarak dışarıda, `tools/
+      notes_tool.py`'nin dar-yazma felsefesiyle tutarlı. Gerçek `npx` ile
+      uçtan uca doğrulandı (`python -m src.jarvis.adapters.mcp_client_adapter`
+      + `get_tool("mcp_filesystem_list_directory").execute(...)`).
+      **`security-reviewer` incelemesi** (CLAUDE.md'nin zorunlu adımı):
+      2 kritik bulgu düzeltildi — (1) MCP sonucu için guardrail taraması
+      eskiden kırpılmış/yer-tutucu metin üzerinde çalışıyordu, gerçek içerik
+      hiç taranmıyordu (artık `MCPTool.execute()` HAM içeriği kırpma/konsola
+      basmadan önce tarıyor); (2) MCP sunucusunun `name`/`description`/
+      parametre açıklamaları filtresiz router LLM'ine gidiyordu ("tool
+      poisoning" — artık keşif anında `InputInjectionCheck`'ten geçiyor,
+      takılan araç sessizce atlanıyor). Ayrıca: `call_tool()` zaman
+      aşımında artık future/Task iptal ediliyor (kaynak sızıntısı
+      düzeltmesi), `allowed_tools` `call_tool()` içinde de ikinci kez
+      doğrulanıyor (derinlemesine savunma), npm paketi sürüm-PİNLENDİ
+      (`@modelcontextprotocol/server-filesystem@2026.7.10`), konsola
+      basılan MCP içeriğinden kontrol karakterleri temizleniyor (terminal
+      enjeksiyonu önlemi). Açık kalan bulgular (path traversal için ikinci
+      katman doğrulama yok, senkron `call_tool()` ana döngüyü ~30sn
+      bloklayabiliyor) bilinçli olarak kapsam dışı bırakıldı — bkz.
+      `docs/ARCHITECTURE.md` §9.5 "Bilinen açık maddeler".
 - [ ] **SQLite MCP** — "Asistan Game Master" modu: FRP zar mekanikleri,
       karakter statları, kural kitapçıkları için yapısal sorgu erişimi;
-      Faz 4'ün çok adımlı yürütme döngüsüyle örtüşür.
+      Faz 4'ün çok adımlı yürütme döngüsüyle örtüşür. **Engel**: resmi
+      referans sunucu `uvx mcp-server-sqlite` gerektirir, bu makinede
+      `uv`/`uvx` kurulu değil (`npx`'in aksine) — kuruluma ek bir adım.
+      `config/mcp_servers.example.yaml`'da şablon olarak duruyor.
 - [ ] **GitHub MCP** — yazılım ve Godot proje yönetimi için repo okuma, PR
       analizi, commit farkları; salt-okunur öncelikli, yazma işlemleri
       (merge, issue kapama) yerel `RiskLevel.HIGH` ile aynı zorunlu `[Y/N]`

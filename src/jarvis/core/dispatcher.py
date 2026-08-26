@@ -16,7 +16,7 @@ from src.jarvis.adapters.agent_factory import AgentFactory
 from src.jarvis.adapters.tool_schema import build_ollama_tools, validate_arguments
 from src.jarvis.core.console import status_spinner
 from src.jarvis.core.language import detect_language
-from src.jarvis.tools.registry import TOOL_REGISTRY
+from src.jarvis.tools.registry import all_tools, get_tool
 
 logger = logging.getLogger("jarvis.dispatcher")
 
@@ -120,7 +120,10 @@ class Dispatcher:
             return rule_match
 
         logger.info("Dispatcher: kural eslesmedi, semantic router'a dusuluyor.")
-        tools_schema = build_ollama_tools(TOOL_REGISTRY.values())
+        # all_tools(): yerel TOOL_REGISTRY + MCP-kesfedilen araclarin birlesik
+        # view'i (bkz. tools/registry.py, docs/ARCHITECTURE.md SS9.2) - TOOL_REGISTRY'nin
+        # KENDISI degismiyor, sadece Router'a sunulan sema genisliyor.
+        tools_schema = build_ollama_tools(all_tools().values())
         orchestrator = AgentFactory.create("orchestrator")
         context = [{"role": "system", "content": _ROUTER_SYSTEM_PROMPT}]
 
@@ -138,7 +141,7 @@ class Dispatcher:
             )
         call = response.tool_calls[0]
 
-        tool = TOOL_REGISTRY.get(call.name)
+        tool = get_tool(call.name)
         if tool is None:
             logger.warning("Dispatcher: router bilinmeyen bir arac secti: %r -> chat.", call.name)
             return Intent(name=DEFAULT_INTENT_NAME, confidence=0.3, source="llm")

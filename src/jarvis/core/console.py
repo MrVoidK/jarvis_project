@@ -170,6 +170,39 @@ def print_router_decision(tool_name: str, confidence: float, parameters: dict) -
     )
 
 
+def _strip_control_characters(text: str) -> str:
+    """ESC dahil ASCII kontrol karakterlerini siler (yeni satir/tab haric).
+
+    security-reviewer bulgusu: MCP ile disaridan gelen dosya icerigi HAM
+    haliyle terminale basiliyor - kacis dizisi (terminal baslik degistirme,
+    imlec konumlandirma vb.) tasiyan bozuk/kotu niyetli bir dosya, terminal
+    enjeksiyonu icin bir vektor olabilirdi. `rich.markup.escape()` SADECE
+    rich'in kendi `[...]` sozdizimini kaciyor, ham ANSI/kontrol karakterlerini
+    DEGIL - bu fonksiyon o boşlugu kapatir.
+    """
+    return "".join(ch for ch in text if ch in "\n\t" or ord(ch) >= 32 and ord(ch) != 127)
+
+
+def print_mcp_result(tool_name: str, content: str) -> None:
+    """Bir MCP aracinin TAM sonucunu panelde gosterir.
+
+    tools/mcp_tool.py:MCPTool.execute() TTS'e SADECE kirpilmis/kisa bir
+    ozet dondurur (bkz. Tool.execute() sozlesmesi, tools/base.py) - bu
+    fonksiyon, `print_approval_panel`'in "kullanici router'in urettigi TAM
+    parametreyi gorur" seffaflik ilkesiyle simetrik olarak, konsola giden
+    tam icerigin kaybolmamasini saglar. Guardrail taramasi bu cagridan ONCE
+    yapilmis olmali (bkz. tools/mcp_tool.py:MCPTool.execute()).
+    """
+    console.print(
+        Panel(
+            _escape(_strip_control_characters(content)),
+            title=f"MCP Sonucu - {_escape(tool_name)}",
+            border_style="bold cyan",
+            expand=False,
+        )
+    )
+
+
 def status_spinner(msg: str) -> Status:
     """I/O beklemeleri (model yukleme, LLM cagrisi, transkripsiyon) icin amber spinner.
 

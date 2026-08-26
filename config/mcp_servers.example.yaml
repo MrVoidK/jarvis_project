@@ -1,0 +1,86 @@
+# Jarvis MCP sunucu yapilandirmasi - SABLON.
+#
+# Bu dosyayi kopyalayip ayni dizinde `mcp_servers.yaml` olarak kaydedin.
+# `mcp_servers.yaml` .gitignore'da (security.yaml ile ayni mantik - kisisel/
+# makineye ozel yollar icerir) - AMA security.yaml'in aksine bu dosya
+# OPSIYONEL: yoksa Jarvis COKMEZ, sadece MCP katmani devre disi kalir
+# (bkz. src/jarvis/core/mcp_config.py - bilinçli fail-soft, Spotify
+# emsaliyle ayni ilke, docs/ROADMAP.md Faz 3.1).
+#
+# Hibrit MCP ilkesi (docs/ARCHITECTURE.md SS9): burada tanimlanan sunucular
+# SADECE bilgi/veri erisimi icindir - terminal/uygulama/medya kontrolu
+# HICBIR ZAMAN buradan gecmez, o hep yerel TOOL_REGISTRY'de kalir.
+#
+# Her sunucu STDIO uzerinden bir alt surec olarak baslatilir (npx/uvx/vb).
+# `allowed_tools` verilirse SADECE o isimdeki araclar Router'a acilir -
+# verilmezse sunucunun TUM araclari (yazma araclari dahil) acik olur; bu
+# yuzden PRATIKTE HER ZAMAN bir allowlist verilmesi onerilir (codebase'in
+# zaten kullandigi known_applications/allowed_directories ile ayni
+# allowlist-oncelikli ilke, bkz. config/security.example.yaml).
+#
+# `default_risk_level` "low" OLAMAZ - MCP araclari dis sunucudan gelen
+# guvenilmeyen veri tasidigi icin en az "medium" alir (gecersiz/low bir
+# deger otomatik "medium"a yukseltilir, bkz. core/mcp_config.py).
+
+servers:
+  # --- File System MCP (Obsidian vault) ---
+  # Resmi @modelcontextprotocol/server-filesystem paketini `npx -y` ile
+  # calistirir (Node.js/npx kurulu olmali, ek pip bagimliligi yok).
+  # `security.yaml:obsidian_vault` ile AYNI yolu gosterecek sekilde elle
+  # senkron tutun - iki dosya ayri amaclar icin: security.yaml yerel
+  # notes_tool.py'nin DAR-yazma erisimi icin, bu ise MCP'nin GENIS-okuma
+  # erisimi icin (bkz. docs/ROADMAP.md Faz 4.5).
+  - name: "filesystem"
+    command: "npx"
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem@2026.7.10" # surum PINLI (tedarik zinciri riski, bkz. asagidaki not)
+      - "C:\\Path\\To\\Your\\Obsidian\\Vault" # KENDI vault yolunuzla degistirin
+    default_risk_level: "medium"
+    # Yazma araclari (write_file, edit_file, create_directory, move_file)
+    # BILINCLI OLARAK disarida - "genis OKUMA" kapsami (Faz 4.5),
+    # notes_tool.py'nin dar-yazma felsefesiyle tutarli. read_file (deprecated)
+    # ve read_media_file (binary/base64, TTS'e uygun degil) de disarida.
+    allowed_tools:
+      - "read_text_file"
+      - "read_multiple_files"
+      - "list_directory"
+      - "list_directory_with_sizes"
+      - "directory_tree"
+      - "search_files"
+      - "get_file_info"
+      - "list_allowed_directories"
+    enabled: true
+
+  # GUVENLIK NOTU (security-reviewer bulgusu): yukaridaki surum PINLI tutulmali
+  # ("@paket@X.Y.Z", cıplak "@paket" degil) - `npx -y` versiyon belirtilmeden
+  # her baslatmada npm registry'deki EN GUNCEL surumu (imza/hash dogrulamasi
+  # olmadan) indirip yerel yetkiyle calistirir; paketin ele gecirilmesi/kotu
+  # niyetli bir surum yayinlanmasi durumunda hicbir savunma yoktur. Ayrica
+  # Jarvis tarafinda `path`/`paths` argumanlari icin (security_config.py:
+  # is_path_safe() ile) IKINCI bir katman dogrulama YOK - guvenlik tamamen
+  # bu MCP sunucusunun kendi sandbox/symlink kontrolune birakilmis; bu,
+  # bilincli bir MVP kapsam siniri (takip: docs/ROADMAP.md Faz 4.5).
+
+  # --- SQLite MCP (docs/ROADMAP.md Faz 4.5 - henuz etkin degil) ---
+  # Resmi referans sunucu `uvx mcp-server-sqlite` gerektirir (bu makinede
+  # `uv`/`uvx` kurulu degil - kurulmadan `enabled: true` yapmayin, adapter
+  # baglanti hatasini loglayip sessizce o sunucuyu atlar). "Asistan Game
+  # Master" modu icin (FRP zar/stat/kural kitapcigi).
+  # - name: "sqlite"
+  #   command: "uvx"
+  #   args: ["mcp-server-sqlite", "--db-path", "C:\\Path\\To\\game_master.db"]
+  #   default_risk_level: "medium"
+  #   enabled: false
+
+  # --- GitHub MCP (docs/ROADMAP.md Faz 4.5 - henuz etkin degil) ---
+  # GITHUB_PERSONAL_ACCESS_TOKEN gerektirir - degeri BURAYA duz metin
+  # yazilmaz, .env'e eklenip Jarvis baslarken okunmasi ayri bir kod
+  # degisikligi (env-interpolation) gerektirir, bu turda YOK. Yazma
+  # araclari (issue/PR kapatma, merge) icin default_risk_level "high"
+  # olmali - salt-okunur oncelikli (Faz 4.5).
+  # - name: "github"
+  #   command: "npx"
+  #   args: ["-y", "@modelcontextprotocol/server-github"]
+  #   default_risk_level: "high"
+  #   enabled: false

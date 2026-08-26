@@ -4,12 +4,30 @@ AgentFactory.create("orchestrator") monkeypatch'lenip sahte bir Agent (call_tool
 onceden belirlenmis bir AgentToolResponse donduren) ile degistiriliyor - testler
 Ollama'nin calisiyor olmasina bagimli degil.
 
+MCP (Faz 4.5): `classify()` artik `tools/registry.py:all_tools()`/`get_tool()`
+uzerinden MCP-kesfedilen araclari da goruyor (bkz. o dosyanin docstring'i) -
+bu, gercek bir `config/mcp_servers.yaml` varsa (bu makinede oldugu gibi) her
+`classify()` cagrisinin gercek bir npx alt sureci baslatmaya calismasi
+anlamina gelirdi. Asagidaki autouse fixture, AgentFactory ile AYNI ilkeyle,
+`all_tools`/`get_tool`'u SADECE yerel `TOOL_REGISTRY`'yi donduren sahte
+surumlerle degistirip bu dosyadaki testleri MCP'den (ve makineye ozel
+config'ten) tamamen izole ediyor.
+
 Calistirma: `python -m pytest tests/ -v` (repo kokunden, bkz. CLAUDE.md Komutlar).
 """
+
+import pytest
 
 from src.jarvis.agents.base import AgentToolResponse, ToolCall
 from src.jarvis.core import dispatcher as dispatcher_module
 from src.jarvis.core.dispatcher import DEFAULT_INTENT_NAME, Dispatcher
+from src.jarvis.tools.registry import TOOL_REGISTRY
+
+
+@pytest.fixture(autouse=True)
+def _no_real_mcp_calls(monkeypatch):
+    monkeypatch.setattr(dispatcher_module, "all_tools", lambda: TOOL_REGISTRY)
+    monkeypatch.setattr(dispatcher_module, "get_tool", TOOL_REGISTRY.get)
 
 
 class _StubOrchestrator:
