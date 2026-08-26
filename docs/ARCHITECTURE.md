@@ -20,6 +20,11 @@ mimaridir — henüz kodda karşılığı olmayan bölümler ⬜ ile işaretleni
 - **Yerel-öncelikli**: mümkün olduğunca offline/yerelde çalışır (Ears,
   Brain, Mouth zaten bu ilkeyle kuruldu); Claude Code gibi dış çağrılar
   bilinçli, sınırlı ve loglanan istisnalardır.
+- **Hibrit çekirdek/bilgi ayrımı (⬜, bkz. §9)**: işletim sistemi kontrolü
+  (terminal, uygulama başlatma, medya) YÜKSEK riskli olduğu için her zaman
+  yerel `TOOL_REGISTRY`/`security.yaml` sandbox'ında kalır; MCP yalnızca
+  geniş bilgi/veri erişimi (dosya sistemi, veritabanı, GitHub, IoT) için
+  kullanılır — "her şeyi MCP'ye bağlama" bilinçli olarak reddedildi.
 
 ## 2. Katmanlar
 
@@ -40,7 +45,15 @@ flowchart TB
     subgraph ADAPT["3. Model Adaptörleri Katmanı"]
         Orchestrator["Orkestratör\n(Llama 3.1 Adapter)"]
         Hermes["Hermes Agent Adapter"]
-        ClaudeAdapter["Claude Code Adapter"]
+        ClaudeAdapter["Claude Code Adapter\n(CLI subcontractor)"]
+        MCPAdapter["MCPClientAdapter ⬜"]
+    end
+
+    subgraph MCP["3b. MCP Bilgi Katmanı ⬜ (bkz. §9)"]
+        FSMCP["File System MCP\n(Obsidian vault)"]
+        SQLiteMCP["SQLite MCP\n(FRP/Game Master)"]
+        GitHubMCP["GitHub MCP\n(repo/PR)"]
+        IoTMCP["IoT MCP (Faz 5)"]
     end
 
     subgraph OUT["4. Çıktı Katmanı"]
@@ -52,9 +65,15 @@ flowchart TB
     Router --> Orchestrator
     Router --> Hermes
     Router --> ClaudeAdapter
+    Router --> MCPAdapter
+    MCPAdapter --> FSMCP
+    MCPAdapter --> SQLiteMCP
+    MCPAdapter --> GitHubMCP
+    MCPAdapter --> IoTMCP
     Orchestrator --> Guard
     Hermes --> Guard
     ClaudeAdapter --> Guard
+    MCPAdapter --> Guard
     Guard --> OUT
 ```
 
@@ -80,10 +99,12 @@ classDiagram
     class LlamaOrchestratorAdapter
     class HermesAgentAdapter
     class ClaudeCodeAdapter
+    class MCPClientAdapter
     AgentFactory --> Agent
     Agent <|.. LlamaOrchestratorAdapter
     Agent <|.. HermesAgentAdapter
     Agent <|.. ClaudeCodeAdapter
+    Agent <|.. MCPClientAdapter
 ```
 
 `AgentFactory.create("orchestrator" | "tool_agent" | "deep_reasoning")`
@@ -100,8 +121,17 @@ yeni bir Adapter eklemek olmasını sağlar.
   `think_and_respond()` bu adaptöre taşınacak).
 - `HermesAgentAdapter` → yerel tool-calling modeli (bkz. §5 VRAM notu —
   ayrı bir model yerine paylaşımlı model + farklı sistem promptu önerilir).
-- `ClaudeCodeAdapter` → dış API (Anthropic), sadece ağır bilişsel/kod
-  görevlerinde, açıkça loglanan ve onaylı bir sınır geçişi olarak.
+- `ClaudeCodeAdapter` → **revize edilmiş tasarım (⬜, bkz. §9.3)**: doğrudan
+  Anthropic API çağrısı değil, Orkestratör'ün mevcut `terminal_tool`'u
+  (`run_command`, zaten HIGH risk + `[Y/N]` onay akışında) üzerinden
+  terminalde `claude` CLI komutunu tetikleyip Claude Code'u bir "Alt
+  Yüklenici" (subcontractor) olarak çalıştırır — ayrı bir API entegrasyonu/
+  credential yönetimi gerekmez, mevcut risk/onay mekanizması yeniden
+  kullanılır.
+- `MCPClientAdapter` (⬜, bkz. §9) → dış MCP sunucularına (File System,
+  SQLite, GitHub, IoT) bağlanıp araçlarını `TOOL_REGISTRY`'ye dinamik olarak
+  ekler; sadece bilgi/veri erişimi içindir, işletim sistemi kontrolü asla
+  bu yoldan geçmez (bkz. §1 hibrit ilkesi).
 
 Üçü de aynı `Agent` arayüzüne uyduğu için Router (§3'teki Observer'dan gelen
 olayı işleyen kod) hangi ajanla konuştuğunu bilmeden çalışır.
@@ -162,8 +192,12 @@ sequenceDiagram
         H->>O: sonuç özeti
         O->>G: yanıt metni
     else ağır bilişsel/kod işi
-        O->>C: görevi delege et (API, dış sınır)
+        O->>C: terminal_tool ile `claude` CLI tetikle (Alt Yüklenici)
         C->>O: sonuç (kod/plan/analiz)
+        O->>G: yanıt metni
+    else geniş bilgi/veri erişimi (⬜, bkz. §9)
+        O->>MCP: MCPClientAdapter ile MCP tool çağrısı
+        MCP->>O: sonuç (dosya/DB/repo içeriği)
         O->>G: yanıt metni
     end
     G->>M: onaylı yanıt (I/O guardrail geçti)
@@ -289,11 +323,17 @@ src/jarvis/
 │   ├── dispatcher.py           # intent + agentic routing (✅ iskelet, henüz bağlı değil)
 │   ├── guardrail/                # I/O guardrail zinciri (✅ iskelet, henüz bağlı değil)
 │   └── events.py                # EventBus (Observer) ⬜ henüz yok
-├── adapters/agent_factory.py   # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri (✅)
+├── adapters/
+│   ├── agent_factory.py        # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri (✅)
+│   └── mcp_client_adapter.py   # MCPClientAdapter — MCP bilgi katmanı istemcisi (Faz 4.5) ⬜
 ├── agents/base.py                # Agent (ABC) arayüzü (✅)
 ├── tools/           # tool-calling entegrasyonları (Faz 3) ⬜
 ├── security/         # risk puanlama, RFID TrustElevation, ses biyometrisi (Faz 3) ⬜
 └── iot/             # uç nokta client protokolü, MQTT (Faz 5) ⬜
+
+config/
+├── security.yaml / security.example.yaml       # yerel tool erişim kontrolü (✅)
+└── mcp_servers.yaml / mcp_servers.example.yaml  # MCP sunucu tanımları (Faz 4.5) ⬜
 ```
 
 ## 8. IoT & Dağıtım Mimarisi (özet)
@@ -319,3 +359,120 @@ yerine yayın/abone (pub/sub) modeliyle konuşur, bu da Zero-Trust ilkesiyle
 Dağıtım aşamasında tüm sistem (Ears/Brain/Mouth/Core + guardrail) bir Docker
 container'ında (GPU passthrough ile), kompakt bir sistem tray uygulaması
 arkasında paketlenir (bkz. Faz 5).
+
+## 9. Hibrit MCP Mimarisi (Bilgi Katmanı) ⬜
+
+Faz 3'ün tamamlanmasının ardından alınan bilinçli bir mimari karar: MCP
+(Model Context Protocol), Jarvis'in **her** dış entegrasyonu için değil,
+yalnızca **bilgi/veri erişimi** için kullanılacak. İşletim sistemi
+kontrolü (terminal, uygulama başlatma, medya) §1'deki Zero-Trust ilkesi
+gereği MCP'nin dinamik/keşif-tabanlı doğasıyla bağdaşmaz — bu yüzden
+mevcut yerel `TOOL_REGISTRY`/`security.yaml` sandbox'ında sabit kalır.
+Bu bölüm, `docs/ROADMAP.md` Faz 4.5'in arkasındaki "nasıl/neden"i anlatır.
+
+### 9.1 İlke — Neden Hibrit?
+
+- **Yerel çekirdek (değişmez)**: `run_command`, `launch_app`, `media_tool`
+  gibi YÜKSEK riskli, geri dönüşü zor aksiyonlar hiçbir zaman bir MCP
+  sunucusu üzerinden tetiklenmez — bu araçların risk sınıflandırması,
+  onay akışı ve parametre kaynağı (LLM'den mi, sabit regex'ten mi
+  geldiği) `core/risk.py`/`core/app.py:_execute_tool()` içinde tek bir
+  yerden denetlenebilir olmalı (bkz. §3.3'teki "mimari varsayım" notu,
+  `docs/ROADMAP.md`). Bir MCP sunucusu güncellendiğinde/değiştirildiğinde
+  bu garantinin kaybolması kabul edilemez.
+- **MCP bilgi katmanı (genişleyebilir)**: dosya sistemi, veritabanı,
+  GitHub, IoT gibi geniş ve sık değişen bilgi kaynaklarını sıfırdan
+  yerel tool olarak yazmak yerine, hazır MCP sunucularına bağlanmak
+  mühendislik maliyetini düşürür. Bu araçlar ağırlıkla **okuma** amaçlıdır;
+  yazma/aksiyon içeren MCP tool'ları (ör. bir GitHub PR'ı kapatmak) yerel
+  `RiskLevel.HIGH` ile aynı `[Y/N]` onay akışından geçirilir (bkz. §9.5).
+- **Açık sınır**: bir MCP tool'u asla doğrudan sistem/süreç kontrolü
+  (dosya silme, komut çalıştırma, donanım tetikleme) yapamaz — bu tür bir
+  ihtiyaç çıkarsa, doğru çözüm o aracı yerel `TOOL_REGISTRY`'ye eklemektir,
+  MCP sunucusuna yetki genişletmek değil.
+
+### 9.2 `MCPClientAdapter` Tasarımı
+
+`src/jarvis/adapters/mcp_client_adapter.py` (⬜) — `agents/base.py:Agent`
+arayüzüne uyan, ama rolü diğer adaptörlerden farklı bir bileşen: bir LLM'i
+sarmalamaz, yapılandırılmış MCP sunucularına bağlanıp `tools/list` ile
+araç şemalarını keşfeder ve bunları `adapters/tool_schema.py:
+build_ollama_tools()` ile aynı JSON-Schema function-calling sözleşmesine
+çevirir — Orkestratör'ün gözünden, bir MCP aracı ile yerel bir `Tool`
+arasında fark olmaz.
+
+**Statik `TOOL_REGISTRY` ile gerilim (bilinçli olarak çözülmesi gerekiyor):**
+`tools/registry.py:TOOL_REGISTRY` bilinçli olarak statik bir `dict` —
+elle, açıkça import edilmiş nesnelerden kurulur, otomatik keşif yoktur
+("bir aracın yanlışlıkla kayıtlı olması imkânsız olmalı" ilkesi). MCP
+sunucularının araç listesi ise doğası gereği **dinamik**tir (sunucu
+tarafında değişebilir, çalışma zamanında keşfedilir). Bu ikisi
+birleştirilmeyecek:
+- MCP kaynaklı araçlar hiçbir zaman sessizce `TOOL_REGISTRY`'ye
+  enjekte edilmez; `MCPClientAdapter` kendi ayrı bir keşif/önbellek
+  durumunu tutar ve Router'a yalnızca açıkça "bilgi/veri erişimi" olarak
+  sınıflandırılmış turlarda sunulur.
+- MCP kaynaklı her araç çağrısına varsayılan olarak en az `RiskLevel.MEDIUM`
+  atanır (dış sunucudan gelen veri güvenilmeyen girdi sayılır — Zero-Trust,
+  bkz. §9.5) — yerel bir `Tool`'un kendi riskini beyan etmesiyle aynı
+  ilke, ama varsayılan taban daha yüksek.
+
+**Config deseni**: `config/mcp_servers.yaml` (kişisel/makineye özel,
+gitignore'da) + `config/mcp_servers.example.yaml` (şablon, commit'lenir) —
+`core/security_config.py:load_security_config()`'in fail-loud yükleme
+prensibiyle tutarlı (dosya yoksa sessizce boş listeye düşmek yerine net
+bir hata/uyarı).
+
+### 9.3 Kritik Kullanım Senaryoları
+
+- **File System MCP → Obsidian vault**: `security.yaml:obsidian_vault`
+  dizininin geniş, arama yapılabilir okunması. Mevcut
+  `tools/notes_tool.py`'nin kapsamı bilinçli olarak dar tutulmuştu (tek
+  sabit dosya, `Jarvis Notes/Jarvis Log.md` — path traversal riskini
+  kapatmak için, bkz. `docs/ROADMAP.md` §3.3); File System MCP bu kapsamı
+  GENİŞLETİR ama aynı ilkeyle sınırlı yapılandırılmalı: MCP sunucusu
+  sadece `obsidian_vault` kök dizinine, tercihen salt-okunur bağlanır —
+  keyfi dosya sistemi erişimi asla verilmez.
+- **SQLite MCP → "Asistan Game Master" modu**: FRP (Rol Yapma Oyunları)
+  zar mekanikleri, karakter statları ve kural kitapçıkları için yapısal
+  sorgu erişimi; Faz 4'teki çok adımlı görev yürütme döngüsüyle
+  (plan → araç çağrısı → değerlendir → devam et) doğal olarak örtüşür.
+- **GitHub MCP → proje yönetimi**: yazılım ve Godot oyun projeleri için
+  repo okuma, PR analizi, commit farklarının izlenmesi — salt-okunur
+  öncelikli; bir PR'ı merge etmek/bir issue'yu kapatmak gibi yazma
+  işlemleri yerel `RiskLevel.HIGH` ile aynı zorunlu `[Y/N]` onayından
+  geçirilmeli (bkz. §9.5, §6 risk tablosu).
+- **IoT MCP → Faz 5.1**: ESP32/mikrodenetleyici sistemlerinin bağlanması;
+  §8'deki MQTT/VLAN mimarisinin YERİNE değil, onunla BİRLİKTE düşünülmeli
+  — cihaz durumu sorgulama (okuma) MCP üzerinden, fiziksel aktüasyon
+  komutları yine mevcut MQTT + Zero-Trust risk puanlamasından geçerek.
+
+### 9.4 Ajan Mimarisi ile İlişkisi
+
+§4'teki Orkestratör↔Hermes↔Claude Code iletişimi **MCP standardına
+geçmez** — kendi `Agent`/ReAct arayüzünde (`agents/base.py`) kalmaya
+devam eder; bu, mevcut senkron `respond()`/`call_tools()` sözleşmesinin
+üzerine gereksiz bir protokol katmanı eklemekten kaçınan bilinçli bir
+karardır. MCP yalnızca Jarvis'in dış dünyadaki bilgi kaynaklarına açılan
+istemci tarafıdır, ajanlar-arası iletişim mekanizması değildir.
+
+`ClaudeCodeAdapter`'ın revize tasarımı da bu ayrıma örnek: §3'teki
+açıklamada belirtildiği gibi, doğrudan bir Anthropic API entegrasyonu
+yerine Orkestratör'ün zaten var olan `terminal_tool`/`run_command`'ı
+(HIGH risk + `[Y/N]` onayı) üzerinden terminalde `claude` CLI'ını bir
+alt süreç olarak tetikler — "Alt Yüklenici" (subcontractor) deseni.
+Bu, §2.2'deki mevcut `NotImplementedError` stub'ının yerini alacak
+revize plandır (uygulanması `docs/ROADMAP.md` Faz 4.5'te).
+
+### 9.5 Güvenlik Notu
+
+MCP sunucuları da tıpkı Claude Code gibi bir **dış sınır**dır (§1
+Zero-Trust ilkesi) — hiçbir MCP sunucusu "güvenilir" varsayılmaz. Her MCP
+tool çağrısı, yerel bir `Tool` çağrısıyla aynı iki denetimden geçer:
+(1) `core/risk.py`'nin risk sınıflandırması + gerekiyorsa `[Y/N]` onayı,
+(2) `core/guardrail/` zinciri (özellikle çıktı tarafı — bir MCP
+sunucusundan dönen içerik de `OutputSafetyCheck`'ten geçer, çünkü
+Zero-Trust'ta "dış kaynaktan gelen veri" ile "LLM çıktısı" arasında ayrım
+yapılmaz). Bu, OWASP LLM Top 10 eşlemesindeki (§6) LLM01/LLM02
+maddelerinin MCP entegrasyonuna da aynı şekilde uygulandığı anlamına
+gelir.

@@ -363,7 +363,9 @@ ağının ilk somut uygulaması:
 - [x] `ClaudeCodeAdapter` — **stub**: `anthropic` SDK'sı kurulu değil,
       `ANTHROPIC_API_KEY` `.env`'de yok; `respond()` net bir
       `NotImplementedError` ile ne eksik olduğunu söylüyor. Gerçek
-      bağlantı ayrı bir görev.
+      bağlantı ayrı bir görev. **Revize plan (⬜)**: doğrudan Anthropic API
+      yerine `terminal_tool` üzerinden `claude` CLI'ı tetikleyen bir
+      "Alt Yüklenici" deseni — bkz. Faz 4.5 ve `docs/ARCHITECTURE.md` §9.4.
 
 ### 2.3 AI Guardrail Katmanı ✅
 
@@ -527,7 +529,10 @@ Alt adımlar:
       Cloud uygulamasını kaydettiğinde ayrı bir adım olarak eklenecek.
 - [ ] Opsiyonel: bu tool katmanını MCP standardına uygun bir sunucu olarak
       paketleme (bkz. `docs/claude-code-rehberi.md` §6) — hem Jarvis hem
-      Claude Code aynı araçları kullanabilsin.
+      Claude Code aynı araçları kullanabilsin. **Not**: bu, Jarvis'i bir
+      MCP SUNUCUSU yapmaktan bahsediyor; Faz 4.5'teki Hibrit MCP planı ise
+      tam tersi yönde — Jarvis'in dış MCP sunucularına bir MCP İSTEMCİSİ
+      olarak bağlanması. İkisi bağımsız, birbirini dışlamıyor.
 
 **Güvenlik incelemesi bulguları ve düzeltmeleri** (`security-reviewer`,
 Faz 3'ün zorunlu adımı — CLAUDE.md'nin kendi talimatı):
@@ -666,6 +671,46 @@ Alt adımlar:
       veri gönderme) önce onay iste — Faz 3.2'deki risk puanlama/onay
       akışıyla örtüşür, aynı mekanizma kullanılır.
 
+## Faz 4.5 — Hibrit MCP Entegrasyonu (Bilgi Katmanı) ⬜
+
+Faz 3'ün Zero-Trust felsefesiyle tutarlı bir hibrit karar: işletim sistemi
+kontrolü (terminal, uygulama başlatma, medya) YÜKSEK riskli olduğu için
+her zaman yerel `TOOL_REGISTRY`/`security.yaml` sandbox'ında kalır; MCP
+(Model Context Protocol) yalnızca geniş bilgi/veri erişimi için devreye
+girer. Mimari gerekçe ve tasarım detayı için `docs/ARCHITECTURE.md` §9'a
+bak — burada sadece eyleme geçirilebilir adımlar var.
+
+Alt adımlar:
+- [ ] `MCPClientAdapter` (`src/jarvis/adapters/mcp_client_adapter.py`) —
+      MCP sunucularını keşfedip araçlarını `adapters/tool_schema.py:
+      build_ollama_tools()` ile aynı şemaya çevirir. **Kritik tasarım
+      kararı**: statik `tools/registry.py:TOOL_REGISTRY` (bilinçli olarak
+      auto-discovery'siz) ile MCP'nin dinamik doğası asla birleştirilmez —
+      MCP araçları ayrı bir keşif/önbellek yolundan sunulur, hiçbir zaman
+      sessizce `TOOL_REGISTRY`'ye enjekte edilmez; varsayılan risk seviyesi
+      en az `MEDIUM` (dış sunucu verisi = güvenilmeyen girdi).
+- [ ] `config/mcp_servers.yaml` + `config/mcp_servers.example.yaml` —
+      `core/security_config.py`'nin fail-loud yükleme deseniyle tutarlı.
+- [ ] **File System MCP** — Obsidian vault'un (`security.yaml:
+      obsidian_vault`) geniş, arama yapılabilir okunması; `tools/
+      notes_tool.py`'nin bilinçli dar kapsamının (tek sabit dosya) ötesinde,
+      ama aynı ilkeyle (sadece vault kök dizini, tercihen salt-okunur).
+- [ ] **SQLite MCP** — "Asistan Game Master" modu: FRP zar mekanikleri,
+      karakter statları, kural kitapçıkları için yapısal sorgu erişimi;
+      Faz 4'ün çok adımlı yürütme döngüsüyle örtüşür.
+- [ ] **GitHub MCP** — yazılım ve Godot proje yönetimi için repo okuma, PR
+      analizi, commit farkları; salt-okunur öncelikli, yazma işlemleri
+      (merge, issue kapama) yerel `RiskLevel.HIGH` ile aynı zorunlu `[Y/N]`
+      onayından geçmeli.
+- [ ] **Claude Code CLI "Alt Yüklenici" tetikleme deseni** — mevcut
+      `ClaudeCodeAdapter`'ın (Faz 2.2, şu an `NotImplementedError` stub)
+      doğrudan Anthropic API yerine `terminal_tool`/`run_command` (zaten
+      HIGH risk + onay akışında) üzerinden `claude` komutunu çalıştıracak
+      şekilde revize edilmesi — ayrı bir API entegrasyonu/credential
+      yönetimi gerekmez.
+- Not: **IoT MCP** entegrasyonu Faz 5.1'e ait (aşağı bak) — mevcut
+  MQTT/VLAN mimarisinin yerine değil, onunla birlikte düşünülecek.
+
 ## Faz 5 — IoT Entegrasyonu & Dağıtım ⬜
 
 `docs/ARCHITECTURE.md` §8'deki mimarinin uygulanması.
@@ -681,6 +726,10 @@ Alt adımlar:
       protokolü üzerinden yapılır (TLS + broker kimlik doğrulama).
 - [ ] MQTT broker seçimi ve topic/izin şeması (hangi client hangi topic'e
       publish/subscribe edebilir).
+- [ ] IoT MCP sunucuları — ESP32/mikrodenetleyici sistemlerinin cihaz
+      durumu/telemetri OKUMASI için MCP üzerinden bağlanması (bkz. Faz 4.5
+      ve `docs/ARCHITECTURE.md` §9.3); fiziksel aktüasyon komutları bu
+      yoldan DEĞİL, yukarıdaki MQTT + Zero-Trust risk puanlamasından geçer.
 
 ### 5.2 Dağıtım, Arayüz ve Taşınabilirlik
 
