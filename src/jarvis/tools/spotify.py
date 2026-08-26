@@ -297,11 +297,13 @@ if __name__ == "__main__":
     # Tek seferlik manuel yetkilendirme: tarayici acilip kullanici izin verince
     # token cache_path'e yazilir - bundan sonra voice-tetiklemeli cagrilar sessizce
     # calisir, tarayici tekrar acilmaz (bkz. get_client()).
-    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+    from src.jarvis.core.console import print_system, setup_logging
+
+    setup_logging()
     auth_manager = _get_auth_manager()
     if auth_manager is None:
-        print("SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET .env'de bulunamadi.")
+        print_system("SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET .env'de bulunamadi.", level="error")
     else:
         client = spotipy.Spotify(auth_manager=auth_manager)
         me = client.current_user()
-        print(f"Yetkilendirme basarili: {me['display_name']} olarak giris yapildi.")
+        print_system(f"Yetkilendirme basarili: {me['display_name']} olarak giris yapildi.", level="success")

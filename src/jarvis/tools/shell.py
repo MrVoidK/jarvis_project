@@ -39,6 +39,7 @@ incelemesinden gecirilmeli.
 import logging
 import subprocess
 
+from src.jarvis.core.console import print_system
 from src.jarvis.core.risk import RiskLevel
 from src.jarvis.core.text import strip_trailing_punct
 from src.jarvis.tools.base import Tool
@@ -115,6 +116,7 @@ class RunCommandTool(Tool):
             return _localized(_EMPTY_MESSAGES, lang)
 
         logger.warning("Terminal komutu calistiriliyor (onaylandi): %r", command)
+        print_system(f"Komut çalıştırılıyor: {command}", level="warning")
         # Popen + communicate(timeout) kullaniyoruz (subprocess.run degil): zaman
         # asiminda SADECE dogrudan cocugu (cmd.exe) degil, onun baslattigi TUM surec
         # agacini oldurmemiz gerekiyor. Guvenlik incelemesi (security-reviewer, Faz 3)

@@ -12,6 +12,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 from src.jarvis.adapters.agent_factory import AgentFactory
+from src.jarvis.core.console import status_spinner
 
 logger = logging.getLogger("jarvis.dispatcher")
 
@@ -165,7 +166,8 @@ class Dispatcher:
         prompt = _CLASSIFY_PROMPT_TEMPLATE.format(
             intents=", ".join(self._known_intents), text=text
         )
-        raw_label = orchestrator.respond(prompt).strip().lower()
+        with status_spinner("Sınıflandırılıyor..."):
+            raw_label = orchestrator.respond(prompt).strip().lower()
 
         label = raw_label if raw_label in self._known_intents else DEFAULT_INTENT_NAME
         confidence = 0.6 if raw_label in self._known_intents else 0.3

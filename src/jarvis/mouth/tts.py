@@ -45,12 +45,13 @@ def _load_audio_via_soundfile(path: str, *_args, **_kwargs) -> tuple[torch.Tenso
 
 torchaudio.load = _load_audio_via_soundfile
 
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-# basicConfig() sadece root logger'da hic handler yoksa etkili olur (Python
-# stdlib'in belgeledigi idempotent davranis) - main.py uzerinden calisirken
-# audio_handler.py'nin cagrisi burada no-op olur, ama tts_handler.py tek
-# basina (__main__) calistirildiginda logger.info() cagrilarinin sessizce
-# kaybolmamasi icin burada da cagirmak gerekiyor.
+from src.jarvis.core.console import setup_logging  # noqa: E402 - COQUI_TOS_AGREED'den sonra import edilmeli
+
+# setup_logging() stdlib logging.basicConfig() gibi idempotent (ilk cagiran
+# kazanir) - main.py uzerinden calisirken bu no-op olur (zaten kurulmustur),
+# ama bu dosya tek basina (__main__) calistirildiginda logger.info()
+# cagrilarinin sessizce kaybolmamasi icin burada da cagirmak gerekiyor.
+setup_logging()
 logger = logging.getLogger("jarvis.mouth")
 
 XTTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"

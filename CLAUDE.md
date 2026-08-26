@@ -152,6 +152,7 @@ src/jarvis/
 ├── mouth/tts.py               # Mouth — XTTS-v2 çift-dilli TTS
 ├── core/
 │   ├── app.py                  # run_jarvis() — MVP döngüsü (Ears→Brain→Mouth)
+│   ├── console.py              # rich tabanlı merkezi konsol/loglama katmanı
 │   ├── dispatcher.py           # Intent sınıflandırma (Pydantic, hibrit rule/LLM)
 │   └── guardrail/               # Chain-of-Responsibility I/O kontrolleri
 │   ├── risk.py                 # RiskLevel + [Y/N] onay (Zero-Trust, Faz 3)

@@ -3,6 +3,7 @@ import threading
 from typing import Iterator, Optional
 
 from src.jarvis.brain.llm import SYSTEM_PROMPT, think_and_respond_stream
+from src.jarvis.core.console import print_agent, print_system, status_spinner
 from src.jarvis.core.dispatcher import Dispatcher
 from src.jarvis.core.guardrail.base import GuardrailChain
 from src.jarvis.core.guardrail.input_checks import InputInjectionCheck
@@ -152,8 +153,12 @@ def run_jarvis() -> None:
     kontrol noktalarina donene kadar beklenir; sadece bu cagrilar ARASINDAKI (ve VAD/
     wake-word'un kisa ses-frame'i dongulerindeki) bekleme sürelerini aninda kisaltir.
     """
-    print("=== PROJECT JARVIS MVP ONLINE ===")
-    logger.info("Tum modeller yuklendi, Jarvis dinlemeye hazir.")
+    # Boot ekrani (ASCII art + gercek Ears/Mouth/Brain yukleme spinner'lari) artik
+    # main.py'de, bu fonksiyon cagrilmadan ONCE calisiyor (bkz. main.py) - o noktada
+    # modeller zaten gercekten hazir, bu yuzden burada SADECE "dinlemeye basliyorum"
+    # bildirimi kaliyor (eskiden buradaki "ONLINE" banner'i hicbir sey yuklenmeden
+    # basiliyordu, bkz. docs/TODO.md/plan notlari - yaniltici oldugu icin kaldirildi).
+    print_system("Jarvis dinlemeye hazir.", level="success")
 
     stop_event = threading.Event()
     history: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -161,15 +166,23 @@ def run_jarvis() -> None:
     try:
         # Step 1: Listen (Ears - VAD-bounded utterances via ears.listener.listen_loop)
         for user_text in listen_loop(stop_event=stop_event):
-            print(f"\n[USER]: {user_text}")
-            print("\n[JARVIS IS THINKING...]")
+            print_agent("User", user_text)
 
-            # Step 2 + 3: guardrail + dispatcher + Brain (streaming) -> Mouth, cumle cumle
-            for sentence, lang in _handle_turn(user_text, history, stop_event=stop_event):
-                print(f"\n[JARVIS]: {sentence}")
-                speak(sentence, language=lang, stop_event=stop_event)
+            # Step 2 + 3: guardrail + dispatcher + Brain (streaming) -> Mouth, cumle cumle.
+            # Spinner ilk cumle uretilene kadar acik kalir - sonraki cumleler icin
+            # tekrar acilmiyor (Brain zaten stream halinde urettigi icin aralarda
+            # gozle gorulur bir bekleme olmuyor, spinner'i her cumlede ac/kapa
+            # gereksiz titreme yaratirdi).
+            with status_spinner("Jarvis düşünüyor...") as spinner:
+                first_sentence = True
+                for sentence, lang in _handle_turn(user_text, history, stop_event=stop_event):
+                    if first_sentence:
+                        spinner.stop()
+                        first_sentence = False
+                    print_agent("Jarvis", sentence)
+                    speak(sentence, language=lang, stop_event=stop_event)
     except KeyboardInterrupt:
-        logger.info("Kapatma istendi (Ctrl+C) - guvenli sekilde kapatiliyor...")
+        print_system("Kapatma istendi (Ctrl+C) - güvenli şekilde kapatılıyor...", level="warning")
         stop_event.set()
     finally:
-        logger.info("Jarvis kapatildi.")
+        print_system("Jarvis kapatıldı.", level="info")

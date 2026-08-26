@@ -6,11 +6,10 @@ ses biyometrisi dogrulamasi) mevcut kontrollere hic dokunmadan zincire bir elema
 ibarettir - Chain of Responsibility'nin SOLID'deki Open/Closed prensibiyle ortusen tarafi.
 """
 
-import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-logger = logging.getLogger("jarvis.guardrail")
+from src.jarvis.core.console import print_guardrail
 
 
 @dataclass
@@ -46,9 +45,7 @@ class GuardrailChain:
     def run(self, text: str) -> GuardrailResult:
         for check in self._checks:
             result = check.check(text)
-            if result.allowed:
-                logger.info("Guardrail [%s]: kabul - %s", result.check_name, result.reason)
-            else:
-                logger.warning("Guardrail [%s]: RED - %s", result.check_name, result.reason)
+            print_guardrail(result.check_name, result.allowed, result.reason)
+            if not result.allowed:
                 return result
         return GuardrailResult(allowed=True, reason="Tum kontroller gecti.", check_name="chain")

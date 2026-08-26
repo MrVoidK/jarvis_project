@@ -10,6 +10,8 @@ pahalidir.
 import logging
 from enum import Enum
 
+from src.jarvis.core.console import console
+
 logger = logging.getLogger("jarvis.risk")
 
 _AFFIRMATIVE = {"y", "yes", "e", "evet"}
@@ -42,7 +44,13 @@ def request_approval(prompt: str) -> bool:
     payi guvenlik-kritik bir yolda kabul edilemez (bir "hayir"in "evet" duyulmasi).
     """
     try:
-        answer = input(f"\n[ONAY GEREKLI] {prompt} [Y/N]: ").strip().lower()
+        # Baslik satiri ayri basiliyor (SABIT metin, markup guvenli); asil `prompt`
+        # (tool icerigi tasiyabilir, orn. run_command'in komut metni) `markup=False`
+        # ile okutuluyor ki icindeki `[`/`]` gibi karakterler rich tarafindan stil
+        # etiketi sanilip davranis degismesin - builtin input() ile BIREBIR ayni
+        # okuma/EOFError sozlesmesi korunuyor, sadece gorunum degisiyor.
+        console.print("\n[bold yellow][!] ONAY GEREKLI[/bold yellow]")
+        answer = console.input(f"{prompt} [Y/N]: ", markup=False).strip().lower()
     except EOFError:
         # stdin yok/kapali (or. arka planda calisan bir surec) - onay ALINAMADI,
         # dolayisiyla reddedilir.

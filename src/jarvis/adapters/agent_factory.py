@@ -42,6 +42,27 @@ def _model_not_found_message(model_name: str) -> str:
     )
 
 
+def check_ollama_connection(model_name: str = ORCHESTRATOR_MODEL_NAME) -> tuple[bool, str]:
+    """Boot sirasinda Ollama'nin erisilebilir oldugunu HAFIFCE dogrular.
+
+    `ollama.show(model_name)` sadece model metadata'sini ister - gercek bir
+    `ollama.chat(...)` (chat completion) cagirmadan hem sunucunun ayakta
+    oldugunu HEM istenen modelin cekilmis oldugunu tek istekte dogrular.
+    Hata siniflandirmasi LlamaOrchestratorAdapter.respond()'daki ile AYNI
+    (bkz. yukarida) - iki ayri cagri yeri ayni hata sinifina karsi ayni
+    mesaji versin diye.
+    """
+    try:
+        ollama.show(model_name)
+        return True, f"Ollama bağlantısı doğrulandı ({model_name})."
+    except (httpx.ConnectError, ConnectionError):
+        return False, _connection_error_message(model_name)
+    except ollama.ResponseError as exc:
+        if exc.status_code == 404:
+            return False, _model_not_found_message(model_name)
+        raise
+
+
 class LlamaOrchestratorAdapter(Agent):
     """Ana orkestrator: dogal dil diyalog + intent siniflandirma icin `llama3.1:8b`."""
 

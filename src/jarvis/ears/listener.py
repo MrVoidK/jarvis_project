@@ -29,7 +29,9 @@ from faster_whisper import WhisperModel
 from openwakeword.model import Model as WakeWordModel
 from openwakeword.utils import download_models as download_wakeword_models
 
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+from src.jarvis.core.console import setup_logging
+
+setup_logging()  # merkezi RichHandler kurulumu - bkz. core/console.py docstring'i
 logger = logging.getLogger("jarvis.ears")
 
 SAMPLE_RATE = 16000
