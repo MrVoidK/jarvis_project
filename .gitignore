@@ -22,8 +22,10 @@ __pycache__/
 .env
 secrets/
 
-# Spotify OAuth token cache (spotipy) - refresh token iceriyor, .env ile ayni hassasiyet
-.spotify_cache
+# Kisisel guvenlik yapilandirmasi (allowed_directories, known_applications) -
+# gercek Obsidian vault yolu gibi makineye ozel bilgi icerir, sablon icin
+# bkz. config/security.example.yaml (bu commit'lenir).
+config/security.yaml
 
 # Kullanici verisi - Jarvis'in kaydettigi notlar ve arac calisma dizini
 # (.env ile ayni mantik: kisisel, makineye ozel, repoya girmemeli)

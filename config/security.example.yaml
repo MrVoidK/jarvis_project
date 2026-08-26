@@ -1,0 +1,22 @@
+# Jarvis guvenlik yapilandirmasi - SABLON.
+#
+# Bu dosyayi kopyalayip ayni dizinde `security.yaml` olarak kaydedin ve
+# kendi makinenize ozel gercek yollari girin. `security.yaml` .gitignore'da -
+# kisisel/makineye ozel yollar (orn. Obsidian vault'unuz) icerdigi icin
+# commit'lenmez (bkz. src/jarvis/core/security_config.py).
+
+# notes_tool.py ve terminal_tool.py'nin (LaunchAppTool haric) dosya
+# islemlerinin sinirlandigi dizinler. Goreli yollar PROJECT_ROOT'a gore
+# cozulur, mutlak yollar oldugu gibi kullanilir.
+allowed_directories:
+  - "jarvis_workspace" # ListFilesTool'un calisma dizini
+  - "notes" # eski notes.txt konumu, geriye donuk uyumluluk
+  - "C:\\Path\\To\\Your\\Obsidian\\Vault" # KENDI vault yolunuzla degistirin
+
+# LaunchAppTool SADECE burada listelenen isimleri calistirabilir - LLM'in
+# keyfi bir binary/path uretip calistirmasi mumkun degildir (bkz.
+# tools/terminal_tool.py:LaunchAppTool).
+known_applications:
+  "vs code": "code"
+  "chrome": "chrome"
+  "steam": "C:\\Program Files (x86)\\Steam\\steam.exe"
