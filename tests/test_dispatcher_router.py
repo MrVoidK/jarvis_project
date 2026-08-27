@@ -92,6 +92,45 @@ def test_classify_falls_back_to_chat_when_no_tool_selected(monkeypatch):
     assert intent.source == "llm"
 
 
+def test_classify_returns_chat_when_router_selects_no_tool_needed(monkeypatch):
+    """Sentinel kacis yolu (bkz. dispatcher.py:_NO_TOOL_FUNCTION_NAME) - router
+    ACIKCA 'no_tool_needed' secerse, jenerik 'bilinmeyen arac' yoluna DUSMEDEN
+    (ayri, bilerek-yazilmis bir kontrolle) chat'e donmeli."""
+    _patch_orchestrator(
+        monkeypatch,
+        AgentToolResponse(
+            tool_calls=[ToolCall(name=dispatcher_module._NO_TOOL_FUNCTION_NAME, arguments={})]
+        ),
+    )
+
+    intent = Dispatcher().classify("Görüşürüz.")
+
+    assert intent.name == DEFAULT_INTENT_NAME
+    assert intent.source == "llm"
+
+
+def test_classify_sends_no_tool_needed_schema_to_router(monkeypatch):
+    """`_NO_TOOL_SCHEMA`'nin gercekten `tools=` argumaniyla Ollama'ya (stub
+    uzerinden) gonderildigini dogrular - semanin var OLMASI yetmez, fiilen
+    gonderilen listeye eklenmis olmasi gerekiyor."""
+    captured: list[list[dict]] = []
+
+    class _CapturingStub:
+        def call_tools(self, prompt, tools, context=None):
+            captured.append(tools)
+            return AgentToolResponse(tool_calls=[])
+
+    monkeypatch.setattr(
+        dispatcher_module.AgentFactory, "create", staticmethod(lambda role: _CapturingStub())
+    )
+
+    Dispatcher().classify("bir şeyler")
+
+    assert len(captured) == 1
+    tool_names = {schema["function"]["name"] for schema in captured[0]}
+    assert dispatcher_module._NO_TOOL_FUNCTION_NAME in tool_names
+
+
 def test_classify_falls_back_to_chat_when_router_hallucinates_unknown_tool(monkeypatch):
     _patch_orchestrator(
         monkeypatch,

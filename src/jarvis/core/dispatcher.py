@@ -43,28 +43,56 @@ _RULES: dict[str, list[tuple[str, re.Pattern]]] = {
     ],
 }
 
+# Router'a "gercek bir arac uymuyor" secenegini ACIKCA sunan sentetik bir
+# fonksiyon adi - TOOL_REGISTRY'ye (tools/registry.py) KESINLIKLE eklenmiyor,
+# gercek bir Tool degil, sadece classify()'in Ollama'ya sundugu semaya ayrica
+# eklenen bir "kacis yolu".
+#
+# NEDEN GEREKLI (kok neden dogrulandi - `ollama show llama3.1:8b --modelfile`):
+# `ollama.chat(..., tools=[...])` cagrildiginda, llama3.1:8b'nin Ollama sablonu
+# kullanicinin SON turunu sunucu tarafinda, KOSULSUZ olarak "Given the following
+# functions, please respond with a JSON for a function call..." seklinde yeniden
+# yaziyor - bu sablonda "ya da hicbir fonksiyon cagirma" dalı YOK. Bu, uretimden
+# hemen once, en yuksek-dikkat konumda oturuyor ve asagidaki _ROUTER_SYSTEM_PROMPT'un
+# "arac yoksa HICBIR FONKSIYON cagirma" talimatini YAPISAL OLARAK eziyor - bu
+# yuzden temperature dusurmek VE promptu "hicbir fonksiyon cagirma" ornekleriyle
+# guclendirmek (ikisi de bu projede once denendi) ISE YARAMADI: bu bir orn ekleme/
+# prompt-uyum sorunu degil, sunucu tarafi sablon davranisi. Cozum, modele bu
+# zorunlu "her zaman fonksiyon cagir" cercevesiyle CALISAN somut, semaya-uygun
+# BIR fonksiyon (bu sentinel) vermek - soyut bir "cagirma" talimatiyla savasmak
+# yerine. (Ikincil etki: model "bir sey cagirmaya" zorlaninca TOOL_REGISTRY'deki
+# ilk parametresiz aracı - read_notes - en dusuk efor secenegi olarak seciyordu;
+# bu sentinel artik o rolu devraliyor.)
+_NO_TOOL_FUNCTION_NAME = "no_tool_needed"
+
+_NO_TOOL_SCHEMA: dict = {
+    "type": "function",
+    "function": {
+        "name": _NO_TOOL_FUNCTION_NAME,
+        "description": (
+            "Call this when the user is just chatting, greeting, saying "
+            "goodbye, asking a general question, or none of the other "
+            "functions clearly match their request."
+        ),
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+}
+
 _ROUTER_SYSTEM_PROMPT = (
     "You are JARVIS's tool-routing module. Look at the user's spoken command: if "
     "one of the provided functions clearly matches their intent, call ONLY that "
     "function, exactly once. If the user is just chatting, asking a general "
-    "question, or no function clearly matches their intent, do NOT call any "
-    "function.\n\n"
-    # KULLANICI BULGUSU: kucuk yerel model duz sohbet/selamlasma/vedalasma
-    # gibi HICBIR arac gerektirmeyen girdilerde bile SIK SIK rastgele bir
-    # arac (ör. read_notes) seciyordu - function-calling egitiminin "hep bir
-    # arac sec" onyargisi. Asagidaki ACIK ORNEKLER, "arac yok" secimini
-    # somut, taklit edilebilir bir kaliba donusturuyor - soyut bir kural
-    # ("sadece sohbetse arama") kucuk modeller icin yeterince baglayici
-    # degildi.\n"
-    "Examples where NO function must be called (plain chat/greeting/farewell/\n"
-    "small talk, even if a tool exists that is loosely related):\n"
-    '- "Hello" / "Merhaba" / "Görüşürüz" / "Bye" -> no function.\n'
-    '- "How are you?" / "Nasılsın?" -> no function.\n'
-    '- "Jarvis, my name is Tony." / "Jarvis, wake up." -> no function.\n'
+    f"question, or no function clearly matches their intent, call the "
+    f"`{_NO_TOOL_FUNCTION_NAME}` function instead.\n\n"
+    f"Examples where you must call `{_NO_TOOL_FUNCTION_NAME}` (plain chat/greeting/\n"
+    "farewell/small talk, even if a tool exists that is loosely related):\n"
+    f'- "Hello" / "Merhaba" / "Görüşürüz" / "Bye" -> call {_NO_TOOL_FUNCTION_NAME}.\n'
+    f'- "How are you?" / "Nasılsın?" -> call {_NO_TOOL_FUNCTION_NAME}.\n'
+    f'- "Jarvis, my name is Tony." / "Jarvis, wake up." -> call {_NO_TOOL_FUNCTION_NAME}.\n'
     '- Any question about JARVIS itself, opinions, or general knowledge that\n'
-    "  none of the functions are literally about -> no function.\n"
-    "When genuinely uncertain whether a function applies, prefer calling NO "
-    "function - a missed tool call is far cheaper than a wrong one.\n\n"
+    f"  none of the functions are literally about -> call {_NO_TOOL_FUNCTION_NAME}.\n"
+    f"When genuinely uncertain whether a function applies, prefer calling "
+    f"`{_NO_TOOL_FUNCTION_NAME}` - a missed tool call is far cheaper than a wrong one.\n\n"
     # search_music (Faz 3.3 gercek kullanim testi bulgusu): kucuk yerel modeller
     # "play <song>" gibi istekler icin belirli bir arac varken bile run_command'a
     # kacip URL/dosya yolu UYDURUYORDU (orn. var olmayan bir YouTube video ID'si
@@ -77,7 +105,16 @@ _ROUTER_SYSTEM_PROMPT = (
     "NEVER invent a file path, program location, or URL for run_command's "
     "command argument. Only use run_command for a command the user explicitly "
     "and literally dictated word-for-word. If you are not certain of the exact "
-    "command, do not call any function."
+    f"command, call {_NO_TOOL_FUNCTION_NAME} instead.\n"
+    # gercek kullanim testi bulgusu: "I need your approval, please check the
+    # terminal" (Jarvis'in KENDI onay anonsu, bkz. core/app.py:_APPROVAL_PENDING_MESSAGES)
+    # gibi SADECE "terminal"/"command"/"computer" KELIMELERINI ICEREN ama
+    # ASLINDA hicbir komut DIKTE ETMEYEN cumleler modelin bunu bizzat bir
+    # run_command cagrisi sanmasina yol aciyordu.
+    'A sentence that merely MENTIONS a terminal, command, or computer (e.g. '
+    '"I need your approval, please check the terminal") is NOT itself a '
+    f"command to run - call {_NO_TOOL_FUNCTION_NAME} unless the user dictates "
+    "an actual, literal command."
 )
 
 
@@ -139,7 +176,7 @@ class Dispatcher:
         # all_tools(): yerel TOOL_REGISTRY + MCP-kesfedilen araclarin birlesik
         # view'i (bkz. tools/registry.py, docs/ARCHITECTURE.md SS9.2) - TOOL_REGISTRY'nin
         # KENDISI degismiyor, sadece Router'a sunulan sema genisliyor.
-        tools_schema = build_ollama_tools(all_tools().values())
+        tools_schema = build_ollama_tools(all_tools().values()) + [_NO_TOOL_SCHEMA]
         orchestrator = AgentFactory.create("orchestrator")
         context = [{"role": "system", "content": _ROUTER_SYSTEM_PROMPT}]
 
@@ -162,6 +199,17 @@ class Dispatcher:
                 len(response.tool_calls),
             )
         call = response.tool_calls[0]
+
+        if call.name == _NO_TOOL_FUNCTION_NAME:
+            # Beklenen, DOGRU sonuc (bkz. _NO_TOOL_FUNCTION_NAME'in dosya-ustu
+            # notu) - normal bir sohbet turunde SIK SIK tetiklenecek, bu yuzden
+            # warning DEGIL, info seviyesinde loglaniyor (asagidaki "bilinmeyen
+            # arac" warning'inden bilincli olarak ayri tutuluyor).
+            logger.info(
+                "Dispatcher: router '%s' secti (duz sohbet/genel soru) -> chat.",
+                _NO_TOOL_FUNCTION_NAME,
+            )
+            return Intent(name=DEFAULT_INTENT_NAME, confidence=0.6, source="llm")
 
         tool = get_tool(call.name)
         if tool is None:
