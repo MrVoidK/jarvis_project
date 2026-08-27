@@ -154,15 +154,78 @@ a {
   }
 }
 
+/* ---- HUD paneli: yumusak gradyan dolgu + koseli-braket cerceve ----
+   Onceki surum duz tek-renk dolgu + tam dikdortgen 1px'lik SERT bir kenarlik
+   kullaniyordu (kullanici bulgusu: "keskin ve renksiz" hissettiriyordu).
+   Klasik sci-fi HUD dili - tam bir dikdortgen CIZGI yerine sadece dort
+   kosede parlayan "braket" isaretleri + cok yumusak bir ic gradyan + yavas
+   bir "sheen" (parlaklik) gecisi - hem daha az sert/kutu gibi duruyor hem
+   de "efektli" hissettiriyor. */
 .jv-glass {
-  background: var(--jv-panel);
-  border: 1px solid var(--jv-border);
+  position: relative;
+  background: linear-gradient(
+    165deg,
+    rgba(26, 20, 10, 0.62) 0%,
+    rgba(14, 12, 9, 0.58) 55%,
+    rgba(8, 7, 6, 0.6) 100%
+  );
+  border: 1px solid rgba(255, 191, 0, 0.1);
   border-radius: var(--jv-radius);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.4) inset,
-    0 8px 32px rgba(0, 0, 0, 0.45);
+    0 0 0 1px rgba(255, 191, 0, 0.05) inset,
+    0 0 42px rgba(255, 170, 0, 0.05) inset,
+    0 10px 36px rgba(0, 0, 0, 0.5);
+}
+
+.jv-glass::before {
+  /* dort kosede parlayan "braket" isaretleri - tam bir kutu cizgisi yerine */
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--jv-amber-bright), var(--jv-amber-bright)) top 8px left 8px / 16px 2px no-repeat,
+    linear-gradient(var(--jv-amber-bright), var(--jv-amber-bright)) top 8px left 8px / 2px 16px no-repeat,
+    linear-gradient(var(--jv-amber-bright), var(--jv-amber-bright)) top 8px right 8px / 16px 2px no-repeat,
+    linear-gradient(var(--jv-amber-bright), var(--jv-amber-bright)) top 8px right 8px / 2px 16px no-repeat,
+    linear-gradient(var(--jv-amber-bright), var(--jv-amber-bright)) bottom 8px left 8px / 16px 2px no-repeat,
+    linear-gradient(var(--jv-amber-bright), var(--jv-amber-bright)) bottom 8px left 8px / 2px 16px no-repeat,
+    linear-gradient(var(--jv-amber-bright), var(--jv-amber-bright)) bottom 8px right 8px / 16px 2px no-repeat,
+    linear-gradient(var(--jv-amber-bright), var(--jv-amber-bright)) bottom 8px right 8px / 2px 16px no-repeat;
+  opacity: 0.75;
+  filter: drop-shadow(0 0 3px var(--jv-amber-glow));
+}
+
+.jv-glass::after {
+  /* cok yavas, cok hafif bir "cam parlamasi" gecisi - sabit/duragan
+     hissetmemesi icin (gradyan efekt, kullanici geri bildirimi) */
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 224, 160, 0.05) 48%, transparent 66%);
+  background-size: 240% 240%;
+  animation: jv-sheen 11s ease-in-out infinite;
+}
+
+@keyframes jv-sheen {
+  0%,
+  100% {
+    background-position: 130% -10%;
+  }
+  50% {
+    background-position: -30% 110%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jv-glass::after {
+    animation: none;
+  }
 }
 
 .jv-glow-text {
@@ -174,5 +237,9 @@ a {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   font-size: 12px;
-  color: var(--jv-amber);
+  background: linear-gradient(90deg, var(--jv-amber-bright), var(--jv-amber) 70%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 12px var(--jv-amber-glow);
 }

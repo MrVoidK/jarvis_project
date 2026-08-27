@@ -10,14 +10,25 @@
 .jv-sysmon-gauges {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 .jv-ring-gauge {
   display: flex;
+  flex: 1 1 0;
+  min-width: 0;
   flex-direction: column;
   align-items: center;
   gap: 6px;
+}
+
+.jv-ring-gauge-svg {
+  /* Sabit piksel yerine viewBox-orantili oranti - panel daraldiginda
+     (ör. dar breakpoint) gostergeler TASMAK yerine kucculuyor. */
+  width: 100%;
+  max-width: 84px;
+  height: auto;
+  display: block;
 }
 
 .jv-ring-gauge-value {

@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 interface RingGaugeProps {
   label: string;
   value: number | null;
@@ -6,7 +8,8 @@ interface RingGaugeProps {
   size?: number;
 }
 
-export function RingGauge({ label, value, max, displayValue, size = 92 }: RingGaugeProps) {
+export function RingGauge({ label, value, max, displayValue, size = 84 }: RingGaugeProps) {
+  const gradientId = useId();
   const stroke = 6;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -16,13 +19,21 @@ export function RingGauge({ label, value, max, displayValue, size = 92 }: RingGa
 
   return (
     <div className="jv-ring-gauge">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {/* viewBox sabit, gercek piksel genisligi CSS'e (%100 + max-width) birakiliyor
+          - boylece panel daraldiginda gostergeler TASMAK yerine oranli kucculuyor. */}
+      <svg viewBox={`0 0 ${size} ${size}`} className="jv-ring-gauge-svg">
+        <defs>
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--jv-amber-dim)" />
+            <stop offset="100%" stopColor="var(--jv-amber-bright)" />
+          </linearGradient>
+        </defs>
         <circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="rgba(255,191,0,0.12)"
+          stroke="rgba(255,191,0,0.1)"
           strokeWidth={stroke}
         />
         {!isUnavailable && (
@@ -31,7 +42,7 @@ export function RingGauge({ label, value, max, displayValue, size = 92 }: RingGa
             cy={size / 2}
             r={radius}
             fill="none"
-            stroke="var(--jv-amber)"
+            stroke={`url(#${gradientId})`}
             strokeWidth={stroke}
             strokeLinecap="round"
             strokeDasharray={circumference}
