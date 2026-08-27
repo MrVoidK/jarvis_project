@@ -9,7 +9,7 @@ alt sinifi eklemekten ibarettir (bkz. docs/ARCHITECTURE.md SS3).
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 
 @dataclass
@@ -41,6 +41,23 @@ class Agent(ABC):
         dogrudan devralabilir.
         """
         raise NotImplementedError
+
+    def respond_stream(
+        self, prompt: str, context: Optional[list[dict]] = None
+    ) -> Iterator[str]:
+        """Yaniti PARCA PARCA (cumle degil, ham metin chunk'lari) uretir.
+
+        Varsayilan implementasyon native streaming'i olmayan adapterler icin
+        respond()'un tam yanitini TEK bir chunk olarak yield eder; gercek
+        streaming yapan adapterler (yerel Ollama) bunu override eder.
+
+        respond()/call_tools()'un aksine saglayici hatalarini (httpx.ConnectError,
+        ollama.ResponseError vb.) YUTMAZ - bu generator'un tek tuketicisi
+        brain/llm.py:think_and_respond_stream, kendi TR/EN hata siniflandirmasi
+        ve history mantigina sahip; ham hata ona propagate edilir (bkz.
+        docs/jarvis-mimari-v2-multiagent-entegrasyon.md SS2.4).
+        """
+        yield self.respond(prompt, context)
 
     @abstractmethod
     def supports_tools(self) -> bool:

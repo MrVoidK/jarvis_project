@@ -65,11 +65,14 @@ _RULES: dict[str, list[tuple[str, re.Pattern]]] = {
 # gercek bir Tool degil, sadece classify()'in Ollama'ya sundugu semaya ayrica
 # eklenen bir "kacis yolu".
 #
-# NEDEN GEREKLI (kok neden dogrulandi - `ollama show llama3.1:8b --modelfile`):
-# `ollama.chat(..., tools=[...])` cagrildiginda, llama3.1:8b'nin Ollama sablonu
-# kullanicinin SON turunu sunucu tarafinda, KOSULSUZ olarak "Given the following
-# functions, please respond with a JSON for a function call..." seklinde yeniden
-# yaziyor - bu sablonda "ya da hicbir fonksiyon cagirma" dalı YOK. Bu, uretimden
+# NEDEN GEREKLI (kok neden dogrulandi - `ollama show llama3.1:8b --modelfile`;
+# Faz 6.2'de router qwen2.5:3b'ye tasindi, ayni davranis canli test edildi -
+# bkz. docs/ROADMAP.md Faz 6.2 dogrulama):
+# `ollama.chat(..., tools=[...])` cagrildiginda, kucuk yerel modellerin Ollama
+# sablonu kullanicinin SON turunu sunucu tarafinda, KOSULSUZ olarak "Given the
+# following functions, please respond with a JSON for a function call..."
+# seklinde yeniden yaziyor - bu sablonda "ya da hicbir fonksiyon cagirma" dalı
+# YOK. Bu, uretimden
 # hemen once, en yuksek-dikkat konumda oturuyor ve asagidaki _ROUTER_SYSTEM_PROMPT'un
 # "arac yoksa HICBIR FONKSIYON cagirma" talimatini YAPISAL OLARAK eziyor - bu
 # yuzden temperature dusurmek VE promptu "hicbir fonksiyon cagirma" ornekleriyle
@@ -146,8 +149,10 @@ class Intent(BaseModel):
 
 class Dispatcher:
     """Hibrit intent siniflandirici: once `_RULES`'a (fast-path) bakar, eslesme
-    yoksa Orkestrator'e (AgentFactory.create("orchestrator")) TOOL_REGISTRY'deki
-    araclardan birini secmesi icin native tool-calling ile sorar.
+    yoksa ayri bir mini router modeline (AgentFactory.create("router"), Faz 6.2 -
+    su an qwen2.5:3b) TOOL_REGISTRY'deki araclardan birini secmesi icin native
+    tool-calling ile sorar. Kucuk/hizli router modeli, sohbet turlarindaki
+    cift-8B cagri gecikmesini azaltir (bkz. docs/mimari-genel-bakis.md SS20 madde 1).
     """
 
     def match_rule(self, text: str) -> Optional[Intent]:
@@ -178,12 +183,11 @@ class Dispatcher:
     def classify(self, text: str) -> Intent:
         """Fast-path regex + semantic router (Ollama native tool-calling) hibriti.
 
-        Bilinen maliyet (kabul edilen trade-off): rule-eslesmeyen her turda
-        artik router icin bir LLM cagrisi yapiliyor - eslesme yoksa Brain'e
-        (ikinci bir LLM cagrisi) dusuluyor. Bu, eski "sadece match_rule, hic
-        LLM yok" davranisina kiyasla bir gecikme maliyeti (bkz. docs/ROADMAP.md
-        "gelecek iyilestirme": router+chat'i tek cagriya birlestirme veya daha
-        kucuk/hizli bir router modeli).
+        Maliyet (Faz 6.2 ile azaltildi): rule-eslesmeyen her turda router icin
+        bir LLM cagrisi yapiliyor; eslesme yoksa Brain'e (ikinci cagri)
+        dusuluyor. Router artik ayri, kucuk bir model (`qwen2.5:3b`, ~1 GB)
+        oldugu icin bu ilk cagri cok daha ucuz - eski "router da 8B" durumundaki
+        cift-8B gecikmesi cozuldu (bkz. docs/mimari-genel-bakis.md SS20 madde 1).
         """
         rule_match = self.match_rule(text)
         if rule_match is not None:
@@ -194,11 +198,11 @@ class Dispatcher:
         # view'i (bkz. tools/registry.py, docs/ARCHITECTURE.md SS9.2) - TOOL_REGISTRY'nin
         # KENDISI degismiyor, sadece Router'a sunulan sema genisliyor.
         tools_schema = build_ollama_tools(all_tools().values()) + [_NO_TOOL_SCHEMA]
-        orchestrator = AgentFactory.create("orchestrator")
+        router = AgentFactory.create("router")
         context = [{"role": "system", "content": _ROUTER_SYSTEM_PROMPT}]
 
         with status_spinner("Yönlendiriliyor..."):
-            response = orchestrator.call_tools(text, tools=tools_schema, context=context)
+            response = router.call_tools(text, tools=tools_schema, context=context)
 
         # /debug (core/cli_commands.py) icin: router'in HAM cevabi - varsayilan
         # INFO seviyesinde gorunmez, sadece log seviyesi DEBUG'a cekildiginde.

@@ -1,6 +1,6 @@
 """Semantic router (Dispatcher.classify) testleri - gercek Ollama cagrisi YAPILMAZ.
 
-AgentFactory.create("orchestrator") monkeypatch'lenip sahte bir Agent (call_tools()
+AgentFactory.create("router") monkeypatch'lenip sahte bir Agent (call_tools()
 onceden belirlenmis bir AgentToolResponse donduren) ile degistiriliyor - testler
 Ollama'nin calisiyor olmasina bagimli degil.
 
@@ -30,7 +30,7 @@ def _no_real_mcp_calls(monkeypatch):
     monkeypatch.setattr(dispatcher_module, "get_tool", TOOL_REGISTRY.get)
 
 
-class _StubOrchestrator:
+class _StubRouter:
     def __init__(self, response: AgentToolResponse):
         self._response = response
 
@@ -38,9 +38,9 @@ class _StubOrchestrator:
         return self._response
 
 
-def _patch_orchestrator(monkeypatch, response: AgentToolResponse):
+def _patch_router(monkeypatch, response: AgentToolResponse):
     monkeypatch.setattr(
-        dispatcher_module.AgentFactory, "create", staticmethod(lambda role: _StubOrchestrator(response))
+        dispatcher_module.AgentFactory, "create", staticmethod(lambda role: _StubRouter(response))
     )
 
 
@@ -58,7 +58,7 @@ def test_classify_fast_path_never_calls_agent_factory(monkeypatch):
 
 
 def test_classify_returns_known_tool_selected_by_router(monkeypatch):
-    _patch_orchestrator(
+    _patch_router(
         monkeypatch,
         AgentToolResponse(tool_calls=[ToolCall(name="media_next_track", arguments={})]),
     )
@@ -72,7 +72,7 @@ def test_classify_returns_known_tool_selected_by_router(monkeypatch):
 
 
 def test_classify_passes_through_tool_arguments(monkeypatch):
-    _patch_orchestrator(
+    _patch_router(
         monkeypatch,
         AgentToolResponse(tool_calls=[ToolCall(name="create_note", arguments={"content": "sut al"})]),
     )
@@ -84,7 +84,7 @@ def test_classify_passes_through_tool_arguments(monkeypatch):
 
 
 def test_classify_falls_back_to_chat_when_no_tool_selected(monkeypatch):
-    _patch_orchestrator(monkeypatch, AgentToolResponse(tool_calls=[]))
+    _patch_router(monkeypatch, AgentToolResponse(tool_calls=[]))
 
     intent = Dispatcher().classify("bugün hava nasıl?")
 
@@ -96,7 +96,7 @@ def test_classify_returns_chat_when_router_selects_no_tool_needed(monkeypatch):
     """Sentinel kacis yolu (bkz. dispatcher.py:_NO_TOOL_FUNCTION_NAME) - router
     ACIKCA 'no_tool_needed' secerse, jenerik 'bilinmeyen arac' yoluna DUSMEDEN
     (ayri, bilerek-yazilmis bir kontrolle) chat'e donmeli."""
-    _patch_orchestrator(
+    _patch_router(
         monkeypatch,
         AgentToolResponse(
             tool_calls=[ToolCall(name=dispatcher_module._NO_TOOL_FUNCTION_NAME, arguments={})]
@@ -132,7 +132,7 @@ def test_classify_sends_no_tool_needed_schema_to_router(monkeypatch):
 
 
 def test_classify_falls_back_to_chat_when_router_hallucinates_unknown_tool(monkeypatch):
-    _patch_orchestrator(
+    _patch_router(
         monkeypatch,
         AgentToolResponse(tool_calls=[ToolCall(name="not_a_real_tool", arguments={})]),
     )
@@ -148,7 +148,7 @@ def test_classify_falls_back_to_chat_when_router_produces_wrong_argument_type(mo
     her zaman uymayabilir - "content" bir string yerine bir liste gelirse
     (fail-closed validate_arguments) tum cagri reddedilmeli, dogrulanmamis
     deger asla Intent.parameters'a ulasmamali."""
-    _patch_orchestrator(
+    _patch_router(
         monkeypatch,
         AgentToolResponse(
             tool_calls=[ToolCall(name="create_note", arguments={"content": ["rm", "-rf", "/"]})]

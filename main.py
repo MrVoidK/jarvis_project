@@ -27,10 +27,15 @@ with status_spinner("[MOUTH] XTTS-v2 yükleniyor..."):
     import src.jarvis.mouth.tts  # noqa: F401 - side effect: model yukleme
 
 with status_spinner("[BRAIN] Ollama bağlantısı kontrol ediliyor..."):
-    from src.jarvis.adapters.agent_factory import check_ollama_connection
+    from src.jarvis.adapters.agent_factory import ROUTER_MODEL_NAME, check_ollama_connection
 
+    # Faz 6.2: sohbet/orkestrator (hermes3:8b) VE mini router (qwen2.5:3b) ayri
+    # modeller - ikisi de boot'ta dogrulaniyor. Ikisi de fatal degil: router
+    # eksikse classify() 404'te chat'e duser (bkz. dispatcher.py).
     _brain_ok, _brain_message = check_ollama_connection()
+    _router_ok, _router_message = check_ollama_connection(ROUTER_MODEL_NAME)
 print_system(_brain_message, level="success" if _brain_ok else "warning")
+print_system(_router_message, level="success" if _router_ok else "warning")
 
 with status_spinner("[HUD] Web arayüzü köprüsü (FastAPI) başlatılıyor..."):
     from src.jarvis.core.api import API_HOST, API_PORT, start_api_server_thread

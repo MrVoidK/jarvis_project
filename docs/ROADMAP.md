@@ -839,7 +839,7 @@ Alt adımlar:
       bir GPU dahil) taşınırken hangi adımların (bkz. `CLAUDE.md` Komutlar
       bölümü) tekrarlanması gerektiği netleştirilir.
 
-## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1 tamam, 6.2+ bekliyor)
+## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.2 tamam, 6.3+ bekliyor)
 
 `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`'deki "Faz A–I" planının
 ROADMAP numaralandırmasına taşınmış hâli — mimari gerekçe ve tam spec o
@@ -899,33 +899,52 @@ result(timeout)` çalışan thread'i durduramaz (kabul edilen sınır, kod yorum
 uyumluluk). (3) Ad-allowlist'i `is_path_safe` içinde değil ayrı
 `is_safe_component_name()` helper'ında (SRP + test edilebilirlik).
 
-### 6.2 Model Konsolidasyonu & Brain Refactor (v2 Faz B) ⬜
+### 6.2 Model Konsolidasyonu & Brain Refactor (v2 Faz B) ✅
 
 VRAM bütçesi (`docs/mimari-genel-bakis.md` §20 madde 12), çift-LLM-çağrısı
 gecikmesi (madde 1) ve "sohbet yolu `Agent` arayüzünü kullanmıyor" (madde 2)
-sorunlarını aynı anda çözer.
+sorunlarını aynı anda çözdü.
 
 Alt adımlar:
-- [ ] **Tek paylaşımlı model** — `orchestrator` ve `tool_agent` rolleri aynı
-      `hermes3:8b` modelini paylaşır (iki ayrı 8B model 12 GB'a sığmıyor);
-      `llama3.1:8b` bırakılır. `adapters/agent_factory.py:ROLE_MODEL_MAP`
-      eklenir; `LlamaOrchestratorAdapter` `role_prompt: str` ctor parametresiyle
-      genelleştirilir (rol farkı = sistem promptu, ayrı sınıf değil);
-      `HermesAgentAdapter` retire edilir.
-- [ ] **`respond_stream()`** — `agents/base.py:Agent` ABC'ye eklenir;
-      `brain/llm.py:think_and_respond_stream()` artık `ollama.chat`'i doğrudan
-      değil `agent.respond_stream()` üzerinden çağırır (cümle bölme, `history`
-      kırpma, Ollama hata sınıflandırması `brain/llm.py`'de kalır).
-- [ ] **Mini router modeli** — intent sınıflandırma için ayrı, küçük bir model
-      (`qwen2.5:1.5b`/3b, ~1 GB); `ROLE_MODEL_MAP["router"]`,
-      `core/dispatcher.py:Dispatcher.classify()` bunu `AgentFactory.create("router")`
-      ile kullanır. Gerekçe: çift-8B çağrısı gecikmesinin (madde 1) ölçülüp
-      azaltılması.
-- [ ] **Model A/B (opsiyonel, Faz B öncesi)** — Hermes3:8b vs Qwen3:8b bir
-      günlük karşılaştırma; sadece `ROLE_MODEL_MAP` string'i değişir.
-- [ ] **Regresyon** — Faz B sonrası `pipeline-debugger` + `verify-brain-pipeline`
-      skill'iyle; `no_tool_needed` sentinel'inin (`docs/mimari-genel-bakis.md`
-      §7.3) hâlâ gerekli olup olmadığı TR ve EN girdiyle test edilir (v2 §14).
+- [x] **Tek paylaşımlı model** — `orchestrator` ve `tool_agent` rolleri aynı
+      `hermes3:8b`'yi paylaşır; `llama3.1:8b` bırakıldı.
+      `adapters/agent_factory.py:ROLE_MODEL_MAP` eklendi;
+      `LlamaOrchestratorAdapter` → `OllamaAgentAdapter` (çok-rollü, `model_name`
+      parametreli); `HermesAgentAdapter` silindi.
+- [x] **`respond_stream()`** — `agents/base.py:Agent` ABC'ye somut varsayılan
+      metod eklendi (`yield self.respond(...)`), `OllamaAgentAdapter` gerçek
+      streaming'le override ediyor. `brain/llm.py:think_and_respond_stream()`
+      artık `AgentFactory.create("orchestrator").respond_stream()` üzerinden;
+      cümle bölme / `history` / hata sınıflandırması `brain/llm.py`'de kaldı.
+- [x] **Mini router modeli** — `ROLE_MODEL_MAP["router"] = "qwen2.5:3b"`;
+      `core/dispatcher.py:Dispatcher.classify()` `AgentFactory.create("router")`
+      kullanıyor. `main.py` boot'ta hem `hermes3:8b` hem `qwen2.5:3b` doğruluyor.
+- [x] **Regresyon + canlı doğrulama** — `python -m pytest tests/` 125 yeşil
+      (+`tests/test_brain_llm.py` yeni). `verify-brain-pipeline`: EN girdi → EN
+      yanıt, tek cümle, markdown yok, 2. çağrıda hafıza (hermes3:8b). Canlı
+      router testi (`qwen2.5:3b`, 11 girdi): 11/11 doğru — 4 düz sohbet (TR+EN)
+      → `chat` (spurious tool yok), tool komutları doğru araca.
+- [x] **`no_tool_needed` sentinel yeniden-testi** — `_NO_TOOL_SCHEMA` şemadan
+      çıkarılıp 5 düz sohbet girdisi `qwen2.5:3b`'ye verildi → hepsi boş
+      `tool_calls` döndü. Yani `qwen2.5:3b`'de `llama3.1:8b`'nin "hep bir araç
+      çağır" şablon önyargısı YOK; sentinel **bu modelle gereksiz olabilir**.
+      Ama 6.2'de KALDIRILMADI (zararsız + `hermes3`/`llama3.1`'e geri dönülürse
+      hâlâ gerekli) — sentinel temizliği ayrı bir gelecek adım.
+- **VRAM notu:** `hermes3:8b` (~5 GB) + `qwen2.5:3b` (~2.2 GB) + Whisper (~2) +
+      XTTS (~2.5) ≈ 11.7-12.6 GB, 12 GB sınırına çok yakın. Ollama'nın
+      `keep_alive` (5 dk) boşta modeli tahliye ettiği için pratikte 4'ü aynı
+      anda hot olmuyor; yine de canlı `python main.py` oturumunda `nvidia-smi`
+      izlenmeli (ARCHITECTURE.md §5 öneri #2: sıralı yükleme fallback'i).
+
+**v2 §2.2–2.4'ten bilinçli sapmalar:** (1) Adapter'a `role_prompt` ctor param'ı
+EKLENMEDİ — sistem/rol promptu çağıran taraftan `context` ile geliyor (mevcut
+tasarım); `role_prompt`, `tool_agent`'ın kendi persona'sına ihtiyaç duyduğu
+Faz 6.3'te eklenecek. (2) `respond_stream()` ABC'de abstract değil somut
+varsayılan (native streaming'i olmayan adapter tek-parçaya düşer). (3)
+`respond_stream()` sağlayıcı hatalarını YUTMAZ (propagate) — `respond`/`call_tools`
+hata-string döner ama streaming tüketicisi `brain/llm.py` kendi TR/EN + history
+mantığına sahip (v2 §2.4). (4) `LlamaOrchestratorAdapter` → `OllamaAgentAdapter`
+yeniden adlandırıldı.
 
 ### 6.3 Multi-Agent Aktivasyonu (v2 Faz C) ⬜
 

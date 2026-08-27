@@ -1,20 +1,23 @@
 ---
 name: verify-brain-pipeline
-description: Jarvis'in Brain katmanini (main.py, Ollama + llama3.1) mikrofon gerektirmeden bir ornek metinle dogrular. Brain/prompt/main.py degistikten sonra veya "brain'i dogrula" dendiginde kullan.
+description: Jarvis'in Brain katmanini (main.py, Ollama + hermes3:8b) mikrofon gerektirmeden bir ornek metinle dogrular. Brain/prompt/main.py degistikten sonra veya "brain'i dogrula" dendiginde kullan.
 disable-model-invocation: false
 ---
 
 ## On kosul
 
-Ollama servisi calisiyor ve `llama3.1:8b` modeli cekilmis olmali
-(`src/jarvis/brain/llm.py` icindeki `MODEL_NAME` ile birebir eslesmeli -
-etiketsiz `llama3.1` Ollama'da 404 hatasi verir):
+Ollama servisi calisiyor ve `hermes3:8b` modeli cekilmis olmali (Faz 6.2:
+orchestrator/sohbet modeli artik `adapters/agent_factory.py:ROLE_MODEL_MAP
+["orchestrator"]` = `hermes3:8b`; `brain/llm.py:MODEL_NAME` bunu yansitir -
+etiketsiz `hermes3` Ollama'da 404 verir):
 
 ```
 ollama list
 ```
 
-`llama3.1:8b` listede yoksa `ollama pull llama3.1:8b` calistir.
+`hermes3:8b` listede yoksa `ollama pull hermes3:8b` calistir. (Router yolu
+ayrica `qwen2.5:3b` kullanir - bu skill sadece sohbet yolunu dogrular,
+router icin `verify-multiagent-integration` skill'ine bak.)
 
 ## Brain'i tek basina dogrula (mikrofon olmadan)
 
