@@ -6,6 +6,10 @@ testler gercek Obsidian vault'una veya jarvis_workspace/ dizinine dokunmaz.
 Calistirma: `python -m pytest tests/ -v` (repo kokunden, bkz. CLAUDE.md Komutlar).
 """
 
+import time
+from types import SimpleNamespace
+
+from src.jarvis.core import app as app_module
 from src.jarvis.core.dispatcher import SHUTDOWN_INTENT_NAME, Dispatcher
 from src.jarvis.core.risk import RiskLevel, evaluate_approval_answer, requires_approval
 from src.jarvis.tools import files as files_module
@@ -231,3 +235,48 @@ def test_dispatcher_match_rule_no_longer_handles_former_regex_intents():
 # tools/media_tool.py (yerel Windows medya tuslari) uzerinden. Dispatcher'in
 # play_music/pause_music/skip_track regex testleri, _RULES semantic router'a
 # devredilirken (bkz. sonraki commit) buradan kaldirilacak.
+
+
+# --- tool zaman asimi sarmalayicisi (Faz 6.1) ---
+
+
+class _FakeTool:
+    """_run_tool_pipeline sadece .name/.risk_level/.execute'e bakiyor - gercek
+    bir Tool alt sinifi sart degil. LOW risk -> onay yolu atlanir."""
+
+    risk_level = RiskLevel.LOW
+
+    def __init__(self, name, execute_fn):
+        self.name = name
+        self._execute_fn = execute_fn
+
+    def execute(self, params, stop_event=None):
+        return self._execute_fn(params)
+
+
+def _fake_intent():
+    return SimpleNamespace(name="fake", parameters={"lang": "en"})
+
+
+def test_tool_execution_times_out(monkeypatch):
+    """Donmus bir tool, _TOOL_EXEC_TIMEOUT_SECONDS'ten fazla ana dongu bloklamaz;
+    kullaniciya lokalize zaman-asimi mesaji donulur."""
+    monkeypatch.setattr(app_module, "_TOOL_EXEC_TIMEOUT_SECONDS", 0.5)
+    tool = _FakeTool("slow_tool", lambda params: time.sleep(5) or "gec kalan sonuc")
+
+    started = time.monotonic()
+    result = app_module._run_tool_pipeline(tool, _fake_intent(), stop_event=None)
+    elapsed = time.monotonic() - started
+
+    assert result == app_module._TOOL_TIMEOUT_MESSAGES["en"]
+    assert elapsed < 3.0, f"timeout sarmalayicisi beklemeyi kesmedi ({elapsed:.1f}s)"
+
+
+def test_tool_execution_normal_path_unaffected(monkeypatch):
+    """Hizli bir tool'un sonucu, sarmalayici eklendikten sonra da aynen doner."""
+    monkeypatch.setattr(app_module, "_TOOL_EXEC_TIMEOUT_SECONDS", 5.0)
+    tool = _FakeTool("fast_tool", lambda params: "hepsi yolunda")
+
+    result = app_module._run_tool_pipeline(tool, _fake_intent(), stop_event=None)
+
+    assert result == "hepsi yolunda"

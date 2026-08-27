@@ -1,5 +1,7 @@
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Callable, Iterator, Optional
 
 from src.jarvis.brain.llm import SYSTEM_PROMPT, think_and_respond_stream
@@ -56,10 +58,22 @@ _TOOL_FAILED_MESSAGES = {
     "tr": "Aracı çalıştırırken bir hata oluştu.",
     "en": "Something went wrong while running that tool.",
 }
+_TOOL_TIMEOUT_MESSAGES = {
+    "tr": "Bu işlem çok uzun sürdü, durdurdum.",
+    "en": "That action took too long, so I stopped it.",
+}
 _SHUTDOWN_MESSAGES = {
     "tr": "Anlaşıldı, kapanıyorum.",
     "en": "Understood, shutting down.",
 }
+
+# Bir tool cagrisi bu sureyi asarsa iptal edilir ve kullaniciya zaman-asimi
+# mesaji donulur. Donmus/kotu niyetli bir arac (ozellikle ic timeout'u olmayan
+# bir MCP cagrisi) run_jarvis() ana dongusunu suresiz bloklamamali - bkz. bu
+# modulun docstring'i "tek bir bloklayici cagriyi kesemez" sinirlamasi. MCP'nin
+# kendi ic timeout'u (adapters/mcp_client_adapter.py) daha kisadir; bu, ic
+# timeout'u olmayan araclar icin son emniyet katmani. Testlerde monkeypatch'lenir.
+_TOOL_EXEC_TIMEOUT_SECONDS = 30.0
 
 
 def _localized(messages: dict[str, str], lang: str) -> str:
@@ -213,12 +227,30 @@ def _run_tool_pipeline(
             return _localized(_APPROVAL_DENIED_MESSAGES, lang)
 
     # (3) Calistir - tek bir kotu tool cagrisi run_jarvis()'in dongusunu cokertmemeli
-    # (_transcribe()/speak()'teki ayni izolasyon deseni).
+    # (_transcribe()/speak()'teki ayni izolasyon deseni). tool.execute() ayri bir
+    # worker thread'de kosuluyor: ic timeout'u olmayan donmus bir arac (ornegin
+    # bir MCP cagrisi) ana dongude _TOOL_EXEC_TIMEOUT_SECONDS'ten fazla bloklama
+    # yapamasin. KABUL EDILEN SINIR: future.result(timeout) zaman asiminda calisan
+    # thread'i durduramaz - kullaniciya hata donulur ama thread kendi bitene kadar
+    # arka planda kalir (concurrent.futures'in yapisi; MCP'nin kendi asyncio
+    # iptali daha guclu, bkz. adapters/mcp_client_adapter.py).
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"tool-{tool.name}")
+    future = executor.submit(tool.execute, intent.parameters)
     try:
-        result = tool.execute(intent.parameters)
+        result = future.result(timeout=_TOOL_EXEC_TIMEOUT_SECONDS)
+    except FuturesTimeout:
+        # FuturesTimeout, Exception'in alt sinifi - bu blok asagidaki genel
+        # 'except Exception'dan ONCE gelmeli.
+        logger.error(
+            "Tool zaman asimina ugradi (%s, %.0fs)", tool.name, _TOOL_EXEC_TIMEOUT_SECONDS
+        )
+        executor.shutdown(wait=False, cancel_futures=True)
+        return _localized(_TOOL_TIMEOUT_MESSAGES, lang)
     except Exception as exc:
         logger.error("Tool calistirilamadi (%s): %s", tool.name, exc)
+        executor.shutdown(wait=False, cancel_futures=True)
         return _localized(_TOOL_FAILED_MESSAGES, lang)
+    executor.shutdown(wait=False)
 
     # (4) MCP entegrasyonu (Faz 4.5, bkz. docs/ARCHITECTURE.md SS9.5) DONUS
     # degerini de guardrail'e sokuyor - eskiden SADECE girdi parametreleri

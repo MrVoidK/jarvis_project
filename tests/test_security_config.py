@@ -12,6 +12,7 @@ from src.jarvis.core.security_config import (
     SecurityConfig,
     get_obsidian_vault,
     is_path_safe,
+    is_safe_component_name,
     load_security_config,
     resolve_app_command,
 )
@@ -60,6 +61,46 @@ def test_is_path_safe_rejects_symlink_escape(tmp_path):
     link.symlink_to(secret)
 
     assert not is_path_safe(link, config=config)
+
+
+def test_is_path_safe_rejects_device_namespace_prefix(tmp_path):
+    # `\\?\C:\...` / `\\.\...` biciminde bir yol, izinli dizinin icini gosterse
+    # bile dogrudan reddedilmeli - resolve() bu onekleri guvenilir normalize
+    # etmedigi icin containment kontrolu yanildabilir.
+    config = _config_for(tmp_path)
+    inside = config.allowed_directories[0] / "note.md"
+    assert not is_path_safe(f"\\\\?\\{inside}", config=config)
+    assert not is_path_safe(f"\\\\.\\{inside}", config=config)
+    assert not is_path_safe(f"//?/{inside}", config=config)
+
+
+def test_is_path_safe_rejects_unc_path(tmp_path):
+    config = _config_for(tmp_path)
+    assert not is_path_safe(r"\\evil-server\share\payload.md", config=config)
+    assert not is_path_safe("//evil-server/share/payload.md", config=config)
+
+
+def test_is_path_safe_allow_create_false_requires_existing_path(tmp_path):
+    config = _config_for(tmp_path)
+    missing = config.allowed_directories[0] / "not_yet.md"
+
+    # varsayilan (allow_create=True): yolun var olmasi gerekmez
+    assert is_path_safe(missing, config=config)
+    # allow_create=False: yol diskte VAR olmali
+    assert not is_path_safe(missing, config=config, allow_create=False)
+
+    missing.write_text("x", encoding="utf-8")
+    assert is_path_safe(missing, config=config, allow_create=False)
+
+
+def test_is_safe_component_name_accepts_plain_names():
+    for name in ("my_project", "proj-1", "a.b", "v2", "Jarvis", "x"):
+        assert is_safe_component_name(name), name
+
+
+def test_is_safe_component_name_rejects_unsafe_names():
+    for name in ("", ".", "..", "a/b", "a\\b", ".hidden", "a b", "C:", "a\x00b", "-x", "_x"):
+        assert not is_safe_component_name(name), name
 
 
 def test_load_security_config_happy_path(tmp_path, monkeypatch):

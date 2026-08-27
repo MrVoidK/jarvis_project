@@ -17,6 +17,7 @@ gibi bir kardes dizin, "C:\\vault" icin prefix-string testiyle yanlislikla
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -97,26 +98,81 @@ def _get_config() -> SecurityConfig:
     return _config_cache
 
 
-def is_path_safe(path: "os.PathLike[str] | str", config: Optional[SecurityConfig] = None) -> bool:
+# Windows aygit ad-alani (`\\?\`, `\\.\`) ve UNC (`\\server\share`) onekleri.
+# Path.resolve() bunlari guvenilir sekilde normalize ETMEZ; boyle bir yol
+# is_relative_to() karsilastirmasinda beklenmedik davranabilir veya bir aga
+# paylasimini yanlislikla "izinli dizin icinde" gibi gosterebilir. Bir tool
+# LLM/kullanici turevli bir yol parametresini buraya gecirmeye basladiginda
+# (Faz 6.7 CreateProjectTool) bu onekler dogrudan reddedilmeli.
+_DEVICE_NAMESPACE_PREFIXES = ("\\\\?\\", "\\\\.\\", "//?/", "//./")
+
+# LLM/kullanici turevli TEK bir yol bileseni icin izin listesi: harf-rakam ile
+# baslar, govdede yalnizca nokta/tire/alt-tire. Bosluk, yol ayiraci, gizli-dosya
+# onegi, "." / "..", surucu/ADS (`:`) ve kontrol karakterleri disarida kalir.
+_SAFE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _has_unsafe_prefix(raw: "os.PathLike[str] | str") -> bool:
+    """`raw`, UNC veya Windows aygit ad-alani onekiyle mi basliyor? (bkz. yorum)"""
+    s = str(raw).strip()
+    return s.startswith(_DEVICE_NAMESPACE_PREFIXES) or s.startswith(("\\\\", "//"))
+
+
+def is_safe_component_name(name: str) -> bool:
+    """LLM/kullanici turevli TEK bir yol bileseni (proje/klasor/dosya adi) guvenli mi?
+
+    Harf-rakam ile baslar; govdede `.` `-` `_` serbest. Yasak: bosluk, yol
+    ayiraci (`/` `\\`), `.` / `..`, gizli-dosya onegi, `:` (surucu/ADS),
+    kontrol karakteri, bos string. `is_path_safe()` tam yolu izinli dizinlere
+    KARSI dogrular; bu ise henuz path'e cevrilmemis, guvenilmeyen tek parcayi
+    erken eler (defense-in-depth - CreateProjectTool project_name'i bununla
+    suzup sonra is_path_safe'e gecirir).
+    """
+    return (
+        bool(name)
+        and name not in {".", ".."}
+        and _SAFE_COMPONENT_RE.fullmatch(name) is not None
+    )
+
+
+def is_path_safe(
+    path: "os.PathLike[str] | str",
+    config: Optional[SecurityConfig] = None,
+    *,
+    allow_create: bool = True,
+) -> bool:
     """`path`, izinli dizinlerden birinin icinde mi (veya birebir kendisi mi)?
 
-    KAPSAM UYARISI (security-reviewer bulgusu, Faz 3.3): bu fonksiyon su an
-    SADECE kod-sabit yollarla (notes_tool.py'nin `<vault>/Jarvis Notes/
-    Jarvis Log.md`'si gibi, LLM/kullanici girdisi hic karismadan kurulmus
-    yollarla) cagriliyor ve bu kullanimda guvenli. Ama genel-amacli bir
-    guvenlik primitive'i gibi gorunuyor - ileride bir tool, LLM'in urettigi
-    bir dosya adi/yolu parametresini DOGRUDAN buraya geçirirse, şunlar EK
-    olarak ele alinmadan kullanilmamali: (a) UNC yollari (`\\\\server\\share`)
-    veya `\\\\?\\`/`\\\\.\\` cihaz ad alani onekleri icin acik bir ret,
-    (b) dosya adi/uzantisi uzerinde bir allowlist - bu fonksiyon SADECE dizin
-    bazli calisir, izinli bir dizin icindeki `.env`/`.git/config` gibi
-    hassas dosyalara erisimi engellemez.
+    UNC / aygit ad-alani onekli yollar (`\\\\server\\share`, `\\\\?\\...`,
+    `\\\\.\\...`) her zaman dogrudan reddedilir - resolve() bunlari guvenilir
+    normalize etmedigi icin containment kontrolu yanildabilir.
+
+    `allow_create`: varsayilan `True` iken yalnizca containment bakilir (yolun
+    diskte var olmasi gerekmez - notes_tool ilk not oncesi henuz olmayan bir
+    dizini kontrol ediyor). `False` verilirse yol ayrica diskte VAR olmali;
+    LLM'in urettigi bir yolu alan, "yazim hatasiyla yeni dosya olusturma"
+    istemeyen okuma araclari icin. (v2 §7.2 varsayilani `False` idi; mevcut
+    cagiranlari kirmamak icin burada `True`'ya cevrildi - bilincli sapma.)
+
+    Tek bir dosya/klasor adinin (LLM turevli) karakter allowlist'i icin ayri
+    `is_safe_component_name()` var - bu fonksiyon dizin-bazli calisir, izinli
+    bir dizin icindeki `.env` gibi hassas dosyalara erisimi engellemez (kabul
+    edilen sinir).
 
     `resolve()` symlink'leri gercek hedefe cozdugu icin bir symlink uzerinden
     izinli dizin disina kacis da otomatik yakalanir.
     """
+    if _has_unsafe_prefix(path):
+        logger.warning("Path guvensiz onek (UNC/aygit ad-alani), reddedildi: %s", path)
+        return False
+
     cfg = config or _get_config()
     resolved = Path(path).resolve(strict=False)
+
+    if not allow_create and not resolved.exists():
+        logger.warning("Path yok (allow_create=False), reddedildi: %s", resolved)
+        return False
+
     for allowed in cfg.allowed_directories:
         if resolved == allowed or resolved.is_relative_to(allowed):
             return True

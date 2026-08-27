@@ -839,7 +839,7 @@ Alt adımlar:
       bir GPU dahil) taşınırken hangi adımların (bkz. `CLAUDE.md` Komutlar
       bölümü) tekrarlanması gerektiği netleştirilir.
 
-## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) ⬜
+## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1 tamam, 6.2+ bekliyor)
 
 `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`'deki "Faz A–I" planının
 ROADMAP numaralandırmasına taşınmış hâli — mimari gerekçe ve tam spec o
@@ -867,28 +867,37 @@ faz kendi commit'i/PR'ı olmalı.
 | 6.8 | H | §8 | MCP genişletme — Google Drive + Home Assistant |
 | 6.9 | I | §9 | Gözlemlenebilirlik — `core/trace.py` + `/trace` |
 
-### 6.1 Önkoşul Sertleştirmeleri (v2 Faz A) ⬜
+### 6.1 Önkoşul Sertleştirmeleri (v2 Faz A) ✅
 
 Küçük, izole, bağımsız iki değişiklik — 6.6 ve 6.7 bunlara bağlı olduğu için
-önce yapılır.
+önce yapıldı.
 
 Alt adımlar:
-- [ ] **`Tool.execute()` imzası** — `tools/base.py:Tool.execute()`'a geriye
-      uyumlu `stop_event: threading.Event | None = None` parametresi ekle;
-      mevcut araçların hiçbiri hemen değişmek zorunda değil.
-- [ ] **Zorlayıcı iptal** — `core/app.py:_run_tool_pipeline()` artık
-      `tool.execute(params, stop_event=stop_event)` çağırır ve çağrıyı bir
-      `concurrent.futures.ThreadPoolExecutor` + `future.result(timeout=N)`
-      sarmalayıcısına alır (özellikle MCP ve yeni `CreateProjectTool` gibi
-      uzun sürebilen araçlar için — `stop_event` tek başına yetmez).
-- [ ] **`is_path_safe()` genelleştirme** — `core/security_config.py:
-      is_path_safe(path, base_dir, *, allow_create=False)`: mevcut
-      `Path.resolve()` + `is_relative_to()` korunur, EKLENİR — UNC yol reddi
-      (`\\server\share`), `\\?\` ön eki reddi, dosya/klasör adı allowlist'i
-      (regex: yalnızca alfanumerik + `-` `_`), `allow_create=False` iken yol
-      var olmalı / `True` iken yalnızca `base_dir` altında YENİ oluşturmaya
-      izin. LLM-türetilmiş yol parametresi alan hiçbir araç (6.7) bu olmadan
-      eklenmez.
+- [x] **`Tool.execute()` imzası** — `tools/base.py:Tool.execute()` ABC'sine
+      geriye uyumlu `stop_event: threading.Event | None = None` parametresi
+      eklendi (gelecek araçlar için işbirlikçi-iptal sözleşmesi). 13 somut
+      alt-sınıf imzası DEĞİŞMEDİ.
+- [x] **Zorlayıcı iptal (timeout sarmalayıcı)** — `core/app.py:_run_tool_pipeline()`
+      `tool.execute()`'ı `concurrent.futures.ThreadPoolExecutor` + `future.result(
+      timeout=_TOOL_EXEC_TIMEOUT_SECONDS)` (30 sn) ile ayrı bir worker thread'de
+      çalıştırır; zaman aşımında lokalize `_TOOL_TIMEOUT_MESSAGES` döner. Ana
+      döngü artık bir tool tarafından süresiz bloklanamaz.
+- [x] **`is_path_safe()` sertleştirme** — `core/security_config.py`: UNC
+      (`\\server\share`) + aygıt ad-alanı (`\\?\`, `\\.\`) önekleri artık her
+      zaman reddediliyor (`_has_unsafe_prefix`); opt-in `allow_create` keyword'ü
+      (`False` → yol diskte var olmalı); ayrı `is_safe_component_name()` helper
+      (LLM-türevli tek yol bileşeni için karakter allowlist'i). Docstring'deki
+      "ileride eklenmelidir" notu kapandı.
+
+**v2 §7.1–7.2'den bilinçli sapmalar:** (1) `_run_tool_pipeline` `stop_event`
+kwarg'ını araçlara GEÇİRMİYOR — "araçlar hemen değişmek zorunda değil"
+garantisi korundu; zorunlu iptali dış timeout sarmalayıcı sağlıyor. `future.
+result(timeout)` çalışan thread'i durduramaz (kabul edilen sınır, kod yorumunda).
+(2) İmza `is_path_safe(path, config=None, *, allow_create=True)` — mevcut
+`allowed_directories` (liste) modeli ve `config=` kullanan çağrılar korundu;
+`allow_create` varsayılanı v2'deki `False`'tan `True`'ya çevrildi (geriye
+uyumluluk). (3) Ad-allowlist'i `is_path_safe` içinde değil ayrı
+`is_safe_component_name()` helper'ında (SRP + test edilebilirlik).
 
 ### 6.2 Model Konsolidasyonu & Brain Refactor (v2 Faz B) ⬜
 

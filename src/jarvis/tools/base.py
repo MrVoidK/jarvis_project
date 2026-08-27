@@ -11,6 +11,7 @@ KENDISINE birakilmaz (bir tool'un kendi riskini "dusuk" ilan edip onaydan
 kacinmasini imkansiz kilan tek merkezi kontrol noktasi).
 """
 
+import threading
 from abc import ABC, abstractmethod
 
 from src.jarvis.core.risk import RiskLevel
@@ -33,12 +34,19 @@ class Tool(ABC):
     required_parameters: list[str] = []
 
     @abstractmethod
-    def execute(self, params: dict) -> str:
+    def execute(self, params: dict, stop_event: "threading.Event | None" = None) -> str:
         """Araci calistirir ve kullaniciya SESLI okunacak tek bir cumle dondurur.
 
         `params`, dispatcher'in Intent.parameters'i: her zaman "lang" (tespit edilen
         dil, bkz. core/dispatcher.py) icerir; icerik gerektiren araclar ayrica
         "content" (regex named-group'undan) alir.
+
+        `stop_event` (opsiyonel): uzun surebilen bir arac, `stop_event.is_set()`'i
+        periyodik kontrol edip ISBIRLIKCI olarak erken donebilir. Cekirdek
+        (core/app.py:_run_tool_pipeline) cagriyi zaten bir timeout sarmalayicisina
+        aldigi icin bu ZORUNLU iptal degil - tek-atislik/hizli araclar (mevcut
+        hepsi) parametreyi gormezden gelebilir, bu yuzden alt siniflar imzayi
+        degistirmek zorunda degil.
 
         Donen metin dogrudan TTS'e gidecegi icin kisa ve tek dilde olmali (params
         ["lang"] hangi dil ise) - markdown/liste/uzun cikti okunamaz.
