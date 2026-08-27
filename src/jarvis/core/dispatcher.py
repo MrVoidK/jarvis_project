@@ -49,6 +49,22 @@ _ROUTER_SYSTEM_PROMPT = (
     "function, exactly once. If the user is just chatting, asking a general "
     "question, or no function clearly matches their intent, do NOT call any "
     "function.\n\n"
+    # KULLANICI BULGUSU: kucuk yerel model duz sohbet/selamlasma/vedalasma
+    # gibi HICBIR arac gerektirmeyen girdilerde bile SIK SIK rastgele bir
+    # arac (ör. read_notes) seciyordu - function-calling egitiminin "hep bir
+    # arac sec" onyargisi. Asagidaki ACIK ORNEKLER, "arac yok" secimini
+    # somut, taklit edilebilir bir kaliba donusturuyor - soyut bir kural
+    # ("sadece sohbetse arama") kucuk modeller icin yeterince baglayici
+    # degildi.\n"
+    "Examples where NO function must be called (plain chat/greeting/farewell/\n"
+    "small talk, even if a tool exists that is loosely related):\n"
+    '- "Hello" / "Merhaba" / "Görüşürüz" / "Bye" -> no function.\n'
+    '- "How are you?" / "Nasılsın?" -> no function.\n'
+    '- "Jarvis, my name is Tony." / "Jarvis, wake up." -> no function.\n'
+    '- Any question about JARVIS itself, opinions, or general knowledge that\n'
+    "  none of the functions are literally about -> no function.\n"
+    "When genuinely uncertain whether a function applies, prefer calling NO "
+    "function - a missed tool call is far cheaper than a wrong one.\n\n"
     # search_music (Faz 3.3 gercek kullanim testi bulgusu): kucuk yerel modeller
     # "play <song>" gibi istekler icin belirli bir arac varken bile run_command'a
     # kacip URL/dosya yolu UYDURUYORDU (orn. var olmayan bir YouTube video ID'si

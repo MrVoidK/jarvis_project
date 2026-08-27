@@ -90,7 +90,19 @@ class LlamaOrchestratorAdapter(Agent):
         messages = list(context or [])
         messages.append({"role": "user", "content": prompt})
         try:
-            response = ollama.chat(model=self._model_name, messages=messages, tools=tools)
+            # `temperature` dusuk (varsayilan Ollama degeri degil, ACIKCA
+            # dusuruluyor) - kullanici bulgusu: router kucuk model
+            # (llama3.1:8b) duz sohbet/vedalasma gibi arac GEREKTIRMEYEN
+            # girdilerde bile SIK SIK bir arac secip (ör. "Görüşürüz." ->
+            # read_notes) halusinasyon uretiyordu. Dusuk sicaklik, function-
+            # calling egitiminin "hep bir arac sec" onyargisini tamamen
+            # ortadan kaldirmaz ama modelin en-olasi (genelde "arac yok")
+            # secimine daha tutarli sekilde sadik kalmasini sagliyor -
+            # tool-secim karari zaten deterministik/tekrarlanabilir olmali,
+            # yaratici cesitlilige (yuksek sicaklik) hicbir ihtiyac yok.
+            response = ollama.chat(
+                model=self._model_name, messages=messages, tools=tools, options={"temperature": 0.1}
+            )
         except (httpx.ConnectError, ConnectionError):
             logger.error("Orkestrator (tool-calling): Ollama'ya baglanilamadi (%s).", self._model_name)
             return AgentToolResponse(content=_connection_error_message(self._model_name))

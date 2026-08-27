@@ -16,7 +16,7 @@ def test_call_tools_parses_well_formed_tool_call(monkeypatch):
     monkeypatch.setattr(
         agent_factory_module.ollama,
         "chat",
-        lambda model, messages, tools: {
+        lambda model, messages, tools, options=None: {
             "message": {"tool_calls": [{"function": {"name": "get_time", "arguments": {}}}]}
         },
     )
@@ -33,7 +33,7 @@ def test_call_tools_returns_empty_when_tool_calls_missing_function_key(monkeypat
     monkeypatch.setattr(
         agent_factory_module.ollama,
         "chat",
-        lambda model, messages, tools: {"message": {"tool_calls": [{"unexpected": "shape"}]}},
+        lambda model, messages, tools, options=None: {"message": {"tool_calls": [{"unexpected": "shape"}]}},
     )
 
     response = LlamaOrchestratorAdapter().call_tools("bir şeyler yap", tools=[])
@@ -47,7 +47,7 @@ def test_call_tools_returns_empty_when_arguments_not_a_mapping(monkeypatch):
     monkeypatch.setattr(
         agent_factory_module.ollama,
         "chat",
-        lambda model, messages, tools: {
+        lambda model, messages, tools, options=None: {
             "message": {"tool_calls": [{"function": {"name": "get_time", "arguments": "not-a-dict"}}]}
         },
     )
