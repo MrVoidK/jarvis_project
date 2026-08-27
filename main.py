@@ -42,6 +42,27 @@ with status_spinner("[HUD] Web arayüzü köprüsü (FastAPI) başlatılıyor...
     start_api_server_thread()
 print_system(f"HUD API http://{API_HOST}:{API_PORT}/ws adresinde dinliyor.", level="success")
 
+with status_spinner("[HUD] Web arayüzü (Vite dev sunucusu) başlatılıyor..."):
+    import atexit
+
+    from src.jarvis.core.web_ui_process import start_web_ui_dev_server, stop_web_ui_dev_server
+
+    _web_ui_process = start_web_ui_dev_server()
+    if _web_ui_process is not None:
+        # atexit: Ctrl+C -> run_jarvis() KeyboardInterrupt'i yakalayip normal
+        # donuyor (bkz. core/app.py) -> main.py'nin sonuna ulasilinca normal
+        # yorumlayici kapanisi baslar -> bu callback OTOMATIK calisir. Alt
+        # sürecin KENDI temizligi icin core/app.py'ye HICBIR bagimlilik
+        # eklenmedi (SRP - bkz. web_ui_process.py modul docstring'i).
+        atexit.register(stop_web_ui_dev_server, _web_ui_process)
+if _web_ui_process is not None:
+    print_system("Web arayüzü http://127.0.0.1:5173 adresinde açılıyor.", level="success")
+else:
+    print_system(
+        "Web arayüzü başlatılamadı (web-ui/node_modules yok mu? 'npm install' deneyin) - devam ediliyor.",
+        level="warning",
+    )
+
 # Guardrail icin gercek bir "yukleme" adimi yok (model degil, saf Python kural
 # zinciri - bkz. core/guardrail/base.py) - simetri icin sadece durum bildirimi.
 print_system("Guardrail sistemleri aktif.", level="success")

@@ -258,7 +258,12 @@ def print_table(title: str, columns: list[str], rows: list[tuple[str, ...]]) -> 
     for row in rows:
         table.add_row(*row)
     console.print(table)
-    body = "\n".join(" | ".join(row) for row in rows)
+    # Basliklar (columns) ONCEDEN body'ye hic dahil edilmiyordu - web-ui
+    # tarafinda tablo basliksiz, sadece ham veri satirlari olarak
+    # gorunuyordu (kullanici bulgusu: "/help ciktisi UI'da bozuk"). Ilk
+    # satir artik basliklar - web-ui/src/components/Terminal.tsx bunu
+    # ayirt edip <thead> olarak render ediyor.
+    body = "\n".join([" | ".join(columns)] + [" | ".join(row) for row in rows])
     hud_bus.publish_log("panel", body, title=title)
 
 

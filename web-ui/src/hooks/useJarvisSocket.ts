@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MAX_LOG_LINES, TOOL_NOTIFICATION_TTL_MS, WS_URL } from '../config';
+import { MAX_LOG_LINES, TOOL_NOTIFICATION_TTL_MS } from '../config';
+import { jarvisSocket, type ConnectionStatus } from '../lib/jarvisSocketManager';
 import type {
   ActiveTool,
   JarvisEvent,
@@ -9,7 +10,7 @@ import type {
   TelemetryEvent,
 } from '../types';
 
-export type ConnectionStatus = 'connecting' | 'online' | 'offline';
+export type { ConnectionStatus };
 
 // `LogEvent` + istemci-yerel alanlar: `id` (React key + typewriter'in "bu
 // satiri once gordum mu" takibi icin, backend'in ms-cozunurluklu `ts`'i
@@ -21,22 +22,15 @@ export interface DisplayLogEntry extends LogEvent {
   fromSnapshot: boolean;
 }
 
-const RECONNECT_DELAY_MS = 2000;
-
 export function useJarvisSocket() {
-  const [status, setStatus] = useState<ConnectionStatus>('connecting');
+  const [status, setStatus] = useState<ConnectionStatus>(jarvisSocket.getStatus());
   const [jarvisState, setJarvisState] = useState<JarvisState>('idle');
   const [logs, setLogs] = useState<DisplayLogEntry[]>([]);
   const [telemetry, setTelemetry] = useState<TelemetryEvent | null>(null);
   const [staticInfo, setStaticInfo] = useState<StaticSystemInfo | null>(null);
   const [activeTools, setActiveTools] = useState<ActiveTool[]>([]);
 
-  const socketRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<number | undefined>(undefined);
   const nextIdRef = useRef(0);
-  // Bilesen unmount olduktan sonra (StrictMode'un cift-mount'u dahil) bir
-  // sonraki reconnect denemesinin zombi bir socket acmamasi icin.
-  const stoppedRef = useRef(false);
 
   const appendLog = useCallback((entry: LogEvent, fromSnapshot: boolean) => {
     setLogs((prev) => {
@@ -104,54 +98,20 @@ export function useJarvisSocket() {
   );
 
   useEffect(() => {
-    stoppedRef.current = false;
-
-    function connect() {
-      if (stoppedRef.current) return;
-      setStatus((prev) => (prev === 'online' ? prev : 'connecting'));
-      const socket = new WebSocket(WS_URL);
-      socketRef.current = socket;
-
-      socket.onopen = () => setStatus('online');
-
-      socket.onmessage = (message) => {
-        try {
-          const parsed = JSON.parse(message.data) as JarvisEvent;
-          handleEvent(parsed);
-        } catch {
-          // Bozuk/parse edilemeyen bir frame sessizce atlanir - UI'nin
-          // tek bir kotu mesaj yuzunden cokmesindense bir sonraki olayi
-          // beklemesi tercih edildi.
-        }
-      };
-
-      socket.onclose = () => {
-        setStatus('offline');
-        if (!stoppedRef.current) {
-          reconnectTimer.current = window.setTimeout(connect, RECONNECT_DELAY_MS);
-        }
-      };
-
-      socket.onerror = () => {
-        socket.close();
-      };
-    }
-
-    connect();
-
+    // Idempotent - StrictMode'un cift-mount'u burada zararsiz: singleton
+    // zaten baglanmissa `start()` no-op, sadece dinleyici ekleyip cikariyoruz
+    // (bkz. lib/jarvisSocketManager.ts docstring'i).
+    jarvisSocket.start();
+    const unsubEvent = jarvisSocket.onEvent(handleEvent);
+    const unsubStatus = jarvisSocket.onStatus(setStatus);
+    setStatus(jarvisSocket.getStatus());
     return () => {
-      stoppedRef.current = true;
-      window.clearTimeout(reconnectTimer.current);
-      socketRef.current?.close();
+      unsubEvent();
+      unsubStatus();
     };
   }, [handleEvent]);
 
-  const sendCommand = useCallback((text: string) => {
-    const socket = socketRef.current;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(text);
-    }
-  }, []);
+  const sendCommand = useCallback((text: string) => jarvisSocket.send(text), []);
 
   return { status, jarvisState, logs, telemetry, staticInfo, activeTools, sendCommand };
 }

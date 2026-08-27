@@ -23,6 +23,11 @@ function TerminalLine({ entry, skipAnimation }: { entry: DisplayLogEntry; skipAn
   const [revealed, setRevealed] = useState(skipAnimation ? entry.message.length : 0);
   const meta = KIND_META[entry.kind] ?? KIND_META.info;
   const isGlitch = entry.kind === 'error';
+  // Coklu-satirli icerik (ör. print_table/print_panel'in tum ciktisi) TEK
+  // satirlik "SEN >"/"[i]" duzeniyle AYNI yatay flex-row'a sikistirilinca
+  // okunmaz hale geliyordu (kullanici bulgusu: "/help UI'da bozuk cikiyor")
+  // - bunun yerine ayri, dikey (blok) bir duzen kullaniliyor.
+  const isMultiline = entry.message.includes('\n');
 
   useEffect(() => {
     if (skipAnimation) return;
@@ -42,6 +47,54 @@ function TerminalLine({ entry, skipAnimation }: { entry: DisplayLogEntry; skipAn
 
   const text = entry.message.slice(0, revealed);
   const done = revealed >= entry.message.length;
+
+  if (isMultiline) {
+    const lines = text.split('\n');
+    // Tum satirlar " | " ile ayrilmis hucrelere sahipse (print_table
+    // ciktisi, ilk satir basliklar) gercek bir HTML tablosu olarak
+    // render ediliyor - sadece TAM reveal olduktan sonra (yazilirken
+    // ara satirlar tutarsiz hucre sayisina sahip olabilir).
+    const isTabular = done && lines.length > 1 && lines.every((line) => line.includes(' | '));
+
+    return (
+      <motion.div
+        className={`jv-term-block ${meta.className} ${isGlitch ? 'jv-term-glitch' : ''}`}
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        <div className="jv-term-block-header">
+          <span className="jv-term-kind">{meta.label}</span>
+          {entry.title && <span className="jv-term-title">{entry.title}</span>}
+        </div>
+        {isTabular ? (
+          <table className="jv-term-table">
+            <thead>
+              <tr>
+                {lines[0].split(' | ').map((cell, i) => (
+                  <th key={i}>{cell}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {lines.slice(1).map((line, i) => (
+                <tr key={i}>
+                  {line.split(' | ').map((cell, j) => (
+                    <td key={j}>{cell}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <pre className="jv-term-block-body">
+            {text}
+            {!done && <span className="jv-term-cursor">▌</span>}
+          </pre>
+        )}
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div

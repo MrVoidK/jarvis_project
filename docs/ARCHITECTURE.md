@@ -324,7 +324,8 @@ src/jarvis/
 │   ├── guardrail/                # I/O guardrail zinciri (✅ iskelet, henüz bağlı değil)
 │   ├── hud_bus.py               # JARVIS HUD icin sync->asyncio pub/sub koprusu (✅, Faz 3.4)
 │   ├── telemetry.py             # psutil/nvidia-smi sistem telemetrisi (✅, Faz 3.4)
-│   └── api.py                    # FastAPI + WebSocket bridge (web-ui) (✅, Faz 3.4)
+│   ├── api.py                    # FastAPI + WebSocket bridge (web-ui) (✅, Faz 3.4)
+│   └── web_ui_process.py         # web-ui Vite dev sunucusu alt-sureci (✅, Faz 3.4)
 ├── adapters/
 │   ├── agent_factory.py        # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri (✅)
 │   └── mcp_client_adapter.py   # MCPClientAdapter — MCP bilgi katmanı istemcisi (Faz 4.5) ⬜

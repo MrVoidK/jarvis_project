@@ -692,6 +692,26 @@ web arayüzü — mevcut hiçbir güvenlik/onay akışını atlamıyor (bkz. alt
       girişi dahil), CPU/RAM/GPU halka göstergeleri, geçici araç-kullanım
       bildirimleri, CRT tarama çizgisi/vinyet katmanları. Ayrıntı için
       `web-ui/README.md`.
+- [x] **İlk kullanım sonrası düzeltmeler**: gösterge halkaları sabit
+      piksel yerine responsive (panelde artık taşmıyor); `HologramOrb`
+      kamera/ölçek değerleri kameranın 3B görüş alanını (frustum) aşıp
+      "kırpılma" yaratıyordu — kamera geri çekildi, geometriler küçültüldü,
+      tüm pulse/rotasyon hızları yavaşlatılıp sürekli bir "breath" katmanı
+      eklendi (organik his). Paneller düz tek-renk + sert kenarlık yerine
+      köşe-braket + gradyan dolgu + yavaş "sheen" geçişi kullanıyor.
+      `useJarvisSocket` artık modül-seviyesi bir singleton'a
+      (`lib/jarvisSocketManager.ts`) bağlanıyor — React StrictMode'un
+      geliştirme modu çift-mount'u eskiden aynı sayfada birden fazla
+      WebSocket aboneliğine (ve dolayısıyla tekrarlanan log satırlarına)
+      yol açabiliyordu. `print_table` artık sütun başlıklarını da
+      `hud_bus`'a gönderiyor, `Terminal.tsx` çok-satırlı/tablo içeriğini
+      (ör. `/help`) ayrı bir blok + gerçek HTML tablosu olarak (satır
+      kaydırmalı, taşmadan) render ediyor. `core/web_ui_process.py`
+      (yeni): `main.py` artık `web-ui`'nin Vite dev sunucusunu otomatik
+      bir alt-süreç olarak başlatıyor ve kapatırken (Ctrl+C) Windows'ta
+      `npm` → `cmd.exe` → `node.exe` süreç ağacının TAMAMINI
+      (`taskkill /T /F`) kapatıyor — aksi halde yetim bir `node.exe`
+      arka planda çalışmaya devam ediyordu.
 
 ## Faz 4 — Otonom Ajan Döngüsü ⬜
 
