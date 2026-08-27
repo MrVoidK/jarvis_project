@@ -81,6 +81,8 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
 5. **Sistem Entegrasyonları / Tool Use** (durum: tamam, yerel/API'siz — Obsidian
    not, dosya listeleme, terminal/uygulama başlatma, sistem izleme, medya kontrolü)
 6. **Otonom Ajan Döngüsü** — ileri düzey görev zincirleri (durum: bekliyor)
+7. **Multi-Agent Mimari v2** — rol konsolidasyonu, run_command'lı Claude Code
+   delegasyonu, execution modes, registry, kalıcı hafıza (kararsız), tracing (durum: planlandı — bkz. `docs/ROADMAP.md` Faz 6 + `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`)
 
 ## Komutlar
 
@@ -180,8 +182,7 @@ src/jarvis/
 .claude/            # Claude Code yapılandırması (agents, rules, skills, hooks)
 docs/               # ROADMAP.md, ARCHITECTURE.md, claude-code-rehberi.md
 ```
-Henüz eklenmemiş, ARCHITECTURE.md §7'de tanımlı: `src/jarvis/{security,iot}/`
-(Faz 3.2 RFID/ses biyometrisi ve Faz 5 IoT).
+Henüz eklenmemiş (ARCHITECTURE.md §7): `src/jarvis/{security,iot}/` — Faz 3.2 RFID/ses biyometrisi, Faz 5 IoT.
 
 ## Notlar
 
@@ -192,8 +193,6 @@ Henüz eklenmemiş, ARCHITECTURE.md §7'de tanımlı: `src/jarvis/{security,iot}
 - Hedef mimari (multi-agent, guardrail, VRAM optimizasyonu, design pattern'lar)
   için `docs/ARCHITECTURE.md`'ye bak — bu dosya (CLAUDE.md) sadece şu anki
   duruma odaklanır.
-- `/init` komutunu ileride tekrar çalıştırıp Claude'un kod tabanından
-  çıkardığı ek kuralları bu dosyaya entegre edebilirsin.
 - TODO: `tests/fixtures/` altına gerçek bir örnek `.wav` + beklenen
   transkript eklenmeli (`verify-audio-pipeline` skill'i bunu kullanacak).
 - Kod yazarken, sıradan olmayan her mimari kararın yanına kısa bir yorum

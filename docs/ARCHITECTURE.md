@@ -213,16 +213,31 @@ sequenceDiagram
 
 **Rol dengesi ve token/VRAM israfını önleme ilkeleri:**
 - Orkestratör **her zaman** ilk temas noktasıdır ve sürekli VRAM'de kalır
-  (küçük, hızlı, düşük gecikmeli — mevcut `llama3.1:8b`).
-- Hermes'e delegasyon yalnızca intent "araç kullanımı gerektiriyor" diye
-  sınıflandırıldığında olur; basit sohbet turlarında hiç tetiklenmez.
+  (`hermes3:8b` — `orchestrator` ve `tool_agent` rolleri **aynı** modeli
+  paylaşır, rol farkı yalnızca sistem promptu; iki ayrı 8B model 12 GB'a
+  sığmadığı için, bkz. §5).
+- Hermes **rolüne** delegasyon yalnızca intent "araç kullanımı gerektiriyor"
+  diye sınıflandırıldığında olur; basit sohbet turlarında hiç tetiklenmez.
 - Claude Code'a delegasyon **en pahalı ve en nadir** yoldur: yalnızca kod
   tabanına müdahale, derin mimari planlama veya ağır matematiksel
-  hesaplama gerektiren görevlerde; bu sınırı geçen her istek loglanır
-  (Zero-Trust — dış sınır).
-- Orkestratör'ün sistem promptu, hangi görevin hangi ajana gideceğine dair
-  az sayıda net kural içerir (few-shot değil, kural bazlı sınıflandırma) —
-  bu, sınıflandırma için ayrı bir model/tur harcamaktan kaçınır.
+  hesaplama gerektiren görevlerde; router'da `delegate_code_task` sentinel'i
+  ile işaretlenir ve `ClaudeCodeAdapter` bunu `terminal_tool`/`run_command`
+  (HIGH risk + onay) üzerinden `claude` CLI olarak çalıştırır — ayrı bir
+  Anthropic API/credential yolu **yok** (bkz. §3, §9.3). Bu sınırı geçen her
+  istek loglanır (Zero-Trust — dış sınır).
+- Intent sınıflandırma, orkestratörün 8B çağrısını harcamak yerine ayrı bir
+  **mini router modeli** (`qwen2.5:1.5b`/3b, ~1 GB) ile yapılır — kural bazlı,
+  few-shot değil. Gerekçe: kural eşleşmeyen her turda router + Brain'in ayrı
+  ayrı 8B çağrılmasının gecikmesi (`docs/mimari-genel-bakis.md` §20 madde 1)
+  ölçülüp azaltılıyor. Çoklu-ajan yönlendirmesi de aynı router şemasına
+  `delegate_complex_task` / `delegate_code_task` sentinel'leri eklenerek
+  yapılır (yeni bir sınıflandırma katmanı icat edilmez).
+
+> **Güncelleme (v2 multi-agent entegrasyonu — ROADMAP Faz 6.2–6.3,
+> `docs/jarvis-mimari-v2-multiagent-entegrasyon.md` §2):** yukarıdaki şema
+> artık tek paylaşımlı `hermes3:8b` + ayrı mini router + router sentinel'leri
+> ile canlıya bağlanıyor. `Agent` ABC'ye `respond_stream()` eklenir ve
+> `brain/llm.py` sohbet yolu bu arayüzden geçer (§20 madde 2).
 
 ## 5. VRAM Optimizasyon Tavsiyeleri (RTX 4070, 12GB)
 
@@ -232,19 +247,22 @@ Eşzamanlı çalışan modellerin kaba VRAM bütçesi:
 |---|---|---|
 | Ears | faster-whisper `turbo` (float16) | ~1.5–2 GB |
 | Ears | openWakeWord (ONNX, IDLE'da) | ihmal edilebilir (CPU'da da çalışır) |
-| Orkestratör | `llama3.1:8b` (Ollama, Q4_K_M) | ~4.7–5 GB |
+| Orkestratör + Hermes rolü | `hermes3:8b` (Ollama, Q4_K_M — **paylaşımlı**) | ~4.7–5 GB |
+| Router | mini model (`qwen2.5:1.5b`/3b) | ~1 GB (v2 Faz B) |
+| Hafıza (opsiyonel, kararsız) | Mem0 CPU embedding (`all-MiniLM-L6-v2`) | ~0 GB GPU (CPU) |
 | Mouth | XTTS-v2 (tek instance) | ~2–3 GB |
-| **Toplam (mevcut MVP)** | | **~8.5–10 GB** |
+| **Toplam (v2 Faz B sonrası hedef)** | | **~9.5–11 GB** |
 
-Hermes rolü **ayrı bir model olarak eklenirse** (ör. `hermes-3-llama-3.1-8b`)
-toplam bütçe 12GB sınırını zorlar, özellikle Whisper+Orkestratör+Mouth zaten
-aktifken. Öneriler:
+`orchestrator` ve `tool_agent` **ayrı** 8B checkpoint olsaydı toplam bütçe
+12 GB sınırını aşardı. Öneriler:
 
-1. **Paylaşımlı model, çoklu persona (önerilen ⬜)**: Hermes ayrı bir
-   checkpoint değil, aynı `llama3.1:8b`'nin farklı bir sistem promptuyla
-   çağrılan bir "rolü" olsun. Tool-calling için Llama 3.1'in native
+1. **Paylaşımlı model, çoklu persona (✅ uygulanıyor — v2 Faz B, Seçenek A)**:
+   Hermes ayrı bir checkpoint değil, aynı `hermes3:8b`'nin farklı bir sistem
+   promptuyla çağrılan bir "rolü". Tool-calling için Hermes-3'ün native
    function-calling desteği yeterli; ayrı bir model indirmeden Factory'de
-   `create("tool_agent")` aynı Adapter'ı farklı promptla döndürür.
+   `create("tool_agent")` aynı Adapter'ı farklı `role_prompt` ile döndürür.
+   (Model seçimi Faz B öncesi Hermes3 vs Qwen3 A/B testiyle netleşir; sadece
+   `ROLE_MODEL_MAP` string'i değişir.)
 2. **Sıralı yükleme (Hermes gerçekten ayrı bir model olacaksa)**: Ollama'nın
    `keep_alive` parametresiyle aktif olmayan modelin VRAM'i serbest
    bırakılır (`keep_alive=0` orkestratör beklemedeyken Hermes'e geçişte);
@@ -332,19 +350,32 @@ src/jarvis/
 │   ├── hud_bus.py               # JARVIS HUD icin sync->asyncio pub/sub koprusu (✅, Faz 3.4)
 │   ├── telemetry.py             # psutil/nvidia-smi sistem telemetrisi (✅, Faz 3.4)
 │   ├── api.py                    # FastAPI + WebSocket bridge (web-ui) (✅, Faz 3.4)
-│   └── web_ui_process.py         # web-ui Vite dev sunucusu alt-sureci (✅, Faz 3.4)
+│   ├── web_ui_process.py         # web-ui Vite dev sunucusu alt-sureci (✅, Faz 3.4)
+│   ├── memory.py                 # Mem0 sarmalayıcı: remember()/recall(), fail-soft (Faz 6.5) ⬜ kararsız
+│   ├── scheduler.py              # cron-tabanlı InputEvent üretici, source="scheduled" (Faz 6.6) ⬜
+│   ├── continuous_runner.py      # arka plan izleme thread'i, source="continuous" (Faz 6.6) ⬜
+│   ├── registry_loader.py        # agents/registry/*.yaml → dinamik Tool yükleyici (Faz 6.4) ⬜
+│   └── trace.py                  # SQLite tabanlı çağrı izleme + /trace (Faz 6.9) ⬜
 ├── adapters/
-│   ├── agent_factory.py        # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri (✅)
+│   ├── agent_factory.py        # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri (✅; ROLE_MODEL_MAP + respond_stream Faz 6.2) 🟡
 │   └── mcp_client_adapter.py   # MCPClientAdapter — MCP bilgi katmanı istemcisi (Faz 4.5) ⬜
-├── agents/base.py                # Agent (ABC) arayüzü (✅)
+├── agents/
+│   ├── base.py                   # Agent (ABC) arayüzü (✅; respond_stream() Faz 6.2) 🟡
+│   └── registry/                 # dinamik araç/ajan manifest .yaml dosyaları (Faz 6.4) ⬜
 ├── tools/           # tool-calling entegrasyonları (Faz 3) ⬜
+│   ├── project_tool.py          # CreateProjectTool (Faz 6.7) ⬜
+│   ├── iot_tool.py               # HomeAssistantTool — yerel, MCP değil (Faz 6.8) ⬜
+│   └── subprocess_utils.py       # spawn_detached() — fire-and-forget Popen (Faz 6.7) ⬜
 ├── security/         # risk puanlama, RFID TrustElevation, ses biyometrisi (Faz 3) ⬜
-└── iot/             # uç nokta client protokolü, MQTT (Faz 5) ⬜
+└── iot/             # uç nokta client protokolü, MQTT (Faz 5) ⬜ — NOT: IoT *kontrolü*
+                     #  v2'de tools/iot_tool.py (yerel HA REST); bu paket Faz 5 MQTT/VLAN vizyonu için
 
 config/
-├── security.yaml / security.example.yaml       # yerel tool erişim kontrolü (✅)
-└── mcp_servers.yaml / mcp_servers.example.yaml  # MCP sunucu tanımları (Faz 4.5) ⬜
+├── security.yaml / security.example.yaml       # yerel tool erişim kontrolü (✅; + enabled_dynamic_agents Faz 6.4) 🟡
+├── mcp_servers.yaml / mcp_servers.example.yaml  # MCP sunucu tanımları (Faz 4.5; + Drive/Home Assistant Faz 6.8) ⬜
+└── scheduled_tasks.yaml / .example              # cron görev tanımları, fail-loud (Faz 6.6) ⬜
 
+templates/CLAUDE.md.template   # CreateProjectTool'un yeni projeye kopyaladığı scaffold (Faz 6.7) ⬜
 web-ui/               # React + TS + Vite + three.js HUD arayüzü (✅, Faz 3.4 - bkz. ROADMAP.md)
 ```
 
@@ -371,6 +402,17 @@ yerine yayın/abone (pub/sub) modeliyle konuşur, bu da Zero-Trust ilkesiyle
 Dağıtım aşamasında tüm sistem (Ears/Brain/Mouth/Core + guardrail) bir Docker
 container'ında (GPU passthrough ile), kompakt bir sistem tray uygulaması
 arkasında paketlenir (bkz. Faz 5).
+
+> **v2 ara adım — Home Assistant (ROADMAP Faz 6.8,
+> `docs/jarvis-mimari-v2-multiagent-entegrasyon.md` §8.2):** yukarıdaki
+> MQTT/VLAN vizyonuna kadarki dönemde ışık/priz/kilit kontrolü için pratik
+> bir köprü. İlke ayrımı: IoT **durum okuma** (hangi lambalar açık, sıcaklık)
+> Home Assistant MCP sunucusundan geçebilir (salt bilgi); IoT **kontrolü**
+> (aç/kapat/kilitle) MCP'den DEĞİL, yerel `tools/iot_tool.py:HomeAssistantTool`
+> (HA REST API, `TOOL_REGISTRY`'ye statik kayıtlı) üzerinden yapılır — fiziksel
+> etki, "OS kontrolü asla MCP'den geçmez" kategorisine girer. Risk cihaz
+> tipine göre: ışık/priz `MEDIUM`, kilit/güvenlik cihazı `HIGH`. Bu, MQTT
+> mimarisinin yerine değil, ona giden yolda onunla birlikte düşünülür.
 
 ## 9. Hibrit MCP Mimarisi (Bilgi Katmanı) ⬜
 
@@ -428,6 +470,14 @@ birleştirilmeyecek:
   atanır (dış sunucudan gelen veri güvenilmeyen girdi sayılır — Zero-Trust,
   bkz. §9.5) — yerel bir `Tool`'un kendi riskini beyan etmesiyle aynı
   ilke, ama varsayılan taban daha yüksek.
+
+Aynı "statik vs dinamik" gerilimi **yerel** araçlar için de geçerli:
+`docs/jarvis-mimari-v2-multiagent-entegrasyon.md` §3, elle import gerektirmeden
+araç/ajan eklemek için **allowlist-tabanlı manifest** çözümünü getirir
+(`agents/registry/*.yaml` + `config/security.yaml:enabled_dynamic_agents`;
+otomatik keşif değil). `tools/registry.py:all_tools()` böylece üç kaynağı
+birleştirir — statik `TOOL_REGISTRY` + dinamik manifest + MCP. Tasarım
+ayrıntısı: §12 (Agent Registry) ve ROADMAP Faz 6.4.
 
 **Config deseni**: `config/mcp_servers.yaml` (kişisel/makineye özel,
 gitignore'da) + `config/mcp_servers.example.yaml` (şablon, commit'lenir).
@@ -511,9 +561,102 @@ bırakıldı — ⬜):**
 - `npx -y` ile çekilen paket artık sürüm-PİNLİ (`config/mcp_servers.example.yaml`),
   ama bu yine de imza/hash doğrulaması değil — tedarik zinciri riski
   tamamen kapanmadı.
-- Faz 6 (Otonom Ajan Döngüsü) MCP sonuçlarını `history`'ye geri
+- Faz 4 (Otonom Ajan Döngüsü) MCP sonuçlarını `history`'ye geri
   besleyecek şekilde genişlerse, MCP çıktısının SADECE `OutputSafetyCheck`
   değil `InputInjectionCheck`'ten de geçmesi gerekecek (bugün MCP sonuçları
   hiçbir zaman `history`'ye girmiyor — bu yüzden bugünkü mimaride indirect-
   prompt-injection→LLM ele geçirme senaryosu mitige edilmiş durumda, ama bu
-  varsayım Faz 6 ile birlikte yeniden değerlendirilmeli).
+  varsayım Faz 4 ile birlikte yeniden değerlendirilmeli). Aynı gerekçe Faz 6.5
+  (kalıcı hafıza) için daha da kritiktir — bkz. §10.
+
+---
+
+> **§10–13 — v2 multi-agent güncellemesi.** Aşağıdaki dört bölüm
+> `docs/jarvis-mimari-v2-multiagent-entegrasyon.md` planının (ROADMAP Faz 6)
+> getirdiği, mevcut mimaride karşılığı olmayan yeni katmanları özetler.
+> Ayrıntılı spec o dokümandadır; buradaki amaç "nasıl/neden"i ve mevcut
+> §1–9 ilkeleriyle nasıl tutarlı kaldığını kaydetmektir.
+
+## 10. Kalıcı Hafıza Katmanı — Mem0 (⬜ değerlendiriliyor)
+
+**Karar verilmedi.** Mem0'a bağlanmak, self-hosted bir alternatif seçmek veya
+katmanı ertelemek arasında karar netleşmedi — bu bölüm seçilen yön Mem0/benzeri
+olursa geçerlidir (bkz. ROADMAP Faz 6.5, v2 §4).
+
+- **Kapsam ayrımı**: `brain/llm.py`'deki `history` (son ~12 mesaj) tek-oturum
+  bağlamıdır ve **değişmez**. Mem0, ondan ayrı, **oturumlar-arası kalıcı** bir
+  katmandır: geçmiş projeler, kullanıcı tercihleri, aktif proje bağlamı.
+- **Arayüz**: `core/memory.py` → `remember(text, metadata) -> None` ve
+  `recall(query, k=5) -> list[str]`, ikisi de **fail-soft** (hata → no-op +
+  log / boş liste; hafıza servisi çökerse Jarvis çalışmaya devam eder).
+- **Guardrail kapısı (en yüksek riskli ekleme, v2 §4.3)**: kalıcı hafızaya
+  sızan bir prompt injection tek turluk değildir — her gelecek `recall()`'da
+  context'e yeniden girer. Bu yüzden `remember()` yalnızca `OutputSafetyCheck`'ten
+  geçmiş (TTS'e giden) metni yazar, ham LLM çıktısını değil; `recall()`
+  sonuçları context'e eklenmeden önce `InputInjectionCheck`'ten geçer.
+  `core/app.py:_handle_turn()`'de `recall()` çağrısı dispatcher'dan **önce**
+  gelir (hafıza, yönlendirmeyi etkileyebilir).
+- **Yerel-öncelikli (v2 §4.4)**: self-hosted Mem0 + yerel vektör deposu (Qdrant
+  veya SQLite+embedding) + CPU embedding modeli (`all-MiniLM-L6-v2`) — GPU
+  bütçesine (§5) dokunmaz.
+- **OWASP eşlemesi (§6)**: LLM01'in "kalıcı hafıza" varyantı — girdi taraması
+  hem `recall()` çıktısına hem `remember()` girişine uygulanır.
+
+## 11. Execution Modes — Scheduled & Continuous (⬜)
+
+Jarvis'e zamanlanmış (cron) ve sürekli-izleyen (koşul-tetikli) girdi kaynakları
+ekler; **hiçbir yeni güvenlik yolu açmaz** (bkz. ROADMAP Faz 6.6, v2 §5).
+
+- **`core/scheduler.py`**: cron-tabanlı; `InputHub`'ın kuyruğuna
+  `InputEvent(source="scheduled", text=<önceden tanımlı komut>)` koyar.
+  `config/scheduled_tasks.yaml` fail-loud yüklenir (`security.yaml` gibi —
+  bozuk/eksik tanım sessizce yutulmaz).
+- **`core/continuous_runner.py`**: `jarvis-mic` / `jarvis-text-input` ile aynı
+  desende bir daemon thread; bir koşulu izler (dosya değişimi, MCP kaynağı, IoT
+  sensörü) ve `InputEvent(source="continuous", ...)` üretir. §19'daki
+  (`docs/mimari-genel-bakis.md`) thread haritasına iki yeni satır; `stop_event`
+  ile temiz kapanış.
+- **Ortak yol**: her iki kaynağın olayları da mevcut `_handle_turn()` →
+  guardrail → dispatcher → `_run_tool_pipeline()` zincirinden geçer; tek fark
+  `InputEvent.source` alanıdır.
+- **Risk kısıtı (v2 §5.3)**: `source in {"scheduled","continuous"}` olan olaylar
+  yalnızca `RiskLevel.LOW` aracı **otomatik** tetikleyebilir. Kullanıcı onay
+  veremeyecek durumdayken (gece, uzakta) MEDIUM+ bir eylemin otomatik koşması,
+  §6'daki "varsayılan RED" ilkesiyle çelişir — bunun yerine bir pending-approval
+  kaydı oluşturulur (HUD / `/status`'ta görünür, kullanıcı sonra onaylar/reddeder).
+  `execution_mode: scheduled|continuous` işaretli bir manifest MEDIUM+ risk
+  beyan ediyorsa `registry_loader` onu boot'ta reddeder.
+
+## 12. Agent Registry — Dinamik Araç/Ajan Ekleme (⬜)
+
+`tools/registry.py:TOOL_REGISTRY`'nin statik `dict` olması bilinçli bir güvenlik
+özelliğidir ("bir araç yanlışlıkla kayıtlı olamaz"). Registry, bu ilkeyi
+bozmadan genişleme sağlar — **otomatik keşif değil, allowlist tabanlı** (bkz.
+ROADMAP Faz 6.4, v2 §3).
+
+- **Manifest**: `agents/registry/*.yaml` — `name`, `description`, `kind`,
+  `risk_level`, `execution_mode`, `module`, `class`, `parameters_schema`.
+- **Yükleyici**: `core/registry_loader.py:load_dynamic_tools()` yalnızca adı
+  `config/security.yaml:enabled_dynamic_agents` listesinde olan manifest'i
+  yükler; gerisi sessizce atlanır (fail-closed). Yani bir aracı devreye almak
+  **iki elle adım** ister: manifest dosyasını koymak + allowlist'e ad eklemek.
+- **Üç kaynak**: `tools/registry.py:all_tools()` = statik `TOOL_REGISTRY` +
+  `load_dynamic_tools()` + `MCPClientAdapter` keşfi. Üçü de aynı `Tool`
+  sözleşmesine uyar; hiçbiri diğerine sessizce enjekte olmaz (§9.2 ile aynı
+  ilke).
+
+## 13. Gözlemlenebilirlik — Tracing (⬜)
+
+`hud_bus`'a benzer ama **kalıcı** bir çağrı-izleme katmanı (bkz. ROADMAP Faz
+6.9, v2 §9).
+
+- **`core/trace.py`**: SQLite (`core/trace.db`). Her agent/tool çağrısı için:
+  timestamp, rol/model adı, **kırpılmış/hash'lenmiş** girdi özeti (tam metin
+  değil — hassas veri birikimini önlemek için), süre (ms), sonuç
+  (`success` / `error` / `guardrail_blocked` / `approval_denied`), varsa token
+  sayısı.
+- **`/trace [n]` CLI komutu**: `core/cli_commands.py` içinde, `/status` ve
+  `/debug` ile aynı ailede; son N kaydı gösterir.
+- **Amaç**: §5'teki çift-çağrı gecikmesinin (`docs/mimari-genel-bakis.md` §20
+  madde 1) gerçek etkisini ölçmek, `delegate_complex_task`'ın kaç adımda
+  tamamlandığını görmek, hangi rolün en çok zaman/token harcadığını anlamak.
