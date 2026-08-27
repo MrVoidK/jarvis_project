@@ -1,4 +1,4 @@
-# Jarvis — Detaylı Yol Haritası (Faz 1–5)
+# Jarvis — Detaylı Yol Haritası (Faz 1–6)
 
 Bu dosya `CLAUDE.md`'deki kısa MVP listesinin genişletilmiş hâlidir. Her fazın
 altında somut alt adımlar var. Durum etiketleri: ✅ tamam,
@@ -718,7 +718,8 @@ web arayüzü — mevcut hiçbir güvenlik/onay akışını atlamıyor (bkz. alt
 Alt adımlar:
 - [ ] Görev planlama/zincirleme: çok adımlı bir isteği alt görevlere bölme.
 - [ ] Kısa vadeli hafıza (oturum içi context) vs uzun vadeli hafıza (disk/DB
-      üzerinde kalıcı tercih/bağlam) ayrımı.
+      üzerinde kalıcı tercih/bağlam) ayrımı — bkz. Faz 6.5 (Mem0 tabanlı kalıcı
+      hafıza değerlendiriliyor, karar verilmedi).
 - [ ] Hata kurtarma: bir adım başarısız olursa yeniden dene / kullanıcıya
       sor / alternatif plana geç.
 - [ ] Çok adımlı yürütme döngüsü: plan → araç çağrısı → sonucu değerlendir →
@@ -803,7 +804,8 @@ Alt adımlar:
       doğrudan Anthropic API yerine `terminal_tool`/`run_command` (zaten
       HIGH risk + onay akışında) üzerinden `claude` komutunu çalıştıracak
       şekilde revize edilmesi — ayrı bir API entegrasyonu/credential
-      yönetimi gerekmez.
+      yönetimi gerekmez. Detaylandırma: Faz 6.3 (v2 Faz C) — router'a
+      `delegate_code_task` sentinel'i + `_handle_turn()` dalı orada eklenir.
 - Not: **IoT MCP** entegrasyonu Faz 5.1'e ait (aşağı bak) — mevcut
   MQTT/VLAN mimarisinin yerine değil, onunla birlikte düşünülecek.
 
@@ -836,6 +838,218 @@ Alt adımlar:
 - [ ] Kurulum/taşıma dokümantasyonu: başka bir makineye (RTX 4070 dışında
       bir GPU dahil) taşınırken hangi adımların (bkz. `CLAUDE.md` Komutlar
       bölümü) tekrarlanması gerektiği netleştirilir.
+
+## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) ⬜
+
+`docs/jarvis-mimari-v2-multiagent-entegrasyon.md`'deki "Faz A–I" planının
+ROADMAP numaralandırmasına taşınmış hâli — mimari gerekçe ve tam spec o
+dokümanda, "nasıl/neden" için ayrıca `docs/ARCHITECTURE.md` §4–5 (senkronize
+edildi) ve yeni §10–13'e bak; burada sadece eyleme geçirilebilir adımlar var.
+Bu faz, `docs/mimari-genel-bakis.md` §20 "Bilinen Sınırlamalar" listesindeki
+maddeleri somut kod değişikliklerine çevirir ve multi-agent/hafıza/execution-
+mode genişlemesini **aynı** güvenlik felsefesiyle (Zero-Trust, fail-closed,
+tek merkezi güvenlik hattı, fail-soft dış bağlantılar) ekler.
+
+**Bağımlılık sırası** (v2 §13): 6.1 → 6.2 → 6.3; 6.7 hem 6.1'e (sertleştirilmiş
+`is_path_safe`) hem 6.3'e bağlı; 6.4 → 6.6 (risk-kısıt kuralı); 6.5 ve 6.6
+birbirinden bağımsız; 6.8 ve 6.9 tamamen bağımsız, herhangi bir zaman. Her alt
+faz kendi commit'i/PR'ı olmalı.
+
+| ROADMAP | v2 Faz | v2 § | Kısa |
+|---|---|---|---|
+| 6.1 | A | §7.1–7.2 | `Tool.execute()` `stop_event` + `is_path_safe()` sertleştirme |
+| 6.2 | B | §2.2–2.4 | Tek paylaşımlı model + `respond_stream()` + mini router |
+| 6.3 | C | §2.5–2.6 | `ClaudeCodeAdapter` (run_command) + delegasyon sentinel'leri |
+| 6.4 | D | §3 | Agent Registry / allowlist manifest |
+| 6.5 | E | §4 | Kalıcı hafıza — Mem0 (değerlendiriliyor) |
+| 6.6 | F | §5 | Execution modes — scheduled + continuous |
+| 6.7 | G | §6 | `CreateProjectTool` + `spawn_detached()` |
+| 6.8 | H | §8 | MCP genişletme — Google Drive + Home Assistant |
+| 6.9 | I | §9 | Gözlemlenebilirlik — `core/trace.py` + `/trace` |
+
+### 6.1 Önkoşul Sertleştirmeleri (v2 Faz A) ⬜
+
+Küçük, izole, bağımsız iki değişiklik — 6.6 ve 6.7 bunlara bağlı olduğu için
+önce yapılır.
+
+Alt adımlar:
+- [ ] **`Tool.execute()` imzası** — `tools/base.py:Tool.execute()`'a geriye
+      uyumlu `stop_event: threading.Event | None = None` parametresi ekle;
+      mevcut araçların hiçbiri hemen değişmek zorunda değil.
+- [ ] **Zorlayıcı iptal** — `core/app.py:_run_tool_pipeline()` artık
+      `tool.execute(params, stop_event=stop_event)` çağırır ve çağrıyı bir
+      `concurrent.futures.ThreadPoolExecutor` + `future.result(timeout=N)`
+      sarmalayıcısına alır (özellikle MCP ve yeni `CreateProjectTool` gibi
+      uzun sürebilen araçlar için — `stop_event` tek başına yetmez).
+- [ ] **`is_path_safe()` genelleştirme** — `core/security_config.py:
+      is_path_safe(path, base_dir, *, allow_create=False)`: mevcut
+      `Path.resolve()` + `is_relative_to()` korunur, EKLENİR — UNC yol reddi
+      (`\\server\share`), `\\?\` ön eki reddi, dosya/klasör adı allowlist'i
+      (regex: yalnızca alfanumerik + `-` `_`), `allow_create=False` iken yol
+      var olmalı / `True` iken yalnızca `base_dir` altında YENİ oluşturmaya
+      izin. LLM-türetilmiş yol parametresi alan hiçbir araç (6.7) bu olmadan
+      eklenmez.
+
+### 6.2 Model Konsolidasyonu & Brain Refactor (v2 Faz B) ⬜
+
+VRAM bütçesi (`docs/mimari-genel-bakis.md` §20 madde 12), çift-LLM-çağrısı
+gecikmesi (madde 1) ve "sohbet yolu `Agent` arayüzünü kullanmıyor" (madde 2)
+sorunlarını aynı anda çözer.
+
+Alt adımlar:
+- [ ] **Tek paylaşımlı model** — `orchestrator` ve `tool_agent` rolleri aynı
+      `hermes3:8b` modelini paylaşır (iki ayrı 8B model 12 GB'a sığmıyor);
+      `llama3.1:8b` bırakılır. `adapters/agent_factory.py:ROLE_MODEL_MAP`
+      eklenir; `LlamaOrchestratorAdapter` `role_prompt: str` ctor parametresiyle
+      genelleştirilir (rol farkı = sistem promptu, ayrı sınıf değil);
+      `HermesAgentAdapter` retire edilir.
+- [ ] **`respond_stream()`** — `agents/base.py:Agent` ABC'ye eklenir;
+      `brain/llm.py:think_and_respond_stream()` artık `ollama.chat`'i doğrudan
+      değil `agent.respond_stream()` üzerinden çağırır (cümle bölme, `history`
+      kırpma, Ollama hata sınıflandırması `brain/llm.py`'de kalır).
+- [ ] **Mini router modeli** — intent sınıflandırma için ayrı, küçük bir model
+      (`qwen2.5:1.5b`/3b, ~1 GB); `ROLE_MODEL_MAP["router"]`,
+      `core/dispatcher.py:Dispatcher.classify()` bunu `AgentFactory.create("router")`
+      ile kullanır. Gerekçe: çift-8B çağrısı gecikmesinin (madde 1) ölçülüp
+      azaltılması.
+- [ ] **Model A/B (opsiyonel, Faz B öncesi)** — Hermes3:8b vs Qwen3:8b bir
+      günlük karşılaştırma; sadece `ROLE_MODEL_MAP` string'i değişir.
+- [ ] **Regresyon** — Faz B sonrası `pipeline-debugger` + `verify-brain-pipeline`
+      skill'iyle; `no_tool_needed` sentinel'inin (`docs/mimari-genel-bakis.md`
+      §7.3) hâlâ gerekli olup olmadığı TR ve EN girdiyle test edilir (v2 §14).
+
+### 6.3 Multi-Agent Aktivasyonu (v2 Faz C) ⬜
+
+`docs/ARCHITECTURE.md` §4 iletişim şemasını kağıt üstünden koda geçirir.
+
+Alt adımlar:
+- [ ] **`ClaudeCodeAdapter` gerçek implementasyon** — `run_command`/
+      `terminal_tool` (zaten HIGH risk + `[Y/N]` onay akışında) üzerinden
+      `claude` CLI'ı çalıştırır. **v2 §2.5'teki `anthropic` SDK /
+      `ANTHROPIC_API_KEY` yolu bilinçli olarak UYGULANMAZ** (sebep koda yorum:
+      ayrı credential yönetimi istenmiyor, mevcut risk/onay mekanizması yeniden
+      kullanılır — `docs/ARCHITECTURE.md` §3 ve §9.3 ile tutarlı). `requirements.txt`
+      `anthropic` eklenmez, `check_anthropic_connection()` yazılmaz.
+- [ ] **Delegasyon sentinel'leri** — router şemasına `_DELEGATE_COMPLEX_SCHEMA`
+      / `_DELEGATE_CODE_SCHEMA` (`no_tool_needed` deseninin aynısı);
+      `core/dispatcher.py:Dispatcher.classify()` bunları `Intent("delegate_complex",
+      0.7)` / `Intent("delegate_code", 0.7)`'e eşler.
+- [ ] **`_handle_turn()` dalları** — `core/app.py`: `delegate_complex` →
+      `tool_agent` ile sınırlı çok adımlı döngü (maks ~3 adım, tam otonom döngü
+      DEĞİL — bkz. Faz 4); `delegate_code` → `deep_reasoning`
+      (`ClaudeCodeAdapter`) `respond()`.
+
+### 6.4 Agent Registry / Manifest Sistemi (v2 Faz D) ⬜
+
+Mevcut "bir araç yanlışlıkla kayıtlı olamaz" güvenlik ilkesini bozmadan
+dinamik araç/ajan ekleme. Otomatik keşif DEĞİL — iki elle adım gerekir
+(manifest koymak + allowlist'e ad eklemek).
+
+Alt adımlar:
+- [ ] **Manifest şeması** — `agents/registry/*.yaml` (alanlar: `name`,
+      `description`, `kind`, `risk_level`, `execution_mode`, `module`, `class`,
+      `parameters_schema`).
+- [ ] **Yükleyici** — `core/registry_loader.py:load_dynamic_tools()` yalnızca
+      adı `config/security.yaml:enabled_dynamic_agents` allowlist'inde olan
+      manifest'i yükler; diğerleri sessizce atlanır (fail-closed).
+- [ ] **Üç kaynak** — `tools/registry.py:all_tools()` statik `TOOL_REGISTRY` +
+      `load_dynamic_tools()` + MCP keşfini birleştirir; hiçbiri sessizce
+      `TOOL_REGISTRY`'ye enjekte edilmez.
+- [ ] `config/security.example.yaml`'a `enabled_dynamic_agents: []` eklenir.
+
+### 6.5 Kalıcı Hafıza Katmanı — Mem0 (v2 Faz E) ⬜
+
+**Karar verilmedi — değerlendiriliyor.** Mem0'a bağlanmak, self-hosted bir
+alternatif seçmek veya bu katmanı ertelemek arasında karar netleşince bu alt
+faz güncellenecek. Aşağıdaki adımlar seçilen yön Mem0/benzeri olursa geçerli.
+
+Alt adımlar:
+- [ ] **Arayüz** — `core/memory.py`: `remember(text, metadata) -> None` ve
+      `recall(query, k=5) -> list[str]`, ikisi de fail-soft (no-op + log /
+      boş liste). Mevcut `brain/llm.py:history` (son 12 mesaj) değişmez — bu
+      ayrı, oturumlar-arası bir katman.
+- [ ] **Guardrail kapısı** (v2 §4.3, en yüksek riskli ekleme) — `remember()`
+      yalnızca guardrail'den geçmiş TTS metnini yazar (ham LLM çıktısı değil);
+      `recall()` sonuçları context'e girmeden önce input-guardrail'den geçer.
+      Gerekçe: kalıcı hafızaya sızan bir injection her gelecek turda tekrar
+      enjekte olur.
+- [ ] **`_handle_turn()` entegrasyonu** — dispatcher öncesi (hafıza routing'i
+      etkileyebildiği için) `recall()`, yanıt sonrası `remember()`.
+- [ ] **Yerel-öncelikli** — self-hosted Mem0 + yerel vektör deposu (Qdrant veya
+      SQLite+embedding) + CPU embedding modeli (`all-MiniLM-L6-v2`), GPU
+      bütçesine dokunmaz. `requirements.txt` seçim netleşince güncellenir.
+
+### 6.6 Execution Modes — Scheduled & Continuous (v2 Faz F) ⬜
+
+Yeni girdi kaynakları HİÇBİR yeni güvenlik yolu açmaz — olaylar aynı
+`_handle_turn()` → guardrail → dispatcher → `_run_tool_pipeline()` zincirinden
+geçer, tek fark `InputEvent.source` alanı ve aşağıdaki risk kısıtı. 6.4'ün
+manifest `risk_level` doğrulamasına bağlıdır.
+
+Alt adımlar:
+- [ ] **`core/scheduler.py`** — cron-tabanlı; `InputHub`'ın `queue.Queue`'una
+      `InputEvent(source="scheduled", text=<önceden tanımlı komut>)` koyar.
+      `config/scheduled_tasks.yaml(.example)` (fail-loud, `security.yaml` gibi;
+      alanlar `name`/`cron`/`text`).
+- [ ] **`core/continuous_runner.py`** — `jarvis-mic`/`jarvis-text-input`
+      deseninde daemon thread; bir koşulu izler (dosya değişimi, MCP kaynağı,
+      IoT sensörü) ve `InputEvent(source="continuous", ...)` üretir;
+      `docs/mimari-genel-bakis.md` §19 thread haritasına eklenir, `stop_event`
+      ile kapanır.
+- [ ] **Risk kısıtı** (v2 §5.3) — `source in {"scheduled","continuous"}` olan
+      olaylar yalnızca `risk_level == RiskLevel.LOW` aracı otomatik tetikler;
+      `execution_mode: scheduled|continuous` işaretli bir manifest MEDIUM+ risk
+      taşıyorsa boot'ta reddedilir (`registry_loader` doğrular, `print_system`
+      ile uyarır, yüklemez). Bu yollardan gelen MEDIUM+ eylem, kullanıcının
+      sonradan onaylayacağı bir pending-approval kaydı oluşturur (HUD/`/status`).
+
+### 6.7 Proje Başlatma Aracı — CreateProjectTool (v2 Faz G) ⬜
+
+6.1'in sertleştirilmiş `is_path_safe()`'ine ve 6.3'e (delegasyon) bağlı;
+`Faz 4.5`'in "Alt Yüklenici" desenini yeniden kullanılabilir bir araca çevirir.
+
+Alt adımlar:
+- [ ] **`tools/project_tool.py:CreateProjectTool`** (`name="create_project"`,
+      `risk_level=RiskLevel.HIGH`, param `project_name`) — `execute()`:
+      `PROJECT_ROOT/jarvis_workspace/projects/<project_name>` yolunu
+      sertleştirilmiş `is_path_safe(..., allow_create=True)` ile doğrula,
+      klasörü oluştur, `templates/CLAUDE.md.template`'i proje adını gömerek
+      kopyala, `spawn_detached(["claude","code"], cwd=...)`, kısa TTS yanıtı.
+- [ ] **`tools/subprocess_utils.py:spawn_detached()`** — fire-and-forget
+      `subprocess.Popen` (`communicate()`/`wait()` YOK — bir Claude Code
+      oturumu dakikalarca sürer, ana thread'i bloklayamaz); Windows'ta
+      `DETACHED_PROCESS` / `CREATE_NEW_PROCESS_GROUP`.
+- [ ] **`templates/CLAUDE.md.template`** — yeni projeye kopyalanan scaffold.
+
+### 6.8 MCP Genişletme — Google Drive + Home Assistant (v2 Faz H) ⬜
+
+Bağımsız — herhangi bir zaman. "MCP yalnızca bilgi/veri erişimi, OS/fiziksel
+kontrol yerel kalır" ilkesini (`docs/ARCHITECTURE.md` §9) korur.
+
+Alt adımlar:
+- [ ] **Google Drive MCP** — standart `config/mcp_servers.yaml` girdisi;
+      not alma/okuma ile aynı kategori, risk `MEDIUM` (MCP araçlarına asla
+      `LOW` verilmez).
+- [ ] **Home Assistant — durum okuma** — Home Assistant MCP sunucusu üzerinden
+      (hangi lambalar açık, sıcaklık vb.); salt bilgi.
+- [ ] **Home Assistant — kontrol** — yerel `tools/iot_tool.py:HomeAssistantTool`
+      (HA REST API'sini doğrudan çağırır, `TOOL_REGISTRY`'ye statik kayıtlı);
+      MCP üzerinden DEĞİL — fiziksel etki = OS kontrolü kategorisi. Risk cihaz
+      tipine göre: ışık/priz `MEDIUM`, kilit/güvenlik cihazı `HIGH`.
+
+### 6.9 Gözlemlenebilirlik — Tracing (v2 Faz I) ⬜
+
+Tamamen bağımsız. `hud_bus`'a benzer ama kalıcı.
+
+Alt adımlar:
+- [ ] **`core/trace.py`** — SQLite (`core/trace.db`); her agent/tool çağrısı
+      için timestamp, rol/model adı, kırpılmış/hash'lenmiş girdi özeti (tam
+      metin değil — hassas veri birikimini önlemek için), süre (ms), sonuç
+      (`success`/`error`/`guardrail_blocked`/`approval_denied`), varsa token
+      sayısı.
+- [ ] **`/trace [n]` CLI komutu** — `core/cli_commands.py` (`/status`, `/debug`
+      ailesi); son N kaydı gösterir. Amaç: çift-çağrı gecikmesinin gerçek
+      etkisini ve `delegate_complex` adım sayısını ölçmek.
 
 ---
 

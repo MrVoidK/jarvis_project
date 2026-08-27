@@ -1,12 +1,17 @@
 # Jarvis — Mimari Vizyon (Multi-Agent, Guardrail, Zero-Trust)
 
-Bu dosya `docs/ROADMAP.md`'deki Faz 1–5 görev listesinin **arkasındaki
+Bu dosya `docs/ROADMAP.md`'deki Faz 1–6 görev listesinin **arkasındaki
 mimari tasarımı** anlatır: katmanlar, design pattern kullanımları,
 çoklu-ajan (multi-agent) iletişim şeması, VRAM optimizasyonu ve
 güvenlik/guardrail tasarımı. Roadmap "ne zaman/ne" sorusuna, bu dosya
 "nasıl/neden" sorusuna cevap verir. `CLAUDE.md`'deki "Mimari (mevcut
 durum)" bölümü şu anki (tamamlanmış) koda karşılık gelir; burası hedef
 mimaridir — henüz kodda karşılığı olmayan bölümler ⬜ ile işaretlenir.
+
+> **v2 multi-agent güncellemesi (ROADMAP Faz 6):** §4, §5 ve §7 aşağıda
+> `docs/jarvis-mimari-v2-multiagent-entegrasyon.md` ile senkronize edildi;
+> tümüyle yeni katmanlar §10–13'te. O doküman ayrıntılı spec olarak
+> geçerlidir, bu dosyanın yerini almaz.
 
 ## 1. Genel İlkeler
 
@@ -175,15 +180,17 @@ belirt.
 ```mermaid
 sequenceDiagram
     participant U as Kullanıcı (Ears)
-    participant O as Orkestratör (Llama 3.1)
+    participant R as Router (mini model, ~1 GB)
+    participant O as Orkestratör (hermes3:8b, paylaşımlı)
     participant G as Guardrail
-    participant H as Hermes Agent
+    participant H as Hermes rolü (aynı model, farklı prompt)
     participant C as Claude Code
     participant M as Mouth (TTS)
 
     U->>G: transkript
-    G->>O: temiz transkript (injection taraması geçti)
-    O->>O: intent sınıflandır
+    G->>R: temiz transkript (injection taraması geçti)
+    R->>R: intent sınıflandır (sohbet / araç / delegate_complex / delegate_code)
+    R->>O: intent + temiz transkript
     alt basit diyalog
         O->>G: yanıt metni
     else agentic görev (tool-calling, dosya/API)
