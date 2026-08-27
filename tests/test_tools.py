@@ -6,7 +6,7 @@ testler gercek Obsidian vault'una veya jarvis_workspace/ dizinine dokunmaz.
 Calistirma: `python -m pytest tests/ -v` (repo kokunden, bkz. CLAUDE.md Komutlar).
 """
 
-from src.jarvis.core.dispatcher import Dispatcher
+from src.jarvis.core.dispatcher import SHUTDOWN_INTENT_NAME, Dispatcher
 from src.jarvis.core.risk import RiskLevel, evaluate_approval_answer, requires_approval
 from src.jarvis.tools import files as files_module
 from src.jarvis.tools import notes_tool as notes_module
@@ -182,6 +182,25 @@ def test_dispatcher_match_rule_extracts_get_time_language():
 
 def test_dispatcher_returns_none_for_plain_chat():
     assert Dispatcher().match_rule("bugün hava nasıl?") is None
+
+
+def test_dispatcher_match_rule_extracts_shutdown_language():
+    """Sesli/yazili "sistemi kapat" - core/app.py'nin `while not stop_event.
+    is_set()` kapatma yolunu tetikleyen fast-path kural (bkz. SHUTDOWN_INTENT_NAME);
+    LLM'e gitmiyor, get_time ile ayni gerekce (belirsizlik tasimamali)."""
+    dispatcher = Dispatcher()
+
+    shutdown_tr = dispatcher.match_rule("sistemi kapat")
+    assert shutdown_tr.name == SHUTDOWN_INTENT_NAME
+    assert shutdown_tr.parameters["lang"] == "tr"
+
+    shutdown_en = dispatcher.match_rule("please shut down")
+    assert shutdown_en.name == SHUTDOWN_INTENT_NAME
+    assert shutdown_en.parameters["lang"] == "en"
+
+    shutdown_en_alt = dispatcher.match_rule("turn yourself off")
+    assert shutdown_en_alt.name == SHUTDOWN_INTENT_NAME
+    assert shutdown_en_alt.parameters["lang"] == "en"
 
 
 def test_dispatcher_match_rule_no_longer_handles_former_regex_intents():

@@ -37,6 +37,7 @@ _COMMANDS: dict[str, str] = {
     "/debug": "Ayrıntılı (DEBUG) log seviyesini açar/kapatır.",
     "/clear": "Sohbet geçmişini sıfırlar ve ekranı temizler.",
     "/test <araç_adı> [key=value ...]": "Router'ı atlayıp doğrudan bir aracı çalıştırır.",
+    "/exit": "Jarvis'i güvenli şekilde kapatır (Ctrl+C ile aynı, ayrıca sesli 'sistemi kapat' ile de tetiklenir).",
 }
 
 
@@ -77,6 +78,8 @@ def handle_cli_command(
             pending=pending,
             speaking_event=speaking_event,
         )
+    elif command == "/exit":
+        _cmd_exit(stop_event)
     else:
         print_system(f"Bilinmeyen komut: {command} (bkz. /help)", level="warning")
 
@@ -143,6 +146,17 @@ def _cmd_debug() -> None:
     # tool_calls cevabi (ikisi de daha once DEBUG seviyesinde eklendi).
     logging.getLogger().setLevel(level)
     print_system(f"Debug modu {'açıldı' if _debug_enabled else 'kapandı'}.", level="info")
+
+
+def _cmd_exit(stop_event: Optional[threading.Event]) -> None:
+    """Ctrl+C ile AYNI kapatma yolunu tetikler (bkz. `core/app.py:run_jarvis()`nin
+    `while not stop_event.is_set()` kosulu) - sadece stop_event'i set ediyor,
+    dongu bir SONRAKI iterasyonda kendiliginden cikiyor. Bu modul SESLI bir
+    yanit uretmez (bkz. dosya-ustu docstring) - sesli "sistemi kapat" esdegeri
+    icin bkz. `core/dispatcher.py:SHUTDOWN_INTENT_NAME` + `core/app.py:_handle_turn()`."""
+    print_system("Kapatma istendi (/exit) - güvenli şekilde kapatılıyor...", level="warning")
+    if stop_event is not None:
+        stop_event.set()
 
 
 def _cmd_clear(history: list[dict]) -> None:

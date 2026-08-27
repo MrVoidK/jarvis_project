@@ -111,6 +111,28 @@ def test_debug_toggles_flag_and_log_level():
     assert logging.getLogger().level == logging.INFO
 
 
+def test_exit_sets_stop_event_and_warns(monkeypatch):
+    # /exit, Ctrl+C ile AYNI kapatma yolunu (core/app.py:run_jarvis()'in
+    # `while not stop_event.is_set()` kosulu) tetikliyor - burada sadece
+    # stop_event'in gercekten set edildigini dogruluyoruz.
+    captured = {}
+    monkeypatch.setattr(
+        cli_commands, "print_system", lambda msg, level="info": captured.update(msg=msg, level=level)
+    )
+
+    stop_event = threading.Event()
+    handle_cli_command("/exit", history=[], stop_event=stop_event)
+
+    assert stop_event.is_set()
+    assert captured["level"] == "warning"
+
+
+def test_exit_without_stop_event_does_not_raise():
+    # stop_event=None (varsayilan) - hibrit-disi/gelecekteki cagiranlar icin
+    # geriye donuk uyumluluk, cokme yerine sessizce yoksayilmali.
+    handle_cli_command("/exit", history=[])
+
+
 def test_test_command_unknown_tool_reports_error_without_importing_app(monkeypatch):
     # core.app'in GERCEK yuklenmesi ears/mouth model yuklemesini tetikler -
     # bilinmeyen bir arac icin bu importa HIC ulasilmamali (bkz. _cmd_test:

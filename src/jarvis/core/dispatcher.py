@@ -26,7 +26,14 @@ IntentSource = Literal["rule", "llm"]
 # duser - Brain'in normal sohbet davranisiyla es anlamli.
 DEFAULT_INTENT_NAME = "chat"
 
-# SADECE basit, belirsizlik tasimayan TEK bir komut fast-path'te kaliyor - geri
+# Sesli/yazili "sistemi kapat" komutu - core/app.py:_handle_turn() bunu ACIKCA
+# yakalayip stop_event'i set ediyor (bkz. o dosyadaki kullanim). Bir TOOL_REGISTRY
+# girdisi DEGIL (execute() gerektiren bir Tool degil, dogrudan surec kontrolu) -
+# bu yuzden dispatcher.py'de, HANDLERS/TOOL_REGISTRY'nin disinda, kendi basina
+# bir sabit olarak tutuluyor.
+SHUTDOWN_INTENT_NAME = "shutdown"
+
+# SADECE basit, belirsizlik tasimayan komutlar fast-path'te kaliyor - geri
 # kalan TUM araclar (list_files, create_note, read_notes, run_command,
 # get_system_info, launch_app, media_*) artik asagidaki classify() ile Ollama
 # native tool-calling'e (semantic router) devrediliyor. Regex'ler kelime siniri
@@ -36,10 +43,20 @@ DEFAULT_INTENT_NAME = "chat"
 # dilini KESIN olarak veriyor - langdetect'in kisa metinlerde (orn. "saat kaç?")
 # yanlis sonuc verebilmesinden (gercek testte TR sorgusu yanlislikla "en" olarak
 # tespit edildi) cok daha guvenilir.
+#
+# `shutdown` BILINCLI OLARAK fast-path'te (semantic router'a/LLM'e HIC gitmiyor) -
+# surecin tamamini kapatan bir komutun bir kucuk modelin "hangi araci sececegim"
+# kararina bagli olmasi istenmiyor (get_time'in "belirsizlik tasimiyor" ilkesiyle
+# ayni gerekce, ama burada bilincli-tasarim kadar guvenlik/guvenilirlik de var).
 _RULES: dict[str, list[tuple[str, re.Pattern]]] = {
     "get_time": [
         ("tr", re.compile(r"\bsaat kaç\b", re.IGNORECASE)),
         ("en", re.compile(r"\bwhat time is it\b", re.IGNORECASE)),
+    ],
+    SHUTDOWN_INTENT_NAME: [
+        ("tr", re.compile(r"\b(sistemi|kendini) kapat\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bshut\s?down\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bturn (yourself|the system) off\b", re.IGNORECASE)),
     ],
 }
 

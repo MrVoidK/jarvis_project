@@ -13,7 +13,7 @@ from src.jarvis.core.console import (
     print_system,
     status_spinner,
 )
-from src.jarvis.core.dispatcher import DEFAULT_INTENT_NAME, Dispatcher
+from src.jarvis.core.dispatcher import DEFAULT_INTENT_NAME, SHUTDOWN_INTENT_NAME, Dispatcher
 from src.jarvis.core.guardrail.base import GuardrailChain
 from src.jarvis.core.guardrail.input_checks import InputInjectionCheck
 from src.jarvis.core.guardrail.output_checks import OutputSafetyCheck
@@ -55,6 +55,10 @@ _UNSAFE_COMMAND_MESSAGES = {
 _TOOL_FAILED_MESSAGES = {
     "tr": "Aracı çalıştırırken bir hata oluştu.",
     "en": "Something went wrong while running that tool.",
+}
+_SHUTDOWN_MESSAGES = {
+    "tr": "Anlaşıldı, kapanıyorum.",
+    "en": "Understood, shutting down.",
 }
 
 
@@ -274,6 +278,19 @@ def _handle_turn(
         if intent.source == "llm":
             print_router_decision(intent.name, intent.confidence, intent.parameters)
 
+        if intent.name == SHUTDOWN_INTENT_NAME:
+            # Ctrl+C ile AYNI kapatma yolunu tetikliyor (bkz. run_jarvis()'in
+            # `while not stop_event.is_set()` kosulu) - ama BURADA, buyuk bir
+            # exception firlatmak yerine, mevcut cooperative stop_event
+            # mekanizmasi kullanilarak: bu tur normal sekilde bitip (veda
+            # mesaji soylenip) run_jarvis()'in dongusu bir SONRAKI iterasyonda
+            # kendiliginden cikiyor.
+            if stop_event is not None:
+                stop_event.set()
+            lang = intent.parameters.get("lang", "en")
+            yield _localized(_SHUTDOWN_MESSAGES, lang), lang
+            return
+
         handler = HANDLERS.get(intent.name)
         if handler is not None:
             text, lang = handler(intent)
@@ -373,7 +390,13 @@ def run_jarvis() -> None:
     pending: list[InputEvent] = []
 
     try:
-        while True:
+        # `stop_event.is_set()` KOSULU (eskiden `while True:`): "sistemi kapat"
+        # (sesli/yazili, bkz. dispatcher.py:SHUTDOWN_INTENT_NAME) ve `/exit`
+        # (core/cli_commands.py) BURADAN sonraki iterasyonda kendiliginden
+        # cikabilsin diye - her iki yol da (KeyboardInterrupt'in KENDISI gibi)
+        # sadece stop_event'i set ediyor, bu dongu ise bunu iteratıf olarak
+        # kontrol ediyor (kapatma icin bir exception FIRLATILMASINA gerek yok).
+        while not stop_event.is_set():
             event = pending.pop(0) if pending else hub.next_event()
 
             if event.source == "text" and is_cli_command(event.text):
