@@ -129,6 +129,9 @@ def test_classify_sends_no_tool_needed_schema_to_router(monkeypatch):
     assert len(captured) == 1
     tool_names = {schema["function"]["name"] for schema in captured[0]}
     assert dispatcher_module._NO_TOOL_FUNCTION_NAME in tool_names
+    # Faz 6.3: delegasyon sentinel'leri de fiilen gonderilen listede olmali.
+    assert dispatcher_module._DELEGATE_COMPLEX_FUNCTION_NAME in tool_names
+    assert dispatcher_module._DELEGATE_CODE_FUNCTION_NAME in tool_names
 
 
 def test_classify_falls_back_to_chat_when_router_hallucinates_unknown_tool(monkeypatch):
@@ -159,3 +162,62 @@ def test_classify_falls_back_to_chat_when_router_produces_wrong_argument_type(mo
 
     assert intent.name == DEFAULT_INTENT_NAME
     assert intent.source == "llm"
+
+
+# --- Faz 6.3: delegasyon sentinel'leri ---
+
+
+def test_classify_returns_delegate_complex_intent(monkeypatch):
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(
+            tool_calls=[
+                ToolCall(
+                    name=dispatcher_module._DELEGATE_COMPLEX_FUNCTION_NAME,
+                    arguments={"task": "durumu kontrol et ve not al"},
+                )
+            ]
+        ),
+    )
+
+    intent = Dispatcher().classify("sistem durumunu kontrol et ve bir not al")
+
+    assert intent.name == dispatcher_module.DELEGATE_COMPLEX_INTENT_NAME
+    assert intent.source == "llm"
+    assert intent.confidence == 0.7
+    assert intent.parameters["task"] == "durumu kontrol et ve not al"
+    assert "lang" in intent.parameters
+
+
+def test_classify_returns_delegate_code_intent(monkeypatch):
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(
+            tool_calls=[
+                ToolCall(
+                    name=dispatcher_module._DELEGATE_CODE_FUNCTION_NAME,
+                    arguments={"task": "dispatcher.py'yi analiz et"},
+                )
+            ]
+        ),
+    )
+
+    intent = Dispatcher().classify("bu projedeki dispatcher.py'yi analiz et")
+
+    assert intent.name == dispatcher_module.DELEGATE_CODE_INTENT_NAME
+    assert intent.confidence == 0.7
+    assert intent.parameters["task"] == "dispatcher.py'yi analiz et"
+
+
+def test_classify_delegate_falls_back_to_text_when_task_arg_missing(monkeypatch):
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(
+            tool_calls=[ToolCall(name=dispatcher_module._DELEGATE_COMPLEX_FUNCTION_NAME, arguments={})]
+        ),
+    )
+
+    intent = Dispatcher().classify("çok adımlı bir iş yap")
+
+    assert intent.name == dispatcher_module.DELEGATE_COMPLEX_INTENT_NAME
+    assert intent.parameters["task"] == "çok adımlı bir iş yap"

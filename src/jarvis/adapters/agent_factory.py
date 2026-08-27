@@ -7,18 +7,22 @@ Iki somut Agent adapteri:
   (Faz 6.2 - iki ayri 8B model 12GB VRAM'e sigmiyor, bkz. docs/ARCHITECTURE.md SS5);
   `router` intent siniflandirma icin ayri, kucuk/hizli bir model (`qwen2.5:3b`)
   kullanir (cift-8B cagri gecikmesini azaltir).
-- ClaudeCodeAdapter: dis destek (agir kod/mimari isi) - su an STUB. Faz 6.3'te
-  `run_command`/`terminal_tool` uzerinden `claude` CLI olarak baglanacak (anthropic
-  SDK/API key YOLU DEGIL - kullanici karari, bkz. docs/ROADMAP.md Faz 6.3).
+- ClaudeCodeAdapter: dis destek (agir kod/mimari isi) - yerel `claude` CLI'i
+  non-interaktif `-p` modunda alt surec olarak calistirir (Faz 6.3). anthropic
+  SDK / ANTHROPIC_API_KEY YOLU DEGIL (kullanici karari, bkz. docs/ROADMAP.md Faz
+  6.3). `claude -p` VARSAYILAN izinlerle: kod tabanini okur, analiz/plan/kod-metni
+  uretir ama dosya DEGISTIRMEZ.
 """
 
 import logging
+import subprocess
 from typing import Literal, Optional
 
 import httpx
 import ollama
 
 from src.jarvis.agents.base import Agent, AgentToolResponse, ToolCall
+from src.jarvis.core.paths import PROJECT_ROOT
 
 logger = logging.getLogger("jarvis.adapters")
 
@@ -33,6 +37,12 @@ ROLE_MODEL_MAP: dict[str, str] = {
     "tool_agent": ORCHESTRATOR_MODEL_NAME,
     "router": ROUTER_MODEL_NAME,
 }
+
+# Router modeli (qwen2.5:3b, ~2.2 GB) her rule-eslesmeyen turda cagriliyor ama
+# konusma araligindaki kisa patlamalar disinda bosta - Ollama'nin varsayilan
+# 5 dk'lik keep_alive'i yerine 2 dk: aktif konusmada hot kalir, konusma bitince
+# ~2 dk sonra VRAM'den cikip yer acar (bkz. docs/ARCHITECTURE.md SS5, ~11.5 GB).
+_ROUTER_KEEP_ALIVE = "2m"
 
 # Baglanti/model hatalarinda kullanicaya donecek TR/EN mesaj - src/jarvis/brain/llm.py'deki
 # think_and_respond_stream'in hata deseniyle bilincli olarak ayni (iki ayri LLM cagri yeri
@@ -77,14 +87,28 @@ class OllamaAgentAdapter(Agent):
     router). Rol farki = `model_name` (bkz. ROLE_MODEL_MAP) + cagiran tarafin
     verdigi sistem promptu (`context`); ayri bir sinif gerekmez."""
 
-    def __init__(self, model_name: str = ORCHESTRATOR_MODEL_NAME) -> None:
+    def __init__(
+        self,
+        model_name: str = ORCHESTRATOR_MODEL_NAME,
+        keep_alive: "str | None" = None,
+    ) -> None:
         self._model_name = model_name
+        # keep_alive: model VRAM'de bosta ne kadar kalsin (Ollama'ya iletilir).
+        # None -> Ollama varsayilani (5 dk). Router icin kisa tutuluyor (bkz.
+        # ROLE_MODEL_MAP kullanimi) - kucuk model, konusma bitince ~2 dk sonra
+        # VRAM'den cikip ~2 GB serbest birakiyor, aktif konusmada hot kaliyor.
+        self._keep_alive = keep_alive
+
+    def _chat_kwargs(self) -> dict:
+        return {"keep_alive": self._keep_alive} if self._keep_alive is not None else {}
 
     def respond(self, prompt: str, context: Optional[list[dict]] = None) -> str:
         messages = list(context or [])
         messages.append({"role": "user", "content": prompt})
         try:
-            response = ollama.chat(model=self._model_name, messages=messages)
+            response = ollama.chat(
+                model=self._model_name, messages=messages, **self._chat_kwargs()
+            )
             return response["message"]["content"].strip()
         except (httpx.ConnectError, ConnectionError):
             logger.error("Ajan: Ollama'ya baglanilamadi (%s).", self._model_name)
@@ -103,7 +127,9 @@ class OllamaAgentAdapter(Agent):
         respond_stream docstring'i + v2 SS2.4)."""
         messages = list(context or [])
         messages.append({"role": "user", "content": prompt})
-        for chunk in ollama.chat(model=self._model_name, messages=messages, stream=True):
+        for chunk in ollama.chat(
+            model=self._model_name, messages=messages, stream=True, **self._chat_kwargs()
+        ):
             yield chunk["message"]["content"]
 
     def call_tools(
@@ -123,7 +149,11 @@ class OllamaAgentAdapter(Agent):
             # kalmasini sagliyor - tool-secim karari zaten deterministik/
             # tekrarlanabilir olmali, yaratici cesitlilige hicbir ihtiyac yok.
             response = ollama.chat(
-                model=self._model_name, messages=messages, tools=tools, options={"temperature": 0.1}
+                model=self._model_name,
+                messages=messages,
+                tools=tools,
+                options={"temperature": 0.1},
+                **self._chat_kwargs(),
             )
         except (httpx.ConnectError, ConnectionError):
             logger.error("Ajan (tool-calling): Ollama'ya baglanilamadi (%s).", self._model_name)
@@ -157,31 +187,98 @@ class OllamaAgentAdapter(Agent):
         return True
 
 
-class ClaudeCodeAdapter(Agent):
-    """Dis destek: agir bilissel/kod-mimari gorevleri icin Claude Code'a (Anthropic API) devir.
+_CLAUDE_CLI = "claude"
+_CLAUDE_TIMEOUT_S = 120.0
+_CLAUDE_CLI_ERROR = (
+    "Claude Code CLI'ını çalıştıramadım (claude komutu PATH'te mi?). "
+    "Couldn't run the Claude Code CLI (is 'claude' on PATH?)."
+)
+_CLAUDE_TIMEOUT_MSG = (
+    "Claude Code çok uzun sürdü, durdurdum. "
+    "Claude Code took too long, so I stopped it."
+)
 
-    STUB: `anthropic` paketi requirements.txt'te yok ve ANTHROPIC_API_KEY .env'de tanimli
-    degil. Gercek baglanti ayri bir gorev (paket kurulumu + .env + gercek istek/hata
-    yonetimi) gerektirir - burada sadece Agent sozlesmesini karsilayan, ne eksik oldugunu
-    acikca soyleyen bir yer tutucu var.
+
+def _kill_process_tree(process: subprocess.Popen) -> None:
+    """Zaman asimina ugrayan bir alt surecin TUM surec agacini oldurur (Windows
+    `taskkill /F /T`). Ayni desen terminal_tool.py ve web_ui_process.py'de de var
+    - bilincli 3. kopya (ileride core/proc.py'ye cikarilabilir); process.kill()
+    tek basina sadece dogrudan cocugu (node.exe) oldurur, `claude`'un baslattigi
+    MCP alt surecleri yetim kalirdi."""
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+            capture_output=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.warning("taskkill basarisiz (%s) - sadece dogrudan surec olduruluyor.", exc)
+    finally:
+        try:
+            process.kill()
+            process.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+
+class ClaudeCodeAdapter(Agent):
+    """Agir kod/mimari isini yerel `claude` CLI'a (Claude Code, non-interaktif
+    `-p` modu) devreder - anthropic SDK / API key YOLU DEGIL (kullanici karari,
+    bkz. docs/ROADMAP.md Faz 6.3).
+
+    `claude -p` VARSAYILAN izinlerle calisir: kod tabanini okur, analiz/plan/
+    kod-metni uretir ama dosya DEGISTIRMEZ (-p modunda yazma/bash otomatik
+    reddedilir). respond() ana dongude BLOKLAR (en fazla _CLAUDE_TIMEOUT_S) -
+    dis surec, isbirlikci iptali yok; non-blocking varyant Faz 6.7
+    (CreateProjectTool + spawn_detached).
     """
 
+    def __init__(self, cli_path: str = _CLAUDE_CLI, timeout: float = _CLAUDE_TIMEOUT_S) -> None:
+        self._cli_path = cli_path
+        self._timeout = timeout
+
     def respond(self, prompt: str, context: Optional[list[dict]] = None) -> str:
-        raise NotImplementedError(
-            "ClaudeCodeAdapter henuz baglanmadi: 'pip install anthropic' ile SDK'yi kurup "
-            "_client() metodunu Anthropic() ile doldurun ve .env'e ANTHROPIC_API_KEY ekleyin."
-        )
+        # context su an kullanilmiyor: delegate_code branch (core/app.py) sadece
+        # tek bir `task` metni geciriyor; `claude -p` zaten tek bir prompt string
+        # alir (mesaj listesi degil).
+        try:
+            proc = subprocess.Popen(
+                [self._cli_path, "-p", prompt],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=PROJECT_ROOT,
+            )
+        except (FileNotFoundError, OSError) as exc:
+            logger.error("ClaudeCodeAdapter: claude CLI baslatilamadi: %s", exc)
+            return _CLAUDE_CLI_ERROR
+        try:
+            stdout, stderr = proc.communicate(timeout=self._timeout)
+        except subprocess.TimeoutExpired:
+            logger.error("ClaudeCodeAdapter: claude -p zaman asimi (%.0fs)", self._timeout)
+            _kill_process_tree(proc)
+            return _CLAUDE_TIMEOUT_MSG
+
+        out = (stdout or "").strip()
+        if proc.returncode != 0:
+            logger.error(
+                "ClaudeCodeAdapter: claude -p exit %s: %s", proc.returncode, (stderr or "")[:300]
+            )
+            return out or _CLAUDE_CLI_ERROR
+        return out or "Claude Code bir yanıt üretmedi. Claude Code returned no output."
 
     def call_tools(
         self, prompt: str, tools: list[dict], context: Optional[list[dict]] = None
     ) -> AgentToolResponse:
         raise NotImplementedError(
-            "ClaudeCodeAdapter henuz baglanmadi: 'pip install anthropic' ile SDK'yi kurup "
-            "_client() metodunu Anthropic() ile doldurun ve .env'e ANTHROPIC_API_KEY ekleyin."
+            "ClaudeCodeAdapter.call_tools() uygulanmiyor - Claude Code kendi tool-use'unu "
+            "ICERIDE yapar, Ollama-stili bir semayla surulmez. respond() kullanin."
         )
 
     def supports_tools(self) -> bool:
-        return True
+        # Bizim call_tools() arayuzumuzu uygulamiyor (Claude Code araclarini kendi
+        # icinde kullanir) - dispatcher bir intent'i buraya YONLENDIRMEMELI.
+        return False
 
 
 AgentRole = Literal["orchestrator", "tool_agent", "router", "deep_reasoning"]
@@ -198,7 +295,8 @@ class AgentFactory:
     @staticmethod
     def create(role: AgentRole) -> Agent:
         if role in ROLE_MODEL_MAP:
-            return OllamaAgentAdapter(model_name=ROLE_MODEL_MAP[role])
+            keep_alive = _ROUTER_KEEP_ALIVE if role == "router" else None
+            return OllamaAgentAdapter(model_name=ROLE_MODEL_MAP[role], keep_alive=keep_alive)
         if role == "deep_reasoning":
             return ClaudeCodeAdapter()
         raise ValueError(f"Bilinmeyen ajan rolu: {role!r}")

@@ -280,3 +280,117 @@ def test_tool_execution_normal_path_unaffected(monkeypatch):
     result = app_module._run_tool_pipeline(tool, _fake_intent(), stop_event=None)
 
     assert result == "hepsi yolunda"
+
+
+# --- Faz 6.3: delegate dallari ---
+
+
+class _ScriptedAgent:
+    """call_tools() onceden yazilmis AgentToolResponse'lari sirayla dondurur."""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+
+    def call_tools(self, prompt, tools, context=None):
+        return self._responses.pop(0)
+
+
+def _delegate_intent(name, task):
+    return SimpleNamespace(name=name, parameters={"task": task, "lang": "en"})
+
+
+def test_delegate_complex_runs_bounded_loop(monkeypatch):
+    from src.jarvis.agents.base import AgentToolResponse, ToolCall
+
+    fake_tool = SimpleNamespace(name="get_system_info", parameters_schema={}, risk_level=RiskLevel.LOW)
+    monkeypatch.setattr(app_module, "all_tools", lambda: {})
+    monkeypatch.setattr(app_module, "get_tool", lambda n: fake_tool if n == "get_system_info" else None)
+    executed = []
+    monkeypatch.setattr(
+        app_module, "_execute_tool",
+        lambda tool, intent, *a, **k: executed.append(intent.name) or "adım tamam",
+    )
+    agent = _ScriptedAgent([
+        AgentToolResponse(tool_calls=[ToolCall(name="get_system_info", arguments={})]),
+        AgentToolResponse(
+            tool_calls=[ToolCall(name=app_module._NO_TOOL_FUNCTION_NAME, arguments={})],
+            content="durum iyi, not aldım",
+        ),
+    ])
+    monkeypatch.setattr(app_module.AgentFactory, "create", staticmethod(lambda role: agent))
+
+    out = list(app_module._run_delegate_complex(
+        _delegate_intent("delegate_complex", "durumu kontrol et ve not al"),
+        None, None, None, None, None,
+    ))
+
+    assert out == [("durum iyi, not aldım", "en")]
+    assert executed == ["get_system_info"]
+
+
+def test_delegate_complex_stops_at_max_steps(monkeypatch):
+    from src.jarvis.agents.base import AgentToolResponse, ToolCall
+
+    fake_tool = SimpleNamespace(name="get_system_info", parameters_schema={}, risk_level=RiskLevel.LOW)
+    monkeypatch.setattr(app_module, "all_tools", lambda: {})
+    monkeypatch.setattr(app_module, "get_tool", lambda n: fake_tool)
+    executed = []
+    monkeypatch.setattr(
+        app_module, "_execute_tool",
+        lambda tool, intent, *a, **k: executed.append(1) or "adım sonucu",
+    )
+    agent = _ScriptedAgent(
+        [AgentToolResponse(tool_calls=[ToolCall(name="get_system_info", arguments={})])] * 5
+    )
+    monkeypatch.setattr(app_module.AgentFactory, "create", staticmethod(lambda role: agent))
+
+    out = list(app_module._run_delegate_complex(
+        _delegate_intent("delegate_complex", "durmadan çalış"), None, None, None, None, None,
+    ))
+
+    assert len(executed) == app_module._MAX_DELEGATE_STEPS
+    assert out == [("adım sonucu", "en")]
+
+
+def test_delegate_complex_guardrail_blocks_task(monkeypatch):
+    monkeypatch.setattr(
+        app_module._INPUT_GUARDRAIL, "run",
+        lambda t: SimpleNamespace(allowed=False, reason="blocked"),
+    )
+    executed = []
+    monkeypatch.setattr(app_module, "_execute_tool", lambda *a, **k: executed.append(1))
+
+    out = list(app_module._run_delegate_complex(
+        _delegate_intent("delegate_complex", "kötü şey"), None, None, None, None, None,
+    ))
+
+    assert out == [(app_module._DELEGATE_FAILED_MESSAGES["en"], "en")]
+    assert executed == []
+
+
+def test_delegate_code_approved_runs_and_yields(monkeypatch):
+    monkeypatch.setattr(app_module, "_prompt_for_approval", lambda *a, **k: True)
+    monkeypatch.setattr(app_module, "speak", lambda *a, **k: None)
+    stub = SimpleNamespace(respond=lambda task: "hata dispatcher tarafinda")
+    monkeypatch.setattr(app_module.AgentFactory, "create", staticmethod(lambda role: stub))
+
+    out = list(app_module._run_delegate_code(
+        _delegate_intent("delegate_code", "dispatcher.py'yi analiz et"), None, None, None, None,
+    ))
+
+    assert out == [("hata dispatcher tarafinda", "en")]
+
+
+def test_delegate_code_denied_does_not_run(monkeypatch):
+    monkeypatch.setattr(app_module, "_prompt_for_approval", lambda *a, **k: False)
+    monkeypatch.setattr(app_module, "speak", lambda *a, **k: None)
+    called = []
+    stub = SimpleNamespace(respond=lambda task: called.append(1) or "x")
+    monkeypatch.setattr(app_module.AgentFactory, "create", staticmethod(lambda role: stub))
+
+    out = list(app_module._run_delegate_code(
+        _delegate_intent("delegate_code", "analiz et"), None, None, None, None,
+    ))
+
+    assert out == [(app_module._APPROVAL_DENIED_MESSAGES["en"], "en")]
+    assert called == []

@@ -839,7 +839,7 @@ Alt adımlar:
       bir GPU dahil) taşınırken hangi adımların (bkz. `CLAUDE.md` Komutlar
       bölümü) tekrarlanması gerektiği netleştirilir.
 
-## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.2 tamam, 6.3+ bekliyor)
+## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.3 tamam, 6.4+ bekliyor)
 
 `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`'deki "Faz A–I" planının
 ROADMAP numaralandırmasına taşınmış hâli — mimari gerekçe ve tam spec o
@@ -946,26 +946,50 @@ hata-string döner ama streaming tüketicisi `brain/llm.py` kendi TR/EN + histor
 mantığına sahip (v2 §2.4). (4) `LlamaOrchestratorAdapter` → `OllamaAgentAdapter`
 yeniden adlandırıldı.
 
-### 6.3 Multi-Agent Aktivasyonu (v2 Faz C) ⬜
+### 6.3 Multi-Agent Aktivasyonu (v2 Faz C) ✅
 
-`docs/ARCHITECTURE.md` §4 iletişim şemasını kağıt üstünden koda geçirir.
+`docs/ARCHITECTURE.md` §4 iletişim şemasını kağıt üstünden koda geçirdi.
 
 Alt adımlar:
-- [ ] **`ClaudeCodeAdapter` gerçek implementasyon** — `run_command`/
-      `terminal_tool` (zaten HIGH risk + `[Y/N]` onay akışında) üzerinden
-      `claude` CLI'ı çalıştırır. **v2 §2.5'teki `anthropic` SDK /
-      `ANTHROPIC_API_KEY` yolu bilinçli olarak UYGULANMAZ** (sebep koda yorum:
-      ayrı credential yönetimi istenmiyor, mevcut risk/onay mekanizması yeniden
-      kullanılır — `docs/ARCHITECTURE.md` §3 ve §9.3 ile tutarlı). `requirements.txt`
-      `anthropic` eklenmez, `check_anthropic_connection()` yazılmaz.
-- [ ] **Delegasyon sentinel'leri** — router şemasına `_DELEGATE_COMPLEX_SCHEMA`
-      / `_DELEGATE_CODE_SCHEMA` (`no_tool_needed` deseninin aynısı);
-      `core/dispatcher.py:Dispatcher.classify()` bunları `Intent("delegate_complex",
-      0.7)` / `Intent("delegate_code", 0.7)`'e eşler.
-- [ ] **`_handle_turn()` dalları** — `core/app.py`: `delegate_complex` →
-      `tool_agent` ile sınırlı çok adımlı döngü (maks ~3 adım, tam otonom döngü
-      DEĞİL — bkz. Faz 4); `delegate_code` → `deep_reasoning`
-      (`ClaudeCodeAdapter`) `respond()`.
+- [x] **`ClaudeCodeAdapter` gerçek implementasyon** — `agent_factory.py`:
+      `subprocess.Popen(["claude", "-p", prompt], cwd=PROJECT_ROOT)` +
+      `communicate(timeout=120s)` + timeout'ta `_kill_process_tree` (Windows
+      `taskkill /F /T`, `terminal_tool.py` deseninin 3. kopyası). **anthropic
+      SDK / `ANTHROPIC_API_KEY` yolu UYGULANMADI** (kullanıcı kararı).
+      `claude -p` VARSAYILAN izinlerle: salt-okuma (yazma/bash `-p` modunda
+      otomatik reddedilir). `supports_tools()` → `False`, `call_tools()` →
+      `NotImplementedError`. Canlı doğrulandı (nested `claude` oturumu sorunsuz).
+- [x] **Delegasyon sentinel'leri** — `core/dispatcher.py`: `_DELEGATE_COMPLEX_SCHEMA`
+      / `_DELEGATE_CODE_SCHEMA` router şemasına eklendi; `classify()` bunları
+      `Intent("delegate_complex" | "delegate_code", 0.7, parameters={"task": ...})`'e
+      eşler (`_NO_TOOL` kontrolünden sonra, `get_tool`'dan önce; `validate_arguments`
+      yok — `Tool` değil, `task` str'e zorlanıp ham girdiye fallback).
+      `_ROUTER_SYSTEM_PROMPT`'a somut örnekler eklendi (qwen2.5:3b `delegate_complex`'i
+      yeterince tetiklemiyordu — canlı test bulgusu).
+- [x] **`_handle_turn()` dalları** — `core/app.py`: `SHUTDOWN` kontrolünden sonra
+      iki `yield from` dalı. `_run_delegate_complex` → `tool_agent` (`hermes3:8b`)
+      ile sınırlı ≤`_MAX_DELEGATE_STEPS`(3) döngü; her adım mevcut `_execute_tool`
+      (onay + guardrail + timeout + HUD) üzerinden — **yeni güvenlik yüzeyi yok**.
+      `_run_delegate_code` → `_prompt_for_approval` (yeni helper, `_run_tool_pipeline`
+      step 2'den çıkarıldı) + "biraz sürebilir" anonsu + `ClaudeCodeAdapter.respond()`
+      (TTS-dostu kalması için prompt'a "≤3 spoken sentences, no markdown" eklenir).
+- [x] **VRAM optimizasyonu** — `OllamaAgentAdapter` `keep_alive` param'ı;
+      `AgentFactory.create("router")` → `keep_alive="2m"` (`qwen2.5:3b` konuşma
+      bitince ~2 dk sonra VRAM'den çıkıp ~2.2 GB serbest bırakır, aktif konuşmada
+      hot kalır).
+- [x] **Testler + canlı doğrulama** — `pytest tests/` 139 yeşil (+14 yeni).
+      Canlı router (11 girdi): 10/11 — düz sohbet + basit tool'lar regresyonsuz,
+      `delegate_complex` 2/2, `delegate_code` 1/2 ("...analiz et ve hataları bul"
+      → chat; qwen2.5:3b'nin "analiz" kelimesini soru sanma eğilimi, kabul edilen
+      3B sınırı — "refactor..." doğru gidiyor).
+
+**v2 §2.5–2.6'dan bilinçli sapmalar:** (1) `ClaudeCodeAdapter` `claude -p` alt
+süreç, anthropic SDK/key DEĞİL (kullanıcı kararı). (2) `claude -p` salt-okuma
+(mutasyon yetkili delegasyon → Faz 6.10/Faz 4). (3) `delegate_code` `_run_command`
+Tool'una değil doğrudan `_handle_turn` dalına bağlı — ama yine de `_prompt_for_approval`
+(HIGH) kapısından geçiyor; blokaj ~120 sn (kabul edilen sınır, non-blocking varyant
+Faz 6.7). (4) `tool_agent` döngüsü `role_prompt` ctor param'ı yerine
+`_TOOL_AGENT_SYSTEM_PROMPT`'u `app.py`'den context olarak alıyor (6.2 kararı).
 
 ### 6.4 Agent Registry / Manifest Sistemi (v2 Faz D) ⬜
 

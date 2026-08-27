@@ -238,6 +238,16 @@ sequenceDiagram
 > artık tek paylaşımlı `hermes3:8b` + ayrı mini router + router sentinel'leri
 > ile canlıya bağlanıyor. `Agent` ABC'ye `respond_stream()` eklenir ve
 > `brain/llm.py` sohbet yolu bu arayüzden geçer (§20 madde 2).
+>
+> **Faz 6.3 aktivasyonu:** router şemasına iki sentetik sentinel — `delegate_
+> complex_task` (→ `tool_agent`/`hermes3:8b` ile sınırlı ≤3 adımlı döngü; her
+> adım `core/app.py:_execute_tool` üzerinden = onay + guardrail + timeout) ve
+> `delegate_code_task` (→ `ClaudeCodeAdapter`). `ClaudeCodeAdapter` yerel
+> `claude -p "<task>"` alt sürecini **varsayılan izinlerle** çalıştırır (kod
+> tabanını okur, DEĞİŞTİRMEZ; `cwd=PROJECT_ROOT`), anthropic SDK/API key
+> KULLANMAZ. `delegate_code` `_prompt_for_approval` (HIGH) kapısından geçer,
+> ~120 sn bloklar (kabul edilen sınır — non-blocking varyant Faz 6.7). Tam
+> otonom plan→araç→değerlendir döngüsü hâlâ Faz 4 (bkz. v2 §10).
 
 ## 5. VRAM Optimizasyon Tavsiyeleri (RTX 4070, 12GB)
 
@@ -248,13 +258,14 @@ Eşzamanlı çalışan modellerin kaba VRAM bütçesi:
 | Ears | faster-whisper `turbo` (float16) | ~1.5–2 GB |
 | Ears | openWakeWord (ONNX, IDLE'da) | ihmal edilebilir (CPU'da da çalışır) |
 | Orkestratör + Hermes rolü | `hermes3:8b` (Ollama, Q4_K_M — **paylaşımlı**) | ~4.7–5 GB |
-| Router | mini model (`qwen2.5:1.5b`/3b) | ~1 GB (v2 Faz B) |
+| Router | `qwen2.5:3b` (Ollama) | ~2.2 GB (v2 Faz B) |
 | Hafıza (opsiyonel, kararsız) | Mem0 CPU embedding (`all-MiniLM-L6-v2`) | ~0 GB GPU (CPU) |
 | Mouth | XTTS-v2 (tek instance) | ~2–3 GB |
-| **Toplam (v2 Faz B sonrası hedef)** | | **~9.5–11 GB** |
+| **Toplam (4'ü de hot — ÖLÇÜLEN)** | | **~11.5 GB / 12 GB** |
 
 `orchestrator` ve `tool_agent` **ayrı** 8B checkpoint olsaydı toplam bütçe
-12 GB sınırını aşardı. Öneriler:
+12 GB sınırını aşardı. Ölçülen ~11.5 GB sınıra yakın ama çalışıyor;
+uygulanan/olası kaldıraçlar:
 
 1. **Paylaşımlı model, çoklu persona (✅ uygulanıyor — v2 Faz B, Seçenek A)**:
    Hermes ayrı bir checkpoint değil, aynı `hermes3:8b`'nin farklı bir sistem
@@ -263,10 +274,14 @@ Eşzamanlı çalışan modellerin kaba VRAM bütçesi:
    `create("tool_agent")` aynı Adapter'ı farklı `role_prompt` ile döndürür.
    (Model seçimi Faz B öncesi Hermes3 vs Qwen3 A/B testiyle netleşir; sadece
    `ROLE_MODEL_MAP` string'i değişir.)
-2. **Sıralı yükleme (Hermes gerçekten ayrı bir model olacaksa)**: Ollama'nın
+2a. **Router `keep_alive="2m"` (✅ uygulandı — Faz 6.3)**: `OllamaAgentAdapter`'a
+   `keep_alive` parametresi eklendi; `AgentFactory.create("router")` bunu `"2m"`
+   ile döndürüyor. `qwen2.5:3b` aktif konuşmada hot kalır, konuşma bitince ~2 dk
+   sonra VRAM'den çıkıp ~2.2 GB serbest bırakır (Ollama varsayılanı 5 dk).
+2. **Sıralı yükleme (daha agresif, gerekirse)**: Ollama'nın
    `keep_alive` parametresiyle aktif olmayan modelin VRAM'i serbest
-   bırakılır (`keep_alive=0` orkestratör beklemedeyken Hermes'e geçişte);
-   aynı anda **en fazla 2 LLM** VRAM'de tutulur (Orkestratör + o an aktif
+   bırakılır (`keep_alive=0` router'ı her çağrıda soğuk yükletir — ~1-2 sn
+   gecikme maliyeti); aynı anda **en fazla 2 LLM** VRAM'de tutulur (Orkestratör + o an aktif
    olan ajan), üçüncüsü asla eşzamanlı yüklenmez.
 3. **XTTS bilingual switch VRAM-nötr**: Faz 1'deki tek-motor çift-dilli TTS
    zaten VRAM eklemez — sadece referans embedding (`gpt_cond_latent`,

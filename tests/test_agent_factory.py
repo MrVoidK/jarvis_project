@@ -68,7 +68,7 @@ def test_respond_stream_yields_raw_chunks(monkeypatch):
     monkeypatch.setattr(
         agent_factory_module.ollama,
         "chat",
-        lambda model, messages, stream=False, tools=None, options=None: iter(chunks),
+        lambda model, messages, stream=False, tools=None, options=None, keep_alive=None: iter(chunks),
     )
 
     out = list(OllamaAgentAdapter().respond_stream("selam", context=[]))
@@ -80,7 +80,7 @@ def test_respond_stream_does_not_swallow_provider_errors(monkeypatch):
     """respond()/call_tools()'un aksine respond_stream saglayici hatasini
     YUTMAMALI - tuketici (brain/llm.py) siniflandiriyor."""
 
-    def _boom(model, messages, stream=False, tools=None, options=None):
+    def _boom(model, messages, stream=False, tools=None, options=None, keep_alive=None):
         raise ConnectionError("ollama down")
 
     monkeypatch.setattr(agent_factory_module.ollama, "chat", _boom)
@@ -103,3 +103,92 @@ def test_factory_rejects_unknown_role():
 
     with pytest.raises(ValueError):
         AgentFactory.create("bogus")
+
+
+# --- Faz 6.3: router keep_alive (VRAM) + ClaudeCodeAdapter ---
+
+
+def test_router_adapter_has_short_keep_alive():
+    assert AgentFactory.create("router")._keep_alive == "2m"
+    assert AgentFactory.create("orchestrator")._keep_alive is None
+    assert AgentFactory.create("tool_agent")._keep_alive is None
+
+
+def test_call_tools_passes_keep_alive_when_set(monkeypatch):
+    captured = {}
+
+    def _fake(model, messages, tools, options=None, keep_alive=None):
+        captured["keep_alive"] = keep_alive
+        return {"message": {"tool_calls": []}}
+
+    monkeypatch.setattr(agent_factory_module.ollama, "chat", _fake)
+    AgentFactory.create("router").call_tools("x", tools=[])
+    assert captured["keep_alive"] == "2m"
+
+
+class _FakeProc:
+    def __init__(self, stdout="", stderr="", returncode=0, timeout=False):
+        self._stdout, self._stderr, self.returncode, self._timeout = stdout, stderr, returncode, timeout
+        self.pid = 4242
+
+    def communicate(self, timeout=None):
+        if self._timeout:
+            import subprocess
+
+            raise subprocess.TimeoutExpired(cmd="claude", timeout=timeout)
+        return self._stdout, self._stderr
+
+
+def test_claude_code_adapter_respond_runs_cli(monkeypatch):
+    from src.jarvis.adapters.agent_factory import ClaudeCodeAdapter
+    from src.jarvis.core.paths import PROJECT_ROOT
+
+    seen = {}
+
+    def _fake_popen(args, stdout=None, stderr=None, text=None, cwd=None):
+        seen["args"], seen["cwd"] = args, cwd
+        return _FakeProc(stdout="analiz metni", returncode=0)
+
+    monkeypatch.setattr(agent_factory_module.subprocess, "Popen", _fake_popen)
+
+    result = ClaudeCodeAdapter().respond("dispatcher.py'yi analiz et")
+
+    assert result == "analiz metni"
+    assert seen["args"][:2] == ["claude", "-p"]
+    assert seen["cwd"] == PROJECT_ROOT
+
+
+def test_claude_code_adapter_respond_handles_missing_cli(monkeypatch):
+    from src.jarvis.adapters.agent_factory import _CLAUDE_CLI_ERROR, ClaudeCodeAdapter
+
+    def _boom(*a, **k):
+        raise FileNotFoundError("claude yok")
+
+    monkeypatch.setattr(agent_factory_module.subprocess, "Popen", _boom)
+    assert ClaudeCodeAdapter().respond("x") == _CLAUDE_CLI_ERROR
+
+
+def test_claude_code_adapter_respond_handles_timeout(monkeypatch):
+    from src.jarvis.adapters.agent_factory import _CLAUDE_TIMEOUT_MSG, ClaudeCodeAdapter
+
+    monkeypatch.setattr(
+        agent_factory_module.subprocess, "Popen", lambda *a, **k: _FakeProc(timeout=True)
+    )
+    killed = {}
+    monkeypatch.setattr(
+        agent_factory_module, "_kill_process_tree", lambda proc: killed.setdefault("yes", True)
+    )
+
+    assert ClaudeCodeAdapter().respond("x") == _CLAUDE_TIMEOUT_MSG
+    assert killed.get("yes")
+
+
+def test_claude_code_adapter_call_tools_not_implemented():
+    from src.jarvis.adapters.agent_factory import ClaudeCodeAdapter
+
+    import pytest
+
+    adapter = ClaudeCodeAdapter()
+    assert adapter.supports_tools() is False
+    with pytest.raises(NotImplementedError):
+        adapter.call_tools("x", tools=[])

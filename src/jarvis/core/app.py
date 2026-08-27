@@ -4,6 +4,8 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Callable, Iterator, Optional
 
+from src.jarvis.adapters.agent_factory import AgentFactory
+from src.jarvis.adapters.tool_schema import build_ollama_tools, validate_arguments
 from src.jarvis.brain.llm import SYSTEM_PROMPT, think_and_respond_stream
 from src.jarvis.core import api, hud_bus
 from src.jarvis.core.cli_commands import handle_cli_command, is_cli_command
@@ -15,7 +17,16 @@ from src.jarvis.core.console import (
     print_system,
     status_spinner,
 )
-from src.jarvis.core.dispatcher import DEFAULT_INTENT_NAME, SHUTDOWN_INTENT_NAME, Dispatcher
+from src.jarvis.core.dispatcher import (
+    DEFAULT_INTENT_NAME,
+    DELEGATE_CODE_INTENT_NAME,
+    DELEGATE_COMPLEX_INTENT_NAME,
+    SHUTDOWN_INTENT_NAME,
+    Dispatcher,
+    Intent,
+    _NO_TOOL_FUNCTION_NAME,
+    _NO_TOOL_SCHEMA,
+)
 from src.jarvis.core.guardrail.base import GuardrailChain
 from src.jarvis.core.guardrail.input_checks import InputInjectionCheck
 from src.jarvis.core.guardrail.output_checks import OutputSafetyCheck
@@ -25,7 +36,7 @@ from src.jarvis.core.language import detect_language
 from src.jarvis.core.risk import evaluate_approval_answer, request_approval, requires_approval
 from src.jarvis.mouth.tts import speak
 from src.jarvis.tools.base import Tool
-from src.jarvis.tools.registry import get_tool
+from src.jarvis.tools.registry import all_tools, get_tool
 
 logger = logging.getLogger("jarvis.core.app")
 
@@ -66,6 +77,26 @@ _SHUTDOWN_MESSAGES = {
     "tr": "Anlaşıldı, kapanıyorum.",
     "en": "Understood, shutting down.",
 }
+_DELEGATE_CODE_NOTICE_MESSAGES = {
+    "tr": "Bunu Claude Code'a devrediyorum, biraz sürebilir.",
+    "en": "I'm handing this to Claude Code, it may take a moment.",
+}
+_DELEGATE_FAILED_MESSAGES = {
+    "tr": "Görevi tamamlayamadım.",
+    "en": "I couldn't complete that task.",
+}
+
+# Faz 6.3: delegate_complex -> tool_agent (hermes3:8b) ile SINIRLI cok adimli
+# dongu. Her adim mevcut _execute_tool'dan geciyor (onay + guardrail + timeout +
+# HUD) - yeni guvenlik yuzeyi yok. ~3 adim: tam otonom plan->arac->degerlendir
+# dongusu DEGIL (o Faz 4, bkz. docs/jarvis-mimari-v2-multiagent-entegrasyon.md SS10).
+_MAX_DELEGATE_STEPS = 3
+_TOOL_AGENT_SYSTEM_PROMPT = (
+    "You are JARVIS's task executor. Break the user's task into tool steps. Call "
+    "ONE tool at a time; you'll get its result, then decide the next step. When the "
+    f"task is fully done, call `{_NO_TOOL_FUNCTION_NAME}` and reply with a single "
+    "short spoken sentence summarising what you did (no markdown, no lists)."
+)
 
 # Bir tool cagrisi bu sureyi asarsa iptal edilir ve kullaniciya zaman-asimi
 # mesaji donulur. Donmus/kotu niyetli bir arac (ozellikle ic timeout'u olmayan
@@ -114,6 +145,48 @@ def _execute_tool(
         return result
     finally:
         hud_bus.publish_tool("end", tool.name, result=result)
+
+
+def _prompt_for_approval(
+    prompt: str,
+    panel_name: str,
+    panel_risk: str,
+    panel_params: dict,
+    lang: str,
+    *,
+    input_hub: Optional[InputHub] = None,
+    pending: Optional[list[InputEvent]] = None,
+    stop_event: Optional[threading.Event] = None,
+    speaking_event: Optional[threading.Event] = None,
+) -> bool:
+    """Orta/uzeri riskli bir eylem icin zorunlu insan onayi (Zero-Trust).
+
+    Kullanici ekrana bakmiyor olabilecegi icin once sesli uyarilir, sonra ekranda
+    buyuk bir panelle TUM parametreler gosterilip terminalde bloklayici soru
+    sorulur - kullanici (LLM'in urettigi) argumani kendi soylediginden farkli
+    olsa bile GORUR. `_run_tool_pipeline` step (2)'sinden cikarildi; delegate_code
+    dali da bunu kullaniyor (iki onay yolu drift etmesin)."""
+    speak(
+        _localized(_APPROVAL_PENDING_MESSAGES, lang),
+        language=lang,
+        stop_event=stop_event,
+        speaking_event=speaking_event,
+    )
+    print_approval_panel(panel_name, panel_risk, panel_params)
+    if input_hub is not None:
+        print_approval_prompt(prompt)
+        answer = input_hub.wait_for_text_answer(pending if pending is not None else [])
+        if is_cli_command(answer):
+            # security-reviewer bulgusu (DX): onay bekleniyorken yazilan bir
+            # "/..." komutu fail-closed olarak "hayir" sayilir (guvenli yon) ama
+            # sessizce yutulmamali - kullaniciya ne oldugunu soyluyoruz.
+            print_system(
+                "Onay beklenirken bir komut yazdınız, 'hayır' olarak sayıldı - "
+                "onay sonrası tekrar deneyin.",
+                level="warning",
+            )
+        return evaluate_approval_answer(answer)
+    return request_approval(prompt)
 
 
 def _run_tool_pipeline(
@@ -194,35 +267,20 @@ def _run_tool_pipeline(
             logger.warning("Tool girdisi guardrail'e takildi (%s): %s", tool.name, safety.reason)
             return _localized(_UNSAFE_COMMAND_MESSAGES, lang)
 
-    # (2) Orta ve uzeri risk -> zorunlu insan onayi. Kullanici ekrana bakmiyor
-    # olabilecegi icin once sesli uyariyoruz, sonra ekranda buyuk bir panelle
-    # TUM parametreleri gosterip terminalde bloklayici soru soruyoruz - kullanici
-    # router'in URETTIGI argumani, kendi soylediginden farkli olsa bile GORUR.
+    # (2) Orta ve uzeri risk -> zorunlu insan onayi (bkz. _prompt_for_approval).
     if requires_approval(tool.risk_level):
-        speak(
-            _localized(_APPROVAL_PENDING_MESSAGES, lang),
-            language=lang,
+        prompt = f"'{tool.name}' calistirilsin mi? (risk: {tool.risk_level.value})"
+        approved = _prompt_for_approval(
+            prompt,
+            tool.name,
+            tool.risk_level.value,
+            risky_values,
+            lang,
+            input_hub=input_hub,
+            pending=pending,
             stop_event=stop_event,
             speaking_event=speaking_event,
         )
-        print_approval_panel(tool.name, tool.risk_level.value, risky_values)
-        prompt = f"'{tool.name}' calistirilsin mi? (risk: {tool.risk_level.value})"
-        if input_hub is not None:
-            print_approval_prompt(prompt)
-            answer = input_hub.wait_for_text_answer(pending if pending is not None else [])
-            if is_cli_command(answer):
-                # security-reviewer bulgusu (DX): onay bekleniyorken yazilan
-                # bir "/..." komutu fail-closed olarak "hayir" sayilir (guvenli
-                # yon) ama sessizce yutulmamali - kullaniciya ne oldugunu
-                # soyluyoruz, komutu tekrar yazmasi gerekiyor.
-                print_system(
-                    "Onay beklenirken bir komut yazdınız, 'hayır' olarak sayıldı - "
-                    "onay sonrası tekrar deneyin.",
-                    level="warning",
-                )
-            approved = evaluate_approval_answer(answer)
-        else:
-            approved = request_approval(prompt)
         if not approved:
             return _localized(_APPROVAL_DENIED_MESSAGES, lang)
 
@@ -269,6 +327,131 @@ def _run_tool_pipeline(
         return _localized(_UNSAFE_COMMAND_MESSAGES, lang)
 
     return result
+
+
+def _run_delegate_complex(
+    intent,
+    stop_event: Optional[threading.Event],
+    input_hub: Optional[InputHub],
+    pending: Optional[list[InputEvent]],
+    speaking_event: Optional[threading.Event],
+    on_start: Optional[Callable[[], None]],
+) -> Iterator[tuple[str, Optional[str]]]:
+    """delegate_complex intent: tool_agent (hermes3:8b) ile SINIRLI (<= _MAX_DELEGATE_STEPS)
+    cok adimli dongu. Her adimda ajan bir arac secer, secilen arac mevcut
+    `_execute_tool` (onay + guardrail + timeout + HUD) ile calistirilir, sonuc
+    ajana geri beslenir. Ajan `no_tool_needed` cagirinca (veya adim limiti
+    dolunca) biter, ozet konusulur. Router-uretilmis `task` once _INPUT_GUARDRAIL'den
+    geciyor."""
+    lang = intent.parameters.get("lang", "en")
+    task = str(intent.parameters.get("task") or "").strip()
+    if on_start is not None:
+        on_start()
+    if not task or not _INPUT_GUARDRAIL.run(task).allowed:
+        logger.warning("delegate_complex: gorev bos veya guardrail'e takildi.")
+        yield _localized(_DELEGATE_FAILED_MESSAGES, lang), lang
+        return
+
+    agent = AgentFactory.create("tool_agent")
+    schema = build_ollama_tools(all_tools().values()) + [_NO_TOOL_SCHEMA]
+    messages: list[dict] = [{"role": "system", "content": _TOOL_AGENT_SYSTEM_PROMPT}]
+    prompt = task
+    last_result = ""
+
+    for step in range(_MAX_DELEGATE_STEPS):
+        resp = agent.call_tools(prompt, tools=schema, context=messages)
+        messages.append({"role": "user", "content": prompt})
+        if not resp.tool_calls or resp.tool_calls[0].name == _NO_TOOL_FUNCTION_NAME:
+            summary = (resp.content or "").strip()
+            yield summary or last_result or _localized(_DELEGATE_FAILED_MESSAGES, lang), lang
+            return
+
+        call = resp.tool_calls[0]
+        tool = get_tool(call.name)
+        validated = validate_arguments(tool, call.arguments) if tool is not None else None
+        if tool is None or validated is None:
+            logger.warning("delegate_complex adim %d: gecersiz arac cagrisi %r.", step, call.name)
+            messages.append({"role": "assistant", "content": f"(skipped invalid call {call.name})"})
+            prompt = "That step was invalid. Continue with a valid tool, or finish."
+            continue
+
+        step_intent = Intent(
+            name=call.name, confidence=0.7, source="llm", parameters={**validated, "lang": lang}
+        )
+        last_result = _execute_tool(
+            tool,
+            step_intent,
+            stop_event,
+            input_hub=input_hub,
+            pending=pending,
+            speaking_event=speaking_event,
+        )
+        messages.append(
+            {"role": "assistant", "content": f"[called {call.name}] result: {last_result}"}
+        )
+        prompt = "Continue with the next step, or finish if the task is done."
+
+    # Adim limiti doldu, ajan kendini "bitti" ilan etmedi - son adimin sonucunu don.
+    logger.info("delegate_complex: %d adim limiti doldu.", _MAX_DELEGATE_STEPS)
+    yield last_result or _localized(_DELEGATE_FAILED_MESSAGES, lang), lang
+
+
+def _run_delegate_code(
+    intent,
+    stop_event: Optional[threading.Event],
+    input_hub: Optional[InputHub],
+    pending: Optional[list[InputEvent]],
+    speaking_event: Optional[threading.Event],
+    on_start: Optional[Callable[[], None]] = None,
+) -> Iterator[tuple[str, Optional[str]]]:
+    """delegate_code intent: gorevi yerel `claude -p` (Claude Code CLI, salt-okuma)
+    alt surecine devreder. Dis bir ajan + kod tabani erisimi oldugu icin ONAY
+    kapisindan geciyor (HIGH). `claude -p` dosya DEGISTIRMEZ; sonuc (analiz/plan)
+    sesli okunur, kullanici isterse ayrica uygular. Cagri ana dongude bloklar
+    (bkz. ClaudeCodeAdapter docstring'i)."""
+    lang = intent.parameters.get("lang", "en")
+    task = str(intent.parameters.get("task") or "").strip()
+    if on_start is not None:
+        on_start()
+    if not task or not _INPUT_GUARDRAIL.run(task).allowed:
+        logger.warning("delegate_code: gorev bos veya guardrail'e takildi.")
+        yield _localized(_DELEGATE_FAILED_MESSAGES, lang), lang
+        return
+
+    approved = _prompt_for_approval(
+        "Claude Code'a devredilsin mi? (kod tabanını okur, değiştirmez)",
+        "delegate_code",
+        "high",
+        {"task": task},
+        lang,
+        input_hub=input_hub,
+        pending=pending,
+        stop_event=stop_event,
+        speaking_event=speaking_event,
+    )
+    if not approved:
+        yield _localized(_APPROVAL_DENIED_MESSAGES, lang), lang
+        return
+
+    speak(
+        _localized(_DELEGATE_CODE_NOTICE_MESSAGES, lang),
+        language=lang,
+        stop_event=stop_event,
+        speaking_event=speaking_event,
+    )
+    agent = AgentFactory.create("deep_reasoning")
+    # TTS dostu kalsin diye kisitlama ekleniyor - `claude -p` varsayilan olarak
+    # markdown/kod blogu uretir, sesli okunamaz.
+    tts_task = (
+        f"{task}\n\nReply in at most 3 spoken sentences. No code blocks, no "
+        "markdown, no lists - this will be read aloud."
+    )
+    result = agent.respond(tts_task)
+    if not _OUTPUT_GUARDRAIL.run(result).allowed:
+        logger.warning("delegate_code: Claude Code ciktisi guardrail'e takildi.")
+        yield _localized(_UNSAFE_COMMAND_MESSAGES, lang), lang
+        return
+    yield result, lang
 
 
 def _handle_turn(
@@ -321,6 +504,18 @@ def _handle_turn(
                 stop_event.set()
             lang = intent.parameters.get("lang", "en")
             yield _localized(_SHUTDOWN_MESSAGES, lang), lang
+            return
+
+        if intent.name == DELEGATE_COMPLEX_INTENT_NAME:
+            yield from _run_delegate_complex(
+                intent, stop_event, input_hub, pending, speaking_event, on_tool_start
+            )
+            return
+
+        if intent.name == DELEGATE_CODE_INTENT_NAME:
+            yield from _run_delegate_code(
+                intent, stop_event, input_hub, pending, speaking_event, on_tool_start
+            )
             return
 
         handler = HANDLERS.get(intent.name)

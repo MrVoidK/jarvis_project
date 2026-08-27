@@ -98,6 +98,55 @@ _NO_TOOL_SCHEMA: dict = {
     },
 }
 
+# Faz 6.3: router semasina eklenen iki sentetik delegasyon sentinel'i -
+# `_NO_TOOL_SCHEMA` ile ayni desen (gercek Tool DEGIL, TOOL_REGISTRY'de yok).
+# classify() bunlari `Intent("delegate_complex" | "delegate_code", 0.7)`'ye eslar;
+# core/app.py:_handle_turn() o intent'leri tool_agent dongusune / ClaudeCodeAdapter'a
+# yonlendirir (bkz. docs/ROADMAP.md Faz 6.3, v2 SS2.6).
+_DELEGATE_COMPLEX_FUNCTION_NAME = "delegate_complex_task"
+_DELEGATE_CODE_FUNCTION_NAME = "delegate_code_task"
+DELEGATE_COMPLEX_INTENT_NAME = "delegate_complex"
+DELEGATE_CODE_INTENT_NAME = "delegate_code"
+
+_DELEGATE_COMPLEX_SCHEMA: dict = {
+    "type": "function",
+    "function": {
+        "name": _DELEGATE_COMPLEX_FUNCTION_NAME,
+        "description": (
+            "Call this when the request needs SEVERAL tools coordinated in "
+            "sequence with reasoning between steps (e.g. 'check the system status "
+            "and take a note about it', 'search for X then note the result'). "
+            "Not for a single tool call or a plain question."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "The full multi-step task, in the user's words."}
+            },
+            "required": ["task"],
+        },
+    },
+}
+
+_DELEGATE_CODE_SCHEMA: dict = {
+    "type": "function",
+    "function": {
+        "name": _DELEGATE_CODE_FUNCTION_NAME,
+        "description": (
+            "Call this ONLY for heavy software work: writing or refactoring code, "
+            "debugging a program, deep codebase analysis, reviewing a repo. This "
+            "hands the task to the Claude Code CLI. Not for general questions."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "The coding/analysis task, in the user's words."}
+            },
+            "required": ["task"],
+        },
+    },
+}
+
 _ROUTER_SYSTEM_PROMPT = (
     "You are JARVIS's tool-routing module. Look at the user's spoken command: if "
     "one of the provided functions clearly matches their intent, call ONLY that "
@@ -134,7 +183,23 @@ _ROUTER_SYSTEM_PROMPT = (
     'A sentence that merely MENTIONS a terminal, command, or computer (e.g. '
     '"I need your approval, please check the terminal") is NOT itself a '
     f"command to run - call {_NO_TOOL_FUNCTION_NAME} unless the user dictates "
-    "an actual, literal command."
+    "an actual, literal command.\n\n"
+    # Faz 6.3 delegasyon: bu ikisi SADECE gercekten cok adimli/agir-kod isi icin;
+    # basit tek-eylem veya duz soru icin ASLA (dogrudan arac ya da no_tool_needed).
+    # delegate_complex kucuk router modelinde (qwen2.5:3b) yeterince tetiklenmiyordu
+    # (ilk alt-eylemi kapip tek arac seciyordu) - no_tool_needed'daki gibi somut
+    # ornekler + "ve/sonra/once...sonra" ipucu eklendi (canli test bulgusu, Faz 6.3).
+    f"If the request describes MORE THAN ONE action to do in order - joined by "
+    f'words like "and then", "after that", "first ... then", "ve", "sonra", "once ... sonra" '
+    f"- or an action whose input depends on another action's result, call "
+    f"`{_DELEGATE_COMPLEX_FUNCTION_NAME}` with the WHOLE request as the task. Do "
+    f"NOT just pick the first tool. Examples:\n"
+    f'- "check the system status and then close an app if memory is high" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}.\n'
+    f'- "sistem durumuna bak, sonra bir not al" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}.\n'
+    f'- "search for the weather and take a note about it" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}.\n'
+    "For heavy software work - writing/refactoring code, debugging a program, "
+    f"deep codebase analysis - call `{_DELEGATE_CODE_FUNCTION_NAME}`. Do NOT use "
+    "either delegate function for a single simple action or a plain question."
 )
 
 
@@ -197,7 +262,11 @@ class Dispatcher:
         # all_tools(): yerel TOOL_REGISTRY + MCP-kesfedilen araclarin birlesik
         # view'i (bkz. tools/registry.py, docs/ARCHITECTURE.md SS9.2) - TOOL_REGISTRY'nin
         # KENDISI degismiyor, sadece Router'a sunulan sema genisliyor.
-        tools_schema = build_ollama_tools(all_tools().values()) + [_NO_TOOL_SCHEMA]
+        tools_schema = build_ollama_tools(all_tools().values()) + [
+            _NO_TOOL_SCHEMA,
+            _DELEGATE_COMPLEX_SCHEMA,
+            _DELEGATE_CODE_SCHEMA,
+        ]
         router = AgentFactory.create("router")
         context = [{"role": "system", "content": _ROUTER_SYSTEM_PROMPT}]
 
@@ -231,6 +300,30 @@ class Dispatcher:
                 _NO_TOOL_FUNCTION_NAME,
             )
             return Intent(name=DEFAULT_INTENT_NAME, confidence=0.6, source="llm")
+
+        # Faz 6.3 delegasyon sentinel'leri (gercek Tool degil, get_tool() None doner)
+        # - _NO_TOOL kontrolunden SONRA, get_tool()'dan ONCE. `task` argumani
+        # router'dan HAM geliyor (validate_arguments YOK - Tool semasi yok); str'e
+        # zorlaniyor, bos/eksikse ham girdi metnine dusuluyor. _handle_turn'de
+        # ayrica _INPUT_GUARDRAIL'den geciyor.
+        if call.name == _DELEGATE_COMPLEX_FUNCTION_NAME:
+            task = str(call.arguments.get("task") or text).strip()
+            logger.info("Dispatcher: router delegate_complex_task secti.")
+            return Intent(
+                name=DELEGATE_COMPLEX_INTENT_NAME,
+                confidence=0.7,
+                source="llm",
+                parameters={"task": task, "lang": detect_language(text)},
+            )
+        if call.name == _DELEGATE_CODE_FUNCTION_NAME:
+            task = str(call.arguments.get("task") or text).strip()
+            logger.info("Dispatcher: router delegate_code_task secti.")
+            return Intent(
+                name=DELEGATE_CODE_INTENT_NAME,
+                confidence=0.7,
+                source="llm",
+                parameters={"task": task, "lang": detect_language(text)},
+            )
 
         tool = get_tool(call.name)
         if tool is None:
