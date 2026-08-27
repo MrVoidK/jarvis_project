@@ -24,6 +24,7 @@ cycler==0.12.1
 decorator==5.3.1
 docopt==0.6.2
 einops==0.8.2
+fastapi==0.141.1
 faster-whisper==1.2.1
 filelock==3.32.4
 flatbuffers==25.12.19
@@ -132,5 +133,6 @@ typing-inspection==0.4.4
 urllib3==2.7.0
 uvicorn==0.52.4
 webrtcvad-wheels==2.0.14
+websockets==17.1
 Werkzeug==3.1.8
 yarl==1.24.5

@@ -657,6 +657,42 @@ dönüşüm:
       `security-reviewer` subagent'ı ile incelendi (bulgular varsa ayrı bir
       düzeltme commit'i olarak ele alındı — bkz. proje geçmişi).
 
+## Faz 3.4 — JARVIS HUD (Web Arayüzü) ✅
+
+Sesli/terminal döngüsüne PARALEL, salt-izleyici + tek yönlü-komut bir
+web arayüzü — mevcut hiçbir güvenlik/onay akışını atlamıyor (bkz. altta).
+
+- [x] **`core/hud_bus.py`** (yeni): thread-safe pub/sub — projenin geri
+      kalanı (Ears/Mouth/core/app, hepsi senkron) `publish_log`/
+      `publish_state`/`publish_telemetry`/`publish_tool` çağırır,
+      `asyncio` bilmez. `core/console.py`'nin HER `print_*` fonksiyonu
+      (zaten "tüm terminal çıktısı buradan geçmeli" ilkesiyle tek
+      merkeziydi) artık aynı zamanda buraya da yayınlıyor — web arayüzü
+      terminalle AYNI çıktıyı, tek bir dokunuşla onlarca çağrı noktasında
+      görüyor.
+- [x] **`core/telemetry.py`** (yeni): `psutil` + opsiyonel `nvidia-smi` —
+      CPU/RAM/GPU/ağ. `tools/system_info.py` (sesli "sistem durumu")
+      ile AYNI fonksiyonları paylaşıyor (DRY). Sahte veri yok ilkesi:
+      gerçek karşılığı olmayan alanlar (ör. "sıcaklık") hiç üretilmiyor.
+- [x] **`core/api.py`** (yeni): FastAPI + WebSocket (`/ws`) köprüsü.
+      `main.py` bunu **ayrı bir daemon thread'de** başlatıyor
+      (`start_api_server_thread()`) — uvicorn'un kendi asyncio event
+      loop'u, Ears/Mouth/Brain'in senkron/bloklayıcı ana thread'ini HİÇ
+      etkilemiyor. Güvenlik: sunucu sadece `127.0.0.1`'e bağlanıyor;
+      WebSocket handshake'inde `Origin` başlığı elle doğrulanıyor
+      (`CORSMiddleware` WebSocket'i KORUMAZ — bkz. modül docstring'i) ki
+      açık bir sekmedeki kötü niyetli bir site bu soket'e bağlanıp komut
+      sokamasın. Yazılı komutlar `InputHub.submit_external_text()`
+      üzerinden terminal girdisiyle AYNI kuyruğa/guardrail/onay zincirine
+      giriyor — web'den ekstra/onaysız bir yetenek AÇILMIYOR.
+- [x] **`web-ui/`** (yeni, React + TypeScript + Vite + three.js +
+      framer-motion): kehribar (#FFBF00) temalı retro-fütüristik HUD —
+      durumlara (idle/listening/processing/speaking) tepki veren 3B
+      holografik parçacık küresi, daktilo-efektli sistem konsolu (komut
+      girişi dahil), CPU/RAM/GPU halka göstergeleri, geçici araç-kullanım
+      bildirimleri, CRT tarama çizgisi/vinyet katmanları. Ayrıntı için
+      `web-ui/README.md`.
+
 ## Faz 4 — Otonom Ajan Döngüsü ⬜
 
 Alt adımlar:

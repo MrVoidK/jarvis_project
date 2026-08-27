@@ -322,7 +322,9 @@ src/jarvis/
 │   ├── app.py                  # run_jarvis() - MVP döngüsü (✅)
 │   ├── dispatcher.py           # intent + agentic routing (✅ iskelet, henüz bağlı değil)
 │   ├── guardrail/                # I/O guardrail zinciri (✅ iskelet, henüz bağlı değil)
-│   └── events.py                # EventBus (Observer) ⬜ henüz yok
+│   ├── hud_bus.py               # JARVIS HUD icin sync->asyncio pub/sub koprusu (✅, Faz 3.4)
+│   ├── telemetry.py             # psutil/nvidia-smi sistem telemetrisi (✅, Faz 3.4)
+│   └── api.py                    # FastAPI + WebSocket bridge (web-ui) (✅, Faz 3.4)
 ├── adapters/
 │   ├── agent_factory.py        # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri (✅)
 │   └── mcp_client_adapter.py   # MCPClientAdapter — MCP bilgi katmanı istemcisi (Faz 4.5) ⬜
@@ -334,6 +336,8 @@ src/jarvis/
 config/
 ├── security.yaml / security.example.yaml       # yerel tool erişim kontrolü (✅)
 └── mcp_servers.yaml / mcp_servers.example.yaml  # MCP sunucu tanımları (Faz 4.5) ⬜
+
+web-ui/               # React + TS + Vite + three.js HUD arayüzü (✅, Faz 3.4 - bkz. ROADMAP.md)
 ```
 
 ## 8. IoT & Dağıtım Mimarisi (özet)

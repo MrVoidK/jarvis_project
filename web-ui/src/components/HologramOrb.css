@@ -1,0 +1,71 @@
+.jv-orb-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.jv-orb-canvas {
+  width: min(100%, 640px);
+  height: min(100%, 640px);
+}
+
+.jv-orb-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.jv-orb-state-label {
+  position: absolute;
+  bottom: 6%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--jv-font-display);
+  font-size: 13px;
+  letter-spacing: 0.5em;
+  padding: 4px 0 0 0.5em;
+  color: var(--jv-amber);
+  text-shadow: 0 0 10px var(--jv-amber-glow);
+  transition: color 0.6s ease;
+}
+
+.jv-orb-state-idle {
+  color: #c98f1c;
+  animation: jv-label-breathe 3.2s ease-in-out infinite;
+}
+
+.jv-orb-state-listening {
+  color: #ffd866;
+}
+
+.jv-orb-state-processing {
+  color: #ff8c1a;
+  animation: jv-label-flicker 0.9s steps(2, end) infinite;
+}
+
+.jv-orb-state-speaking {
+  color: #fff2b0;
+}
+
+@keyframes jv-label-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes jv-label-flicker {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}

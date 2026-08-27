@@ -1,0 +1,178 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
+:root {
+  color-scheme: dark;
+
+  --jv-bg-0: #030405;
+  --jv-bg-1: #07080b;
+  --jv-bg-2: #0c0e12;
+  --jv-panel: rgba(12, 14, 18, 0.55);
+  --jv-panel-strong: rgba(14, 16, 20, 0.78);
+  --jv-border: rgba(255, 191, 0, 0.28);
+  --jv-border-soft: rgba(255, 191, 0, 0.12);
+
+  --jv-amber: #ffbf00;
+  --jv-amber-bright: #ffd866;
+  --jv-amber-dim: #8a5a00;
+  --jv-amber-glow: rgba(255, 191, 0, 0.55);
+
+  --jv-red: #ff4d4f;
+  --jv-green: #5cffb1;
+  --jv-cyan: #6be3ff;
+  --jv-text: #f4e9d0;
+  --jv-text-dim: #a89a72;
+  --jv-text-faint: #6b6250;
+
+  --jv-font-display: 'Share Tech Mono', 'JetBrains Mono', ui-monospace, monospace;
+  --jv-font-mono: 'JetBrains Mono', 'Share Tech Mono', ui-monospace, monospace;
+
+  --jv-radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: radial-gradient(ellipse at 50% 0%, #12100a 0%, var(--jv-bg-1) 45%, var(--jv-bg-0) 100%);
+  color: var(--jv-text);
+  font-family: var(--jv-font-mono);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--jv-amber);
+  color: #000;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--jv-amber-dim);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--jv-amber);
+}
+
+button,
+input {
+  font-family: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: var(--jv-amber);
+}
+
+/* ---- CRT / scanline / vignette overlay ---- */
+
+.jv-crt-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  mix-blend-mode: overlay;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.05) 0px,
+    rgba(255, 255, 255, 0.05) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  animation: jv-scan-drift 9s linear infinite;
+}
+
+.jv-vignette-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.55) 100%);
+  box-shadow: inset 0 0 220px rgba(0, 0, 0, 0.85);
+}
+
+.jv-flicker-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9997;
+  background: rgba(255, 191, 0, 0.02);
+  animation: jv-flicker 6.3s infinite;
+}
+
+@keyframes jv-scan-drift {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 60px;
+  }
+}
+
+@keyframes jv-flicker {
+  0%,
+  96%,
+  100% {
+    opacity: 0;
+  }
+  97% {
+    opacity: 1;
+  }
+  98% {
+    opacity: 0;
+  }
+  99% {
+    opacity: 0.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jv-crt-overlay,
+  .jv-flicker-overlay {
+    animation: none;
+  }
+}
+
+.jv-glass {
+  background: var(--jv-panel);
+  border: 1px solid var(--jv-border);
+  border-radius: var(--jv-radius);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4) inset,
+    0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.jv-glow-text {
+  text-shadow: 0 0 8px var(--jv-amber-glow);
+}
+
+.jv-panel-title {
+  font-family: var(--jv-font-display);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--jv-amber);
+}

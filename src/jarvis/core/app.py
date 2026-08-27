@@ -3,7 +3,7 @@ import threading
 from typing import Callable, Iterator, Optional
 
 from src.jarvis.brain.llm import SYSTEM_PROMPT, think_and_respond_stream
-from src.jarvis.core import hud_bus
+from src.jarvis.core import api, hud_bus
 from src.jarvis.core.cli_commands import handle_cli_command, is_cli_command
 from src.jarvis.core.console import (
     print_agent,
@@ -363,6 +363,10 @@ def run_jarvis() -> None:
 
     hub = InputHub(stop_event, speaking_event)
     hub.start()
+    # JARVIS HUD (web-ui): core/api.py'nin WebSocket'ten gelen yazili
+    # komutlari bu hub'a iletebilmesinin TEK yolu - bkz. api.py:
+    # register_input_hub() ve input_hub.py:submit_external_text() docstring'i.
+    api.register_input_hub(hub)
     # Bir onay bekleme sirasinda gelen "voice" olaylari burada birikir (bkz.
     # InputHub.wait_for_text_answer()) - asagidaki dongu her turda ONCE
     # burayi bosaltir, kullanicinin o sirada soyledigi soz kaybolmaz.

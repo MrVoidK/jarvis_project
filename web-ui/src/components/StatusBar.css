@@ -1,0 +1,95 @@
+.jv-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 22px;
+}
+
+.jv-statusbar-brand {
+  font-family: var(--jv-font-display);
+  font-size: 20px;
+  letter-spacing: 0.28em;
+  color: var(--jv-amber);
+  flex: 0 0 auto;
+}
+
+.jv-statusbar-mid {
+  flex: 1 1 auto;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--jv-text-faint);
+  text-transform: uppercase;
+}
+
+.jv-statusbar-right {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: var(--jv-font-display);
+  font-size: 12px;
+}
+
+.jv-statusbar-state {
+  color: var(--jv-amber-bright);
+  letter-spacing: 0.15em;
+}
+
+.jv-statusbar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--jv-border);
+  letter-spacing: 0.08em;
+}
+
+.jv-statusbar-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.jv-statusbar-pill-online {
+  color: var(--jv-green);
+}
+
+.jv-statusbar-pill-online .jv-statusbar-pill-dot {
+  background: var(--jv-green);
+  box-shadow: 0 0 6px rgba(92, 255, 177, 0.7);
+}
+
+.jv-statusbar-pill-connecting {
+  color: var(--jv-amber-bright);
+}
+
+.jv-statusbar-pill-connecting .jv-statusbar-pill-dot {
+  background: var(--jv-amber);
+  animation: jv-dot-pulse 1s ease-in-out infinite;
+}
+
+.jv-statusbar-pill-offline {
+  color: var(--jv-red);
+}
+
+.jv-statusbar-pill-offline .jv-statusbar-pill-dot {
+  background: var(--jv-red);
+  box-shadow: 0 0 6px rgba(255, 77, 79, 0.7);
+}
+
+.jv-statusbar-clock {
+  color: var(--jv-text-dim);
+  min-width: 7ch;
+  text-align: right;
+}
+
+@keyframes jv-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}

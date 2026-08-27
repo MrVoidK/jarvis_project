@@ -32,6 +32,16 @@ with status_spinner("[BRAIN] Ollama bağlantısı kontrol ediliyor..."):
     _brain_ok, _brain_message = check_ollama_connection()
 print_system(_brain_message, level="success" if _brain_ok else "warning")
 
+with status_spinner("[HUD] Web arayüzü köprüsü (FastAPI) başlatılıyor..."):
+    from src.jarvis.core.api import API_HOST, API_PORT, start_api_server_thread
+
+    # Daemon thread: uvicorn'un KENDI asyncio event loop'u burada, ana
+    # thread'den (Ears/Mouth/Brain'in senkron/bloklayici cagrilarinin
+    # calistigi yer) TAMAMEN AYRI calisir - bkz. core/api.py modul
+    # docstring'i "NEDEN ASYNC/FASTAPI TEK BURADA".
+    start_api_server_thread()
+print_system(f"HUD API http://{API_HOST}:{API_PORT}/ws adresinde dinliyor.", level="success")
+
 # Guardrail icin gercek bir "yukleme" adimi yok (model degil, saf Python kural
 # zinciri - bkz. core/guardrail/base.py) - simetri icin sadece durum bildirimi.
 print_system("Guardrail sistemleri aktif.", level="success")
