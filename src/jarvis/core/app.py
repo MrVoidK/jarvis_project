@@ -34,6 +34,7 @@ from src.jarvis.core.handlers import HANDLERS
 from src.jarvis.core.input_hub import InputEvent, InputHub
 from src.jarvis.core.language import detect_language
 from src.jarvis.core.memory import remember
+from src.jarvis.core.pending_tasks import record_pending
 from src.jarvis.core.risk import evaluate_approval_answer, request_approval, requires_approval
 from src.jarvis.mouth.tts import speak
 from src.jarvis.tools.base import Tool
@@ -61,6 +62,13 @@ _APPROVAL_PENDING_MESSAGES = {
 _APPROVAL_DENIED_MESSAGES = {
     "tr": "Anlaşıldı, iptal ettim.",
     "en": "Understood, I've cancelled it.",
+}
+# Faz 6.6: scheduled/continuous kaynakli bir olay MEDIUM+ risk tasidiginda
+# insan onayi BEKLEYEMEZ (kullanici klavyede degil) -> `tasks` tablosuna
+# "pending" kaydi girer, bu mesaj donulur (bkz. _run_tool_pipeline risk kapisi).
+_PENDING_RECORDED_MESSAGES = {
+    "tr": "Bu istek onay gerektiriyor; siz dönene kadar beklemeye aldım.",
+    "en": "This request needs approval; I've queued it until you're back.",
 }
 _UNSAFE_COMMAND_MESSAGES = {
     "tr": "Bu komut güvenlik kontrolüne takıldı, çalıştırmayacağım.",
@@ -120,6 +128,8 @@ def _execute_tool(
     pending: Optional[list[InputEvent]] = None,
     on_start: Optional[Callable[[], None]] = None,
     speaking_event: Optional[threading.Event] = None,
+    source: str = "voice",
+    event_text: str = "",
 ) -> str:
     """`_run_tool_pipeline()`'i JARVIS HUD (web-ui) icin "start"/"end" olay
     yayinlarina sarmalayan ince bir kabuk.
@@ -141,7 +151,9 @@ def _execute_tool(
     result: Optional[str] = None
     try:
         result = _run_tool_pipeline(
-            tool, intent, stop_event, input_hub=input_hub, pending=pending, on_start=on_start, speaking_event=speaking_event
+            tool, intent, stop_event, input_hub=input_hub, pending=pending,
+            on_start=on_start, speaking_event=speaking_event,
+            source=source, event_text=event_text,
         )
         return result
     finally:
@@ -198,6 +210,8 @@ def _run_tool_pipeline(
     pending: Optional[list[InputEvent]] = None,
     on_start: Optional[Callable[[], None]] = None,
     speaking_event: Optional[threading.Event] = None,
+    source: str = "voice",
+    event_text: str = "",
 ) -> str:
     """Bir tool'u risk kontrolu + insan onayindan gecirerek calistirir.
 
@@ -270,6 +284,27 @@ def _run_tool_pipeline(
 
     # (2) Orta ve uzeri risk -> zorunlu insan onayi (bkz. _prompt_for_approval).
     if requires_approval(tool.risk_level):
+        # Faz 6.6: scheduled/continuous kaynakli bir olay insan onayi BEKLEYEMEZ
+        # (kullanici klavyede degil). MEDIUM+ eylem otomatik calismaz -> `tasks`
+        # tablosuna "pending" kaydi girer, kullanici dondugunde /status'ta gorup
+        # karar verir (v2 SS5.3; Zero-Trust "varsayilan RED"in dogal uzantisi).
+        # NOT: yukaridaki (1) parametre-guardrail bloghu DEGISMEDEN once calisir -
+        # parametresi `rm -rf` iceren bir scheduled gorev yine reddedilir, pending'e donmez.
+        if source in ("scheduled", "continuous"):
+            task_id = record_pending(
+                source,
+                event_text,
+                {"tool": tool.name, "risk": tool.risk_level.value, "params": risky_values},
+            )
+            ref = f"#{task_id}" if task_id is not None else "(kayit edilemedi, bkz. log)"
+            logger.info("[%s] MEDIUM+ eylem onaya alindi %s: %s", source, ref, tool.name)
+            print_system(
+                f"[{source}] istek '{tool.name}' ({tool.risk_level.value}) onay gerektiriyor "
+                f"- otomatik calistirilmadi, beklemede {ref}.",
+                level="warning",
+            )
+            return _localized(_PENDING_RECORDED_MESSAGES, lang)
+
         prompt = f"'{tool.name}' calistirilsin mi? (risk: {tool.risk_level.value})"
         approved = _prompt_for_approval(
             prompt,
@@ -463,6 +498,7 @@ def _handle_turn(
     pending: Optional[list[InputEvent]] = None,
     on_tool_start: Optional[Callable[[], None]] = None,
     speaking_event: Optional[threading.Event] = None,
+    source: str = "voice",
 ) -> Iterator[tuple[str, Optional[str]]]:
     """Bir kullanici turunu guardrail + dispatcher'dan gecirip (metin, dil) ciftleri uretir.
 
@@ -535,6 +571,8 @@ def _handle_turn(
                 pending=pending,
                 on_start=on_tool_start,
                 speaking_event=speaking_event,
+                source=source,
+                event_text=user_text,
             )
             yield result, intent.parameters.get("lang", "en")
             return
@@ -674,6 +712,7 @@ def run_jarvis() -> None:
                     pending=pending,
                     on_tool_start=_stop_spinner_once,
                     speaking_event=speaking_event,
+                    source=event.source,
                 ):
                     _stop_spinner_once()
                     print_agent("Jarvis", sentence)
