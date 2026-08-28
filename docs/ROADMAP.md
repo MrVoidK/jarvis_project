@@ -839,7 +839,7 @@ Alt adımlar:
       bir GPU dahil) taşınırken hangi adımların (bkz. `CLAUDE.md` Komutlar
       bölümü) tekrarlanması gerektiği netleştirilir.
 
-## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.5.1 tamam, 6.6+ bekliyor)
+## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.6 tamam, 6.7+ bekliyor)
 
 `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`'deki "Faz A–I" planının
 ROADMAP numaralandırmasına taşınmış hâli — mimari gerekçe ve tam spec o
@@ -1146,7 +1146,7 @@ Alt adımlar:
       indeksler). Testler: `tests/test_db.py` (+7: sürüm 2'ye ilerleme,
       4 tablo, idempotency `[1,2]`, CHECK kısıtları, generated-column round-trip).
 
-### 6.6 Execution Modes — Scheduled & Continuous (v2 Faz F) ⬜
+### 6.6 Execution Modes — Scheduled & Continuous (v2 Faz F) ✅
 
 Yeni girdi kaynakları HİÇBİR yeni güvenlik yolu açmaz — olaylar aynı
 `_handle_turn()` → guardrail → dispatcher → `_run_tool_pipeline()` zincirinden
@@ -1154,21 +1154,32 @@ geçer, tek fark `InputEvent.source` alanı ve aşağıdaki risk kısıtı. 6.4'
 manifest `risk_level` doğrulamasına bağlıdır.
 
 Alt adımlar:
-- [ ] **`core/scheduler.py`** — cron-tabanlı; `InputHub`'ın `queue.Queue`'una
+- [x] **`core/scheduler.py`** — cron-tabanlı; `InputHub`'ın `queue.Queue`'una
       `InputEvent(source="scheduled", text=<önceden tanımlı komut>)` koyar.
       `config/scheduled_tasks.yaml(.example)` (fail-loud, `security.yaml` gibi;
       alanlar `name`/`cron`/`text`).
-- [ ] **`core/continuous_runner.py`** — `jarvis-mic`/`jarvis-text-input`
+- [x] **`core/continuous_runner.py`** — `jarvis-mic`/`jarvis-text-input`
       deseninde daemon thread; bir koşulu izler (dosya değişimi, MCP kaynağı,
       IoT sensörü) ve `InputEvent(source="continuous", ...)` üretir;
       `docs/mimari-genel-bakis.md` §19 thread haritasına eklenir, `stop_event`
       ile kapanır.
-- [ ] **Risk kısıtı** (v2 §5.3) — `source in {"scheduled","continuous"}` olan
+- [x] **Risk kısıtı** (v2 §5.3) — `source in {"scheduled","continuous"}` olan
       olaylar yalnızca `risk_level == RiskLevel.LOW` aracı otomatik tetikler;
       `execution_mode: scheduled|continuous` işaretli bir manifest MEDIUM+ risk
       taşıyorsa boot'ta reddedilir (`registry_loader` doğrular, `print_system`
       ile uyarır, yüklemez). Bu yollardan gelen MEDIUM+ eylem, kullanıcının
       sonradan onaylayacağı bir pending-approval kaydı oluşturur (HUD/`/status`).
+      **Boot tarafı zaten Faz 6.4'te** (`registry_loader.py`). **Runtime tarafı
+      bu fazda:** `_run_tool_pipeline`'da `source ∈ {scheduled,continuous}` +
+      `requires_approval` → `core/pending_tasks.py:record_pending()` ile `tasks`
+      tablosuna `pending` kayıt, `/status`'ta görünür. `/approve`/`/deny`
+      tüketimi ertelendi.
+- [x] **Kabul edilen sınır** — scheduled/continuous kaynaklı bir olay
+      `delegate_complex`/`delegate_code` intent'ine sınıflanırsa, o çok-adımlı
+      zincirdeki MEDIUM+ araç adımları pending-approval gate'e uğramaz
+      (`_run_delegate_*` `source` iletmiyor) — interaktif onay istemine düşer.
+      Delegate zincirine pending semantiği taşımak (adım-başı mı zincir-başı mı
+      kayıt) ayrı bir tasarım kararı; bu fazın kapsamı dışında.
 
 ### 6.7 Proje Başlatma Aracı — CreateProjectTool (v2 Faz G) ⬜
 

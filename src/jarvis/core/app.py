@@ -650,6 +650,23 @@ def run_jarvis() -> None:
     # komutlari bu hub'a iletebilmesinin TEK yolu - bkz. api.py:
     # register_input_hub() ve input_hub.py:submit_external_text() docstring'i.
     api.register_input_hub(hub)
+
+    # Faz 6.6 Execution Modes - OPT-IN. config/scheduled_tasks.yaml yoksa
+    # load_scheduled_config() ([], []) doner ve hicbir yeni thread baslamaz.
+    # Dosya VARSA ama bozuksa ValueError firlar -> run_jarvis burada durur
+    # (fail-loud, security.yaml deseni). Import gecikmeli: croniter yalnizca
+    # gercekten cron degerlendiren yolda gerekir.
+    from src.jarvis.core.scheduler import Scheduler, load_scheduled_config
+    from src.jarvis.core.continuous_runner import ContinuousRunner, build_watchers
+
+    scheduled_tasks, watcher_specs = load_scheduled_config()
+    if scheduled_tasks:
+        Scheduler(hub, stop_event, scheduled_tasks).start()
+        print_system(f"{len(scheduled_tasks)} zamanlanmış görev yüklendi (scheduler).", level="info")
+    if watcher_specs:
+        ContinuousRunner(hub, stop_event, build_watchers(watcher_specs)).start()
+        print_system(f"{len(watcher_specs)} sürekli izleyici yüklendi (continuous).", level="info")
+
     # Bir onay bekleme sirasinda gelen "voice" olaylari burada birikir (bkz.
     # InputHub.wait_for_text_answer()) - asagidaki dongu her turda ONCE
     # burayi bosaltir, kullanicinin o sirada soyledigi soz kaybolmaz.

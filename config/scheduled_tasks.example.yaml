@@ -1,0 +1,22 @@
+# Faz 6.6 Execution Modes — bu dosyayi `scheduled_tasks.yaml` olarak kopyalayin
+# (gercek dosya .gitignore'da; bu sablon commit'lenir). Dosya YOKSA ozellik
+# tamamen kapali - hicbir zamanlayici/izleyici thread'i baslamaz.
+#
+# Uretilen her komut metni, sesli/yazili bir komutla AYNI guardrail + dispatcher
+# + risk zincirinden gecer. scheduled/continuous kaynakli bir MEDIUM+ eylem
+# OTOMATIK CALISMAZ - "bekleyen onay" olarak kaydedilir (/status'ta gorunur),
+# kullanici dondugunde karar verir.
+#
+# Her iki bolum de opsiyonel. Bozuk/eksik alan/gecersiz cron/bilinmeyen watcher
+# type -> Jarvis boot'ta net bir hatayla durur (opt-in dosya, dogru olmali).
+
+scheduled:
+  - name: morning_briefing
+    cron: "0 8 * * *"          # her gun 08:00 (YEREL saat)
+    text: "günlük özetimi hazırla"
+
+watchers:
+  - name: inbox_file
+    type: file_mtime            # bu fazdaki TEK tip
+    path: "jarvis_workspace/inbox.md"
+    text: "gelen kutusu dosyası değişti, işle"

@@ -96,6 +96,8 @@ history         = [{"role": "system", "content": SYSTEM_PROMPT}]
 
 hub = InputHub(stop_event, speaking_event); hub.start()   # mic thread + text thread
 api.register_input_hub(hub)                                # HUD'dan gelen yazılı komutlar için
+Scheduler(...).start()          # jarvis-scheduler daemon (opt-in, cron -> InputEvent source="scheduled")
+ContinuousRunner(...).start()   # jarvis-continuous daemon (opt-in, koşul izleme -> source="continuous")
 pending: list[InputEvent] = []                             # onay beklerken biriken "voice" olayları
 ```
 
@@ -198,6 +200,12 @@ Mikrofon ve terminal metnini **eşzamanlı** dinler, **tek sıralı
   sessizce biter.
 - `submit_external_text(text)` — HUD WebSocket thread'inden gelen yazılı
   komutu aynı kuyruğa koyar (`queue.Queue` zaten thread-safe).
+- `core/scheduler.py:Scheduler` — `jarvis-scheduler` daemon; cron ifadesi denk
+  gelince `hub.submit_event(InputEvent("scheduled", <onceden tanimli metin>))`.
+  `config/scheduled_tasks.yaml` yoksa hic baslamaz.
+- `core/continuous_runner.py:ContinuousRunner` — `jarvis-continuous` daemon; bir
+  koşulu (bu fazda dosya mtime) izler, tetiklenince
+  `hub.submit_event(InputEvent("continuous", ...))`.
 
 **STDIN sahipliği (kritik):** Onay beklerken ana thread kendi `input()`'unu
 **çağırmaz** (metin thread'iyle stdin yarışı olurdu). Bunun yerine
@@ -770,6 +778,8 @@ jarvis_workspace/           # ListFilesTool'un baktığı izole dizin
 | **Ana thread** | `run_jarvis()` döngüsü, `_handle_turn`, tool execute, `speak()` consumer, Brain/router Ollama çağrıları | Tüm karar mantığı burada, sırayla. Bloklayıcı çağrılar Ctrl+C ile yarıda kesilmez. |
 | `jarvis-mic` (daemon) | `_mic_producer` → `listen_loop()` | Sürekli açık `sd.InputStream`. `speaking_event` set'ken tetikleme aramaz. |
 | `jarvis-text-input` (daemon) | `_text_producer` → `console.input()` | **stdin'in tek sahibi.** |
+| `jarvis-scheduler` (daemon, opt-in) | `core/scheduler.py:Scheduler` → cron poll | `config/scheduled_tasks.yaml` varsa. Denk gelince `InputEvent(source="scheduled")`. |
+| `jarvis-continuous` (daemon, opt-in) | `core/continuous_runner.py:ContinuousRunner` → koşul poll | Aynı dosya varsa. Dosya mtime değişince `InputEvent(source="continuous")`. |
 | TTS producer (daemon, `speak()` başına) | `_produce_tts_chunks` → `model.inference_stream()` | GPU forward pass; chunk'ları kuyruğa. |
 | `jarvis-hud-api` (daemon) | `uvicorn.run(app)` — kendi asyncio loop'u | FastAPI `/ws`. Ana thread'i asla bloklamaz. |
 | `mcp-client-adapter` (daemon) | Kalıcı asyncio event-loop | MCP oturumları; `run_coroutine_threadsafe` ile köprü. |

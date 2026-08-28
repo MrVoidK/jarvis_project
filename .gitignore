@@ -27,6 +27,11 @@ secrets/
 # bkz. config/security.example.yaml (bu commit'lenir).
 config/security.yaml
 
+# Faz 6.6 execution modes - kisisel zamanlanmis gorevler/izleyiciler; sablon
+# icin bkz. config/scheduled_tasks.example.yaml (bu commit'lenir). security.yaml
+# gibi OPSIYONEL: yoksa ozellik sessizce kapali.
+config/scheduled_tasks.yaml
+
 # MCP sunucu yapilandirmasi - kisisel/makineye ozel yollar icerebilir
 # (orn. Obsidian vault yolu), sablon icin bkz. config/mcp_servers.example.yaml.
 # security.yaml'in aksine OPSIYONEL: yoksa MCP katmani sadece devre disi
