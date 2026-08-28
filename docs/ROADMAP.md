@@ -839,7 +839,7 @@ Alt adımlar:
       bir GPU dahil) taşınırken hangi adımların (bkz. `CLAUDE.md` Komutlar
       bölümü) tekrarlanması gerektiği netleştirilir.
 
-## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.4 tamam, 6.5+ bekliyor)
+## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.5 tamam, 6.5.1+ bekliyor)
 
 `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`'deki "Faz A–I" planının
 ROADMAP numaralandırmasına taşınmış hâli — mimari gerekçe ve tam spec o
@@ -1041,7 +1041,7 @@ Uygulama notları / v2 §3'ten bilinçli sapmalar:
   `security-reviewer` subagent: tasarım sağlam, 1 uyarı (import fail-soft) +
   5 öneri — hepsi uygulandı.
 
-### 6.5 Kalıcı Semantic Hafıza Katmanı (v2 Faz E) ⬜
+### 6.5 Kalıcı Semantic Hafıza Katmanı (v2 Faz E) ✅
 
 **Karar verildi — Mem0 DEĞİL, DIY minimal.** `sentence-transformers`
 (`paraphrase-multilingual-MiniLM-L12-v2`, CPU — Jarvis iki dilli olduğu için
@@ -1059,20 +1059,20 @@ Uygulama notları / v2 §3'ten bilinçli sapmalar:
   ayrı FAISS index dosyası YOK.
 
 Alt adımlar:
-- [ ] **`core/db.py`** (YENİ, 6.5.1'in temeli) — tek bağlantı noktası,
+- [x] **`core/db.py`** (YENİ, 6.5.1'in temeli) — tek bağlantı noktası,
       `data/jarvis.db`. `PRAGMA journal_mode=WAL` + `busy_timeout=5000` +
       `foreign_keys=ON`. `data/` `.gitignore`'a eklenir (kişisel veri —
       `.env`/`security.yaml` ilkesi). Yazma çevresinde modül-seviyesi `Lock`
       (Jarvis çok-thread'li; WAL eşzamanlı okuma + tek yazar).
-- [ ] **Migration** — `schema_version` tablosu + `migrations/NNN_*.sql`
+- [x] **Migration** — `schema_version` tablosu + `migrations/NNN_*.sql`
       sıralı/idempotent uygulama (her boot'ta eksik migration'lar koşar).
       6.5 → `001_memories.sql`.
-- [ ] **`core/memory.py`** (YENİ) — `remember(text, metadata=None) -> None`,
+- [x] **`core/memory.py`** (YENİ) — `remember(text, metadata=None) -> None`,
       `recall(query, k=5) -> list[str]`. **Fail-soft mutlak:** her istisna
       (model yükleme / DB / embed) → `logger.warning` + no-op / `[]`; Jarvis
       hafızasız sürer. Mevcut `brain/llm.py:history` (son 12 mesaj, oturum-içi)
       DEĞİŞMEZ — bu ayrı, oturumlar-arası bir katman.
-- [ ] **Embedding** — lazy modül-singleton
+- [x] **Embedding** — lazy modül-singleton
       `SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2",
       device="cpu")`, `normalize_embeddings=True` (cosine = dot). İlk
       kullanımda ~470 MB HF cache'e iner (Whisper/XTTS deseni). CPU'da —
@@ -1080,30 +1080,30 @@ Alt adımlar:
       monkeypatch'lenir. **v2 §4.4 sapması:** `all-MiniLM-L6-v2` İngilizce-
       ağırlıklı, TR sorgularda cross-lingual eşleşme zayıf — çok-dilli kardeş
       seçildi (sema aynı, 384-boyut).
-- [ ] **Depolama + arama** — `memories(id, ts, text, metadata_json,
+- [x] **Depolama + arama** — `memories(id, ts, text, metadata_json,
       embedding BLOB)` (`np.float32` 384-dim). `recall`: in-process
       `_matrix (N×384)` + `_texts` ilk çağrıda tablodan yüklenir,
       `remember`'da eklenir; `_matrix @ q` → `argpartition` top-k → eşik
       (`>= ~0.30`). `<10k` giriş için ms-altı; `>10k` → `faiss-cpu` escape
       hatch, **`memory.py` arayüzü değişmez**.
-- [ ] **Guardrail kapıları** (v2 §4.3, en yüksek riskli ekleme) —
+- [x] **Guardrail kapıları** (v2 §4.3, en yüksek riskli ekleme) —
       `remember(text)`: yazmadan önce `_OUTPUT_GUARDRAIL.run(text)`, takılırsa
       yazma. `recall(query)`: dönen her metin `_INPUT_GUARDRAIL.run(result)`,
       takılan listeden çıkar. Gerekçe: kalıcı hafızaya sızan injection her
       gelecek turda tekrar enjekte olur.
-- [ ] **Provenance** — `metadata.source` (`"assistant_turn"` / `"user_stated"`
+- [x] **Provenance** — `metadata.source` (`"assistant_turn"` / `"user_stated"`
       / ...). 6.5 alanı yazar; tool-çıktısı-türevi hafızayı otomatik güvenmeme
       politikasını 6.10 uygular (6.10 kabul edilen sınır (f)).
-- [ ] **`_handle_turn()` entegrasyonu** — 6.5 kapsamı YALNIZCA `remember()`:
+- [x] **`_handle_turn()` entegrasyonu** — 6.5 kapsamı YALNIZCA `remember()`:
       her asistan turu sonunda guardrail'den geçmiş tam yanıt
       `remember(response, {"source": "assistant_turn", "lang": lang})` ile
       yazılır (additif, düşük risk). **`recall()` wiring 6.10'a ait** (seçim
       sonrası, `memory_aware` set'ler, `role: system` değil sınırlandırılmış
       blok) — v2 §4.3'ün "dispatcher öncesi recall" yerleşimi 6.10 ile
       güncellendi.
-- [ ] **Bağımlılık** — `requirements.txt` += `sentence-transformers`
+- [x] **Bağımlılık** — `requirements.txt` += `sentence-transformers`
       (torch/transformers/scikit-learn/huggingface_hub zaten var — marjinal).
-- [ ] **Testler** — `tests/test_db.py` (WAL/pragma; migration idempotency;
+- [x] **Testler** — `tests/test_db.py` (WAL/pragma; migration idempotency;
       `schema_version` ilerlemesi); `tests/test_memory.py` (`remember`+`recall`
       round-trip sahte `_embed_fn` ile; fail-soft — DB yolu bozuk → no-op;
       guardrail kapıları; `k` sınırı; boş DB → `[]`; provenance korunuyor).

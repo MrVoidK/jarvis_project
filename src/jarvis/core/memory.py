@@ -6,7 +6,7 @@ extraction icin bir LLM (Ollama) turu atmasi 12 GB VRAM butcesiyle
 (hermes3 + qwen + whisper + xtts) cakisirdi; ayrica `openai` bagimliligi +
 hizli degisen v2.x API. Yerine DIY minimal:
 
-  sentence-transformers (all-MiniLM-L6-v2, CPU) -> embedding
+  sentence-transformers (paraphrase-multilingual-MiniLM-L12-v2, CPU) -> embedding
   core/db.py (data/jarvis.db) -> kalici saklama (embedding BLOB olarak)
   in-process numpy brute-force cosine -> arama
 
@@ -67,7 +67,7 @@ _loaded = False
 def _embed(texts: list[str]) -> np.ndarray:
     """Metin(ler)i (N, D) L2-normalize float32 matrise cevirir.
 
-    Model ilk cagrida yuklenir (CPU, ~90 MB HF cache'e iner - Whisper/XTTS
+    Model ilk cagrida yuklenir (CPU, ~470 MB HF cache'e iner - Whisper/XTTS
     ilk-indirme deseniyle ayni). Testler bu fonksiyonu monkeypatch'ler.
     """
     global _model

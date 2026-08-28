@@ -1,5 +1,5 @@
 -- Faz 6.5: kalici semantic hafiza (oturumlar-arasi).
--- embedding = sentence-transformers all-MiniLM-L6-v2 ciktisi, np.float32
+-- embedding = sentence-transformers paraphrase-multilingual-MiniLM-L12-v2 ciktisi, np.float32
 -- 384-dim, L2-normalize edilmis, .tobytes() ile saklanir. core/memory.py
 -- ilk recall()/remember()'da tum satirlari in-process bir matrise yukler.
 
