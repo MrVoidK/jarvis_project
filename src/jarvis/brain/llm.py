@@ -92,6 +92,16 @@ def think_and_respond_stream(user_input: str, history: list[dict]) -> Iterator[s
             )
         else:
             yield f"Ollama hatası / Ollama error: {exc}"
+    except httpx.TimeoutException:
+        # adapters/agent_factory.py:_CLIENT read-timeout'u: Ollama ilk token'i
+        # zamaninda dondurmedi (genelde VRAM baskisi altinda model yuklerken
+        # takilma). Eskiden timeout yoktu -> ana dongu Ctrl+C'ye kadar donuyordu
+        # (canli testte gorulen asil bug).
+        history.append({"role": "user", "content": user_input})
+        yield (
+            "Beyin katmanı zamanında yanıt vermedi (muhtemelen VRAM yetersiz), tekrar deneyin. "
+            "The brain layer didn't respond in time (likely low on VRAM), please try again."
+        )
     except Exception as exc:
         history.append({"role": "user", "content": user_input})
         yield f"System error during cognitive processing: {exc}"

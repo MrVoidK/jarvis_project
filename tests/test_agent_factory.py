@@ -18,7 +18,7 @@ from src.jarvis.adapters.agent_factory import (
 
 def test_call_tools_parses_well_formed_tool_call(monkeypatch):
     monkeypatch.setattr(
-        agent_factory_module.ollama,
+        agent_factory_module._CLIENT,
         "chat",
         lambda model, messages, tools, options=None: {
             "message": {"tool_calls": [{"function": {"name": "get_time", "arguments": {}}}]}
@@ -35,7 +35,7 @@ def test_call_tools_returns_empty_when_tool_calls_missing_function_key(monkeypat
     """Beklenmeyen bicim (orn. 'function' anahtari yok) - KeyError yakalanip
     bos bir liste donmeli, exception yukari cikmamali."""
     monkeypatch.setattr(
-        agent_factory_module.ollama,
+        agent_factory_module._CLIENT,
         "chat",
         lambda model, messages, tools, options=None: {"message": {"tool_calls": [{"unexpected": "shape"}]}},
     )
@@ -49,7 +49,7 @@ def test_call_tools_returns_empty_when_arguments_not_a_mapping(monkeypatch):
     """`arguments` bir mapping degilse (orn. bir string) dict(...) ValueError
     firlatir - bu da yakalanip bos listeye dusmeli."""
     monkeypatch.setattr(
-        agent_factory_module.ollama,
+        agent_factory_module._CLIENT,
         "chat",
         lambda model, messages, tools, options=None: {
             "message": {"tool_calls": [{"function": {"name": "get_time", "arguments": "not-a-dict"}}]}
@@ -66,7 +66,7 @@ def test_respond_stream_yields_raw_chunks(monkeypatch):
     (cumle bolmeden) yield etmeli - cumle bolme brain/llm.py'nin isi."""
     chunks = [{"message": {"content": "Mer"}}, {"message": {"content": "haba."}}]
     monkeypatch.setattr(
-        agent_factory_module.ollama,
+        agent_factory_module._CLIENT,
         "chat",
         lambda model, messages, stream=False, tools=None, options=None, keep_alive=None: iter(chunks),
     )
@@ -83,7 +83,7 @@ def test_respond_stream_does_not_swallow_provider_errors(monkeypatch):
     def _boom(model, messages, stream=False, tools=None, options=None, keep_alive=None):
         raise ConnectionError("ollama down")
 
-    monkeypatch.setattr(agent_factory_module.ollama, "chat", _boom)
+    monkeypatch.setattr(agent_factory_module._CLIENT, "chat", _boom)
 
     import pytest
 
@@ -109,7 +109,7 @@ def test_factory_rejects_unknown_role():
 
 
 def test_router_adapter_has_short_keep_alive():
-    assert AgentFactory.create("router")._keep_alive == "2m"
+    assert AgentFactory.create("router")._keep_alive == "0"
     assert AgentFactory.create("orchestrator")._keep_alive is None
     assert AgentFactory.create("tool_agent")._keep_alive is None
 
@@ -121,9 +121,9 @@ def test_call_tools_passes_keep_alive_when_set(monkeypatch):
         captured["keep_alive"] = keep_alive
         return {"message": {"tool_calls": []}}
 
-    monkeypatch.setattr(agent_factory_module.ollama, "chat", _fake)
+    monkeypatch.setattr(agent_factory_module._CLIENT, "chat", _fake)
     AgentFactory.create("router").call_tools("x", tools=[])
-    assert captured["keep_alive"] == "2m"
+    assert captured["keep_alive"] == "0"
 
 
 class _FakeProc:

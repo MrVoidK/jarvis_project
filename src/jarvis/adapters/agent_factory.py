@@ -38,11 +38,23 @@ ROLE_MODEL_MAP: dict[str, str] = {
     "router": ROUTER_MODEL_NAME,
 }
 
-# Router modeli (qwen2.5:3b, ~2.2 GB) her rule-eslesmeyen turda cagriliyor ama
-# konusma araligindaki kisa patlamalar disinda bosta - Ollama'nin varsayilan
-# 5 dk'lik keep_alive'i yerine 2 dk: aktif konusmada hot kalir, konusma bitince
-# ~2 dk sonra VRAM'den cikip yer acar (bkz. docs/ARCHITECTURE.md SS5, ~11.5 GB).
-_ROUTER_KEEP_ALIVE = "2m"
+# Router modeli (qwen2.5:3b, ~2.2 GB) her rule-eslesmeyen turda cagriliyor.
+# keep_alive="0": qwen siniflandirma BITER BITMEZ VRAM'den cikar - RTX 4070/12GB'da
+# hermes3:8b(~5) + qwen(~2.2) + Whisper(~2) + XTTS(~2.5) tavana dayaniyor ve
+# Ollama, router turunun HEMEN ardindan gelen Brain (hermes3) cagrisi icin
+# modeli yukleyemeyip TAKILABILIYOR (canli testte 2 dk donma). "0" ile router
+# turu sonrasi Brain'e ~2.2 GB yer aciliyor. Aktif konusmada her turda yeniden
+# yuklenir (~0.5-1 sn) - kabul edilen takas (donma > kucuk gecikme).
+_ROUTER_KEEP_ALIVE = "0"
+
+# Ollama HTTP cagrilarinin read-timeout'u. ollama paketinin varsayilan client'i
+# TIMEOUT'SUZ - Ollama ( or. VRAM baskisi altinda model yuklerken) takilirsa
+# `ollama.chat` cagrisi SONSUZA kadar bloklar ve ana dongu Ctrl+C'ye kadar
+# donar (canli testte gorulen asil bug). Bu client bir read-timeout dayatir;
+# asimda httpx.TimeoutException firlar (respond/call_tools yakalar, streaming
+# yolda brain/llm.py yakalar).
+_OLLAMA_TIMEOUT_S = 90.0
+_CLIENT = ollama.Client(timeout=httpx.Timeout(_OLLAMA_TIMEOUT_S, connect=5.0))
 
 # Baglanti/model hatalarinda kullanicaya donecek TR/EN mesaj - src/jarvis/brain/llm.py'deki
 # think_and_respond_stream'in hata deseniyle bilincli olarak ayni (iki ayri LLM cagri yeri
@@ -51,6 +63,13 @@ def _connection_error_message(model_name: str) -> str:
     return (
         f"Ollama servisine bağlanamıyorum ({model_name}), çalıştığından emin olun (ollama serve). "
         f"I can't reach Ollama for {model_name} - make sure it's running (ollama serve)."
+    )
+
+
+def _timeout_message(model_name: str) -> str:
+    return (
+        f"{model_name} zamanında yanıt vermedi (muhtemelen VRAM yetersiz). "
+        f"{model_name} didn't respond in time (likely low on VRAM)."
     )
 
 
@@ -106,13 +125,16 @@ class OllamaAgentAdapter(Agent):
         messages = list(context or [])
         messages.append({"role": "user", "content": prompt})
         try:
-            response = ollama.chat(
+            response = _CLIENT.chat(
                 model=self._model_name, messages=messages, **self._chat_kwargs()
             )
             return response["message"]["content"].strip()
         except (httpx.ConnectError, ConnectionError):
             logger.error("Ajan: Ollama'ya baglanilamadi (%s).", self._model_name)
             return _connection_error_message(self._model_name)
+        except httpx.TimeoutException:
+            logger.error("Ajan: Ollama yanit vermedi (%s, %.0fs timeout).", self._model_name, _OLLAMA_TIMEOUT_S)
+            return _timeout_message(self._model_name)
         except ollama.ResponseError as exc:
             if exc.status_code == 404:
                 logger.error("Ajan: model bulunamadi (%s).", self._model_name)
@@ -127,7 +149,10 @@ class OllamaAgentAdapter(Agent):
         respond_stream docstring'i + v2 SS2.4)."""
         messages = list(context or [])
         messages.append({"role": "user", "content": prompt})
-        for chunk in ollama.chat(
+        # _CLIENT read-timeout dayatir: ilk token gelmezse (Ollama takilirsa)
+        # httpx.TimeoutException firlar ve tuketici (brain/llm.py) yakalar -
+        # eskiden timeout'suz ollama.chat sonsuza kadar bloklardi.
+        for chunk in _CLIENT.chat(
             model=self._model_name, messages=messages, stream=True, **self._chat_kwargs()
         ):
             yield chunk["message"]["content"]
@@ -148,7 +173,7 @@ class OllamaAgentAdapter(Agent):
             # (genelde "arac yok") secimine daha tutarli sekilde sadik
             # kalmasini sagliyor - tool-secim karari zaten deterministik/
             # tekrarlanabilir olmali, yaratici cesitlilige hicbir ihtiyac yok.
-            response = ollama.chat(
+            response = _CLIENT.chat(
                 model=self._model_name,
                 messages=messages,
                 tools=tools,
@@ -158,6 +183,9 @@ class OllamaAgentAdapter(Agent):
         except (httpx.ConnectError, ConnectionError):
             logger.error("Ajan (tool-calling): Ollama'ya baglanilamadi (%s).", self._model_name)
             return AgentToolResponse(content=_connection_error_message(self._model_name))
+        except httpx.TimeoutException:
+            logger.error("Ajan (tool-calling): Ollama yanit vermedi (%s, %.0fs).", self._model_name, _OLLAMA_TIMEOUT_S)
+            return AgentToolResponse(content=_timeout_message(self._model_name))
         except ollama.ResponseError as exc:
             if exc.status_code == 404:
                 logger.error("Ajan (tool-calling): model bulunamadi (%s).", self._model_name)
