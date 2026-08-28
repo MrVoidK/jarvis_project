@@ -19,11 +19,19 @@ ilkesi MCP'nin DINAMIK dogasiyla uyusmaz). Bunun yerine `all_tools()`/
 `get_tool()` altta, TOOL_REGISTRY'yi degistirmeden, cagiran koda (dispatcher/
 app) hem yerel hem MCP araclarini gosteren bir BIRLESTIRME (view) katmani
 sunuyor.
+
+Faz 6.4: `all_tools()` artik UC kaynagi birlestirir - statik `TOOL_REGISTRY` +
+`core/registry_loader.py:load_dynamic_tools()` (allowlist'li agents/registry/
+*.yaml manifest'leri) + MCP kesfi. Ad cakismasinda statik HER ZAMAN kazanir;
+oncelik: statik > dinamik manifest > MCP. Hicbir kaynak digerine sessizce
+enjekte olmaz (ayni "statik onay" felsefesi, bkz. docs/ARCHITECTURE.md SS12).
 """
 
+import logging
 from typing import Optional
 
 from src.jarvis.adapters.mcp_client_adapter import get_default_adapter
+from src.jarvis.core.registry_loader import load_dynamic_tools
 from src.jarvis.tools.base import Tool
 from src.jarvis.tools.files import ListFilesTool
 from src.jarvis.tools.media_tool import (
@@ -37,6 +45,8 @@ from src.jarvis.tools.media_tool import (
 from src.jarvis.tools.notes_tool import CreateNoteTool, ReadNotesTool
 from src.jarvis.tools.system_info import SystemInfoTool
 from src.jarvis.tools.terminal_tool import LaunchAppTool, RunCommandTool
+
+logger = logging.getLogger("jarvis.tools.registry")
 
 TOOL_REGISTRY: dict[str, Tool] = {
     tool.name: tool
@@ -58,21 +68,39 @@ TOOL_REGISTRY: dict[str, Tool] = {
 
 
 def all_tools() -> dict[str, Tool]:
-    """`TOOL_REGISTRY` (statik, yerel) + MCP-kesfedilen araclarin BIRLESIK view'i.
+    """Statik `TOOL_REGISTRY` + dinamik manifest + MCP araclarinin BIRLESIK view'i.
 
     `TOOL_REGISTRY`'nin KENDISI degismez (bkz. modul docstring'i) - bu
     fonksiyon SADECE cagiran kodun (core/dispatcher.py, core/app.py) tek bir
-    yerden hem yerel hem MCP araclarini gorebilmesi icin bir birlestirme
-    katmani. MCP tarafi kesif sonucunu kendi icinde cache'ledigi icin
-    (bkz. adapters/mcp_client_adapter.py:discover_tools()) her turda
-    yeniden sunuculara baglanilmaz.
+    yerden butun araclari gorebilmesi icin bir birlestirme katmani. Hem
+    `load_dynamic_tools()` hem MCP kesif sonucunu kendi icinde cache'ledigi
+    icin her turda diskten/sunuculardan yeniden okunmaz.
+
+    Oncelik: statik > dinamik manifest > MCP. Bir dinamik/MCP araci statik bir
+    arac adiyla cakisirsa dusurulur (statik kazanir) + uyari loglanir.
     """
-    return {**TOOL_REGISTRY, **get_default_adapter().discover_tools()}
+    dynamic = load_dynamic_tools()
+    mcp = get_default_adapter().discover_tools()
+    merged: dict[str, Tool] = {}
+    for label, source in (("MCP", mcp), ("dinamik manifest", dynamic)):
+        for key, tool in source.items():
+            if key in TOOL_REGISTRY:
+                logger.warning(
+                    "%s araci '%s' statik TOOL_REGISTRY adiyla cakisiyor - "
+                    "yoksayildi (statik kazanir).", label, key,
+                )
+                continue
+            merged[key] = tool
+    merged.update(TOOL_REGISTRY)
+    return merged
 
 
 def get_tool(name: str) -> Optional[Tool]:
-    """Once yerel `TOOL_REGISTRY`'ye, sonra MCP-kesfedilen araclara bakar."""
+    """Once statik `TOOL_REGISTRY`, sonra dinamik manifest, en son MCP araclari."""
     tool = TOOL_REGISTRY.get(name)
+    if tool is not None:
+        return tool
+    tool = load_dynamic_tools().get(name)
     if tool is not None:
         return tool
     return get_default_adapter().discover_tools().get(name)

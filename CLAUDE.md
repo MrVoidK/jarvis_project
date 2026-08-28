@@ -41,8 +41,9 @@ ince bir `main.py` giriş noktası var.
   `core/dispatcher.py:Dispatcher.classify()` önce `_RULES`'taki tek fast-path
   kurala (`get_time`) bakar, eşleşmezse `AgentFactory.create("orchestrator")`
   (yerel `llama3.1:8b`) ile Ollama **native tool-calling**'i kullanarak
-  (şema üretimi `adapters/tool_schema.py`) `tools/registry.py:TOOL_REGISTRY`'den
-  bir araç seçer; `core/app.py` seçileni `core/risk.py` risk seviyesine göre
+  (şema üretimi `adapters/tool_schema.py`) `tools/registry.py:all_tools()`'tan
+  bir araç seçer (statik `TOOL_REGISTRY` + manifest + MCP; bkz. `core/registry_loader.py`);
+  `core/app.py` seçileni `core/risk.py` risk seviyesine göre
   `[Y/N]` onayından (rich panelleriyle — `core/console.py:print_approval_panel`/
   `print_router_decision`) geçirip çalıştırır. `agents/base.py` (`Agent`:
   `respond()` + `call_tools()`) + `adapters/agent_factory.py`
@@ -51,7 +52,7 @@ ince bir `main.py` giriş noktası var.
   (Chain-of-Responsibility: `InputInjectionCheck`, `OutputSafetyCheck`) artık
   router'ın ürettiği TÜM tool parametrelerini tarıyor. `core/security_config.py`
   + `config/security.yaml` (kişisel, gitignore'da; şablon: `security.example.yaml`)
-  `allowed_directories`/`known_applications`/`obsidian_vault` sağlar.
+  `allowed_directories`/`known_applications`/`obsidian_vault`/`enabled_dynamic_agents` sağlar.
 - `src/jarvis/core/app.py:run_jarvis()` — Ears→Brain→Mouth'u bağlayan
   giriş noktası; kökteki `main.py` sadece bunu çağırır.
 
@@ -172,9 +173,9 @@ src/jarvis/
 │   └── guardrail/               # Chain-of-Responsibility I/O kontrolleri
 │   ├── risk.py                 # RiskLevel + [Y/N] onay (Zero-Trust, Faz 3)
 │   └── paths.py                 # PROJECT_ROOT (CWD-bağımsız mutlak yollar)
-├── tools/                       # base(ABC)+registry, notes_tool (Obsidian),
-│                                #  files, terminal_tool (run_command HIGH +
-│                                #  launch_app), system_info, media_tool
+├── core/registry_loader.py      # agents/registry/*.yaml → dinamik araç yükleyici (allowlist, Faz 6.4)
+├── tools/                       # base(ABC)+registry, notes_tool, files,
+│                                #  terminal_tool (run_command HIGH + launch_app), system_info, media_tool
 ├── adapters/
 │   ├── agent_factory.py         # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri
 │   └── tool_schema.py            # Tool -> Ollama function-calling şeması

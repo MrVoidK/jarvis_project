@@ -156,3 +156,26 @@ def test_get_obsidian_vault_raises_when_not_configured(tmp_path):
     config = SecurityConfig(allowed_directories=[], known_applications={}, obsidian_vault=None)
     with pytest.raises(RuntimeError):
         get_obsidian_vault(config=config)
+
+
+def test_load_security_config_parses_enabled_dynamic_agents(tmp_path):
+    yaml_path = tmp_path / "security.yaml"
+    yaml_path.write_text(
+        "allowed_directories:\n  - \"jarvis_workspace\"\n"
+        "enabled_dynamic_agents:\n  - foo\n  - \"  bar  \"\n  - \"\"\n",
+        encoding="utf-8",
+    )
+
+    config = load_security_config(str(yaml_path))
+
+    # bosluklar trim'lenir, bos girisler atilir
+    assert config.enabled_dynamic_agents == ["foo", "bar"]
+
+
+def test_load_security_config_defaults_enabled_dynamic_agents_to_empty(tmp_path):
+    yaml_path = tmp_path / "security.yaml"
+    yaml_path.write_text("allowed_directories:\n  - \"jarvis_workspace\"\n", encoding="utf-8")
+
+    config = load_security_config(str(yaml_path))
+
+    assert config.enabled_dynamic_agents == []

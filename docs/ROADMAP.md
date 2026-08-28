@@ -839,7 +839,7 @@ Alt adımlar:
       bir GPU dahil) taşınırken hangi adımların (bkz. `CLAUDE.md` Komutlar
       bölümü) tekrarlanması gerektiği netleştirilir.
 
-## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.3 tamam, 6.4+ bekliyor)
+## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.4 tamam, 6.5+ bekliyor)
 
 `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`'deki "Faz A–I" planının
 ROADMAP numaralandırmasına taşınmış hâli — mimari gerekçe ve tam spec o
@@ -991,23 +991,42 @@ Tool'una değil doğrudan `_handle_turn` dalına bağlı — ama yine de `_promp
 Faz 6.7). (4) `tool_agent` döngüsü `role_prompt` ctor param'ı yerine
 `_TOOL_AGENT_SYSTEM_PROMPT`'u `app.py`'den context olarak alıyor (6.2 kararı).
 
-### 6.4 Agent Registry / Manifest Sistemi (v2 Faz D) ⬜
+### 6.4 Agent Registry / Manifest Sistemi (v2 Faz D) ✅
 
 Mevcut "bir araç yanlışlıkla kayıtlı olamaz" güvenlik ilkesini bozmadan
 dinamik araç/ajan ekleme. Otomatik keşif DEĞİL — iki elle adım gerekir
 (manifest koymak + allowlist'e ad eklemek).
 
 Alt adımlar:
-- [ ] **Manifest şeması** — `agents/registry/*.yaml` (alanlar: `name`,
+- [x] **Manifest şeması** — `agents/registry/*.yaml` (alanlar: `name`,
       `description`, `kind`, `risk_level`, `execution_mode`, `module`, `class`,
-      `parameters_schema`).
-- [ ] **Yükleyici** — `core/registry_loader.py:load_dynamic_tools()` yalnızca
+      `parameters_schema`). Şablon: `agents/registry/README.md` +
+      `home_assistant_lights.example.yaml`.
+- [x] **Yükleyici** — `core/registry_loader.py:load_dynamic_tools()` yalnızca
       adı `config/security.yaml:enabled_dynamic_agents` allowlist'inde olan
       manifest'i yükler; diğerleri sessizce atlanır (fail-closed).
-- [ ] **Üç kaynak** — `tools/registry.py:all_tools()` statik `TOOL_REGISTRY` +
+- [x] **Üç kaynak** — `tools/registry.py:all_tools()` statik `TOOL_REGISTRY` +
       `load_dynamic_tools()` + MCP keşfini birleştirir; hiçbiri sessizce
       `TOOL_REGISTRY`'ye enjekte edilmez.
-- [ ] `config/security.example.yaml`'a `enabled_dynamic_agents: []` eklenir.
+- [x] `config/security.example.yaml`'a `enabled_dynamic_agents: []` eklenir.
+
+Uygulama notları / v2 §3'ten bilinçli sapmalar:
+- **Metadata otoritesi sınıfta:** `module:class` instantiate edilir; `Tool`
+  alt sınıfı statik araçlarla aynı self-describing sözleşmeyi taşır. Manifest
+  `name`/`risk_level` sınıfla uyuşmazsa manifest **fail-closed atlanır** (bir
+  manifest gerçekte HIGH olan bir sınıfı "MEDIUM" diye kayda geçiremez);
+  `description`/`parameters_schema` sürüklenmesi yalnızca uyarı loglar.
+- **Öncelik statik > dinamik manifest > MCP** ve statik ad çakışmasında her
+  zaman kazanır — v2 §3.3'teki `{**TOOL_REGISTRY, **dynamic, **mcp}` kod
+  parçacığının aksine (o sıralamada MCP statiği ezerdi).
+- **Allowlist anahtarı = dosya kökü (stem)**, manifest içindeki `name` değil
+  (v2 §3.3 yorumuyla tutarlı). `*.example` stem'leri de atlanır.
+- **execution_mode risk kapısı 6.4'te uygulandı** (v2 §5.3): `scheduled|
+  continuous` + `risk_level` MEDIUM+ → boot'ta reddedilir.
+- **Per-manifest fail-soft** (`mcp_config.py` deseni): bozuk/uyumsuz manifest
+  uyarı + `print_system` ile atlanır, Jarvis yine başlar.
+- Testler: `tests/test_registry_loader.py` (+21), `tests/test_registry_merge.py`
+  (+5), `tests/test_security_config.py` (+2). `pytest tests/` 165 yeşil.
 
 ### 6.5 Kalıcı Hafıza Katmanı — Mem0 (v2 Faz E) ⬜
 
@@ -1027,9 +1046,35 @@ Alt adımlar:
       enjekte olur.
 - [ ] **`_handle_turn()` entegrasyonu** — dispatcher öncesi (hafıza routing'i
       etkileyebildiği için) `recall()`, yanıt sonrası `remember()`.
-- [ ] **Yerel-öncelikli** — self-hosted Mem0 + yerel vektör deposu (Qdrant veya
-      SQLite+embedding) + CPU embedding modeli (`all-MiniLM-L6-v2`), GPU
-      bütçesine dokunmaz. `requirements.txt` seçim netleşince güncellenir.
+- [ ] **Yerel-öncelikli** — self-hosted Mem0 + yerel vektör deposu **FAISS**
+      (Mem0'ın desteklediği sağlayıcılar arasında; ham SQLite bir vektör
+      deposu değil, bu yüzden elenmiştir) + CPU embedding modeli
+      (`all-MiniLM-L6-v2`), GPU bütçesine dokunmaz. Docker/WSL2 gerektirmez —
+      salt Python kütüphanesi. `requirements.txt` seçim netleşince güncellenir.
+      
+#### 6.5.1 Genel Yapısal Veri Katmanı — SQLite ⬜
+
+**Amaç**: Mem0'ın anlamsal (bulanık/semantic) hafızasından ayrı olarak,
+kesin/yapısal sorgular gerektiren veri için (trace log agregasyonu, görev
+takibi, takvim cache'i, IoT cihaz durumu) tek bir merkezi SQLite dosyası.
+NoSQL değil çünkü: tek makine/tek kullanıcı, yatay ölçekleme veya yüksek
+yazma hacmi ihtiyacı yok — SQLite'ın JSON1 uzantısı şema-esnek veri
+(takvim/IoT gibi) için de yeterli. 6.5'ten bağımsız ilerleyebilir; ikisi
+paylaşımlı hiçbir bileşene ihtiyaç duymaz.
+
+Alt adımlar:
+- [ ] **Merkezi modül** — `core/db.py`: tek bağlantı noktası, `data/jarvis.db`
+      dosyasına yazar. WAL modu açık (eşzamanlı okuma/yazma için).
+- [ ] **§9'un genellenmesi** — `core/trace.py`'nin kendi ayrı `trace.db`
+      dosyası yerine bu merkezi veritabanındaki `traces` tablosunu kullanması
+      (v2 §9 ile birleştirilir, ayrı dosya kalmaz).
+- [ ] **İlk tablolar** — `traces` (v2 §9), `tasks` (görev takibi), henüz
+      bağlanmamış olsa da ileride gerekecek `calendar_cache` ve
+      `iot_devices` için şema iskeleti (JSON1 ile şema-esnek sütunlar, örn.
+      `raw_json TEXT` + `json_extract` ile türetilmiş sütunlar).
+- [ ] **Migration stratejisi** — basit bir `schema_version` tablosu ve
+      sıralı migration betikleri (`migrations/001_initial.sql` gibi),
+      şema değiştikçe veri kaybı olmadan ilerlemek için.
 
 ### 6.6 Execution Modes — Scheduled & Continuous (v2 Faz F) ⬜
 

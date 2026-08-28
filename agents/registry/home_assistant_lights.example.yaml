@@ -1,0 +1,15 @@
+# ÖRNEK manifest (v2 §3.2) - `.example` uzantisi oldugu icin yukleyici bunu
+# HER ZAMAN atlar. Gercek bir manifest icin bu dosyayi `<ad>.yaml` olarak
+# kopyalayin, `module`/`class`'i gercek bir Tool alt sinifina yoneltin ve
+# `<ad>`'i config/security.yaml:enabled_dynamic_agents listesine ekleyin.
+
+name: control_lights
+description: "Ev icindeki akilli isiklari acar/kapatir/parlaklik ayarlar"
+kind: tool
+risk_level: medium
+execution_mode: on_demand
+module: src.jarvis.tools.iot_tool
+class: HomeAssistantLightTool
+parameters_schema:
+  room: { type: string, description: "Oda adi" }
+  action: { type: string, description: "on | off | dim" }

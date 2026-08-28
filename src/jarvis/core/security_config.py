@@ -37,6 +37,10 @@ class SecurityConfig:
     allowed_directories: list[Path] = field(default_factory=list)
     known_applications: dict[str, str] = field(default_factory=dict)
     obsidian_vault: Optional[Path] = None
+    # agents/registry/*.yaml dinamik arac manifest'leri icin allowlist (Faz 6.4).
+    # Bir manifest yalnizca dosya kokunun (stem) burada da bulunmasi halinde
+    # yuklenir - bkz. core/registry_loader.py:load_dynamic_tools().
+    enabled_dynamic_agents: list[str] = field(default_factory=list)
 
 
 _config_cache: Optional[SecurityConfig] = None
@@ -73,6 +77,11 @@ def load_security_config(path: str = CONFIG_PATH) -> SecurityConfig:
         str(name).strip().lower(): str(command)
         for name, command in (raw.get("known_applications") or {}).items()
     }
+    enabled_dynamic_agents = [
+        str(entry).strip()
+        for entry in (raw.get("enabled_dynamic_agents") or [])
+        if str(entry).strip()
+    ]
 
     obsidian_vault: Optional[Path] = None
     raw_vault = raw.get("obsidian_vault")
@@ -88,6 +97,7 @@ def load_security_config(path: str = CONFIG_PATH) -> SecurityConfig:
         allowed_directories=allowed_directories,
         known_applications=known_applications,
         obsidian_vault=obsidian_vault,
+        enabled_dynamic_agents=enabled_dynamic_agents,
     )
 
 

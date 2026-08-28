@@ -369,14 +369,14 @@ src/jarvis/
 │   ├── memory.py                 # Mem0 sarmalayıcı: remember()/recall(), fail-soft (Faz 6.5) ⬜ kararsız
 │   ├── scheduler.py              # cron-tabanlı InputEvent üretici, source="scheduled" (Faz 6.6) ⬜
 │   ├── continuous_runner.py      # arka plan izleme thread'i, source="continuous" (Faz 6.6) ⬜
-│   ├── registry_loader.py        # agents/registry/*.yaml → dinamik Tool yükleyici (Faz 6.4) ⬜
+│   ├── registry_loader.py        # (repo-kökü) agents/registry/*.yaml → dinamik Tool yükleyici (Faz 6.4) ✅
 │   └── trace.py                  # SQLite tabanlı çağrı izleme + /trace (Faz 6.9) ⬜
 ├── adapters/
 │   ├── agent_factory.py        # AgentFactory + Llama/Hermes/ClaudeCode adaptörleri (✅; ROLE_MODEL_MAP + respond_stream Faz 6.2) 🟡
 │   └── mcp_client_adapter.py   # MCPClientAdapter — MCP bilgi katmanı istemcisi (Faz 4.5) ⬜
 ├── agents/
-│   ├── base.py                   # Agent (ABC) arayüzü (✅; respond_stream() Faz 6.2) 🟡
-│   └── registry/                 # dinamik araç/ajan manifest .yaml dosyaları (Faz 6.4) ⬜
+│   └── base.py                   # Agent (ABC) arayüzü (✅; respond_stream() Faz 6.2) 🟡
+│                                 #  (manifest .yaml'ları src/ altında DEĞİL — repo-kökü agents/registry/)
 ├── tools/           # tool-calling entegrasyonları (Faz 3) ⬜
 │   ├── project_tool.py          # CreateProjectTool (Faz 6.7) ⬜
 │   ├── iot_tool.py               # HomeAssistantTool — yerel, MCP değil (Faz 6.8) ⬜
@@ -386,9 +386,13 @@ src/jarvis/
                      #  v2'de tools/iot_tool.py (yerel HA REST); bu paket Faz 5 MQTT/VLAN vizyonu için
 
 config/
-├── security.yaml / security.example.yaml       # yerel tool erişim kontrolü (✅; + enabled_dynamic_agents Faz 6.4) 🟡
+├── security.yaml / security.example.yaml       # yerel tool erişim kontrolü (✅; + enabled_dynamic_agents Faz 6.4 ✅)
 ├── mcp_servers.yaml / mcp_servers.example.yaml  # MCP sunucu tanımları (Faz 4.5; + Drive/Home Assistant Faz 6.8) ⬜
 └── scheduled_tasks.yaml / .example              # cron görev tanımları, fail-loud (Faz 6.6) ⬜
+
+agents/registry/     # (repo-kökü) dinamik araç/ajan manifest .yaml'ları + README (Faz 6.4) ✅
+├── README.md                                    # manifest şeması + iki-adımlı aktivasyon
+└── *.example.yaml                               # canlı şablon(lar); *.example stem'i asla yüklenmez
 
 templates/CLAUDE.md.template   # CreateProjectTool'un yeni projeye kopyaladığı scaffold (Faz 6.7) ⬜
 web-ui/               # React + TS + Vite + three.js HUD arayüzü (✅, Faz 3.4 - bkz. ROADMAP.md)
@@ -642,23 +646,32 @@ ekler; **hiçbir yeni güvenlik yolu açmaz** (bkz. ROADMAP Faz 6.6, v2 §5).
   `execution_mode: scheduled|continuous` işaretli bir manifest MEDIUM+ risk
   beyan ediyorsa `registry_loader` onu boot'ta reddeder.
 
-## 12. Agent Registry — Dinamik Araç/Ajan Ekleme (⬜)
+## 12. Agent Registry — Dinamik Araç/Ajan Ekleme (✅ Faz 6.4)
 
 `tools/registry.py:TOOL_REGISTRY`'nin statik `dict` olması bilinçli bir güvenlik
 özelliğidir ("bir araç yanlışlıkla kayıtlı olamaz"). Registry, bu ilkeyi
 bozmadan genişleme sağlar — **otomatik keşif değil, allowlist tabanlı** (bkz.
 ROADMAP Faz 6.4, v2 §3).
 
-- **Manifest**: `agents/registry/*.yaml` — `name`, `description`, `kind`,
-  `risk_level`, `execution_mode`, `module`, `class`, `parameters_schema`.
-- **Yükleyici**: `core/registry_loader.py:load_dynamic_tools()` yalnızca adı
-  `config/security.yaml:enabled_dynamic_agents` listesinde olan manifest'i
-  yükler; gerisi sessizce atlanır (fail-closed). Yani bir aracı devreye almak
+- **Manifest**: (repo-kökü) `agents/registry/*.yaml` — `name`, `description`,
+  `kind`, `risk_level`, `execution_mode`, `module`, `class`, `parameters_schema`.
+  Şablon + şema: `agents/registry/README.md`. `*.example` stem'leri yüklenmez.
+- **Yükleyici**: `core/registry_loader.py:load_dynamic_tools()` yalnızca dosya
+  kökü (stem) `config/security.yaml:enabled_dynamic_agents` listesinde olan
+  manifest'i yükler; gerisi sessizce atlanır. Yani bir aracı devreye almak
   **iki elle adım** ister: manifest dosyasını koymak + allowlist'e ad eklemek.
+  Bozuk/uyumsuz manifest fail-soft atlanır (uyarı + `print_system`), uygulama
+  yine başlar (`mcp_config.py` deseni).
+- **Metadata otoritesi sınıfta**: `module:class` instantiate edilir; `Tool` alt
+  sınıfı kendi `name`/`risk_level`/`parameters_schema`'sını taşır. Manifest
+  `name`/`risk_level` sınıfla çelişirse manifest fail-closed atlanır (manifest
+  gerçek riski gizleyemez). `execution_mode: scheduled|continuous` + MEDIUM+
+  risk boot'ta reddedilir (§11, v2 §5.3).
 - **Üç kaynak**: `tools/registry.py:all_tools()` = statik `TOOL_REGISTRY` +
   `load_dynamic_tools()` + `MCPClientAdapter` keşfi. Üçü de aynı `Tool`
   sözleşmesine uyar; hiçbiri diğerine sessizce enjekte olmaz (§9.2 ile aynı
-  ilke).
+  ilke). Öncelik **statik > dinamik manifest > MCP**; statik ad çakışmasında
+  her zaman kazanır (v2 §3.3 kod parçacığının sıralamasından bilinçli sapma).
 
 ## 13. Gözlemlenebilirlik — Tracing (⬜)
 

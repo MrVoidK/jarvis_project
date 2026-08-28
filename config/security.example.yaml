@@ -22,3 +22,11 @@ known_applications:
   "vs code": "code"
   "chrome": "chrome"
   "steam": "C:\\Program Files (x86)\\Steam\\steam.exe"
+
+# Dinamik arac/ajan manifestleri (agents/registry/*.yaml) icin allowlist (Faz 6.4).
+# Bir manifest dosyasi koymak TEK BASINA onu aktive ETMEZ - dosya adinin
+# (uzantisiz kok) burada da listelenmesi gerekir (iki elle adim, hicbiri
+# otomatik degil). Bos = hicbir dinamik arac yuklenmez (varsayilan).
+# Bkz. src/jarvis/core/registry_loader.py, docs/ROADMAP.md Faz 6.4.
+enabled_dynamic_agents: []
+  # - home_assistant_lights   # -> agents/registry/home_assistant_lights.yaml
