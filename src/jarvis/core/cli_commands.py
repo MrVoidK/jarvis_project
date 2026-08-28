@@ -19,6 +19,7 @@ from src.jarvis.adapters.agent_factory import ROUTER_MODEL_NAME
 from src.jarvis.adapters.tool_schema import validate_arguments
 from src.jarvis.brain.llm import MAX_HISTORY_MESSAGES, SYSTEM_PROMPT
 from src.jarvis.brain.llm import MODEL_NAME as BRAIN_MODEL_NAME
+from src.jarvis.core import pending_tasks
 from src.jarvis.core.console import console, print_panel, print_system, print_table
 from src.jarvis.core.dispatcher import Intent
 from src.jarvis.core.input_hub import InputEvent, InputHub
@@ -132,6 +133,15 @@ def _cmd_status(history: list[dict]) -> None:
     ]
     for _, tool in sorted(tools.items()):
         lines.append(f"  - {_tool_risk_label(tool)}")
+    pending_rows = pending_tasks.list_pending(limit=5)
+    if pending_rows:
+        lines.append(f"[bold]Bekleyen onaylar ({len(pending_rows)}):[/bold]")
+        for row in pending_rows:
+            text = row["text"]
+            snippet = (text[:60] + "…") if len(text) > 60 else text
+            lines.append(f"  - #{row['id']} · {row['source']} · {snippet}")
+    else:
+        lines.append("[bold]Bekleyen onaylar:[/bold] yok")
     print_panel("Jarvis Durumu", "\n".join(lines), border_style="bold cyan")
 
 

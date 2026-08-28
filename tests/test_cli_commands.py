@@ -276,3 +276,44 @@ def test_status_command_reports_without_real_models_or_mcp(monkeypatch):
     handle_cli_command("/status", history=[{"role": "system", "content": "x"}, {"role": "user", "content": "y"}])
 
     assert len(printed) == 1  # tek bir Panel basildi
+
+
+def test_status_shows_pending_approvals(monkeypatch, capsys):
+    import sys
+    import types
+
+    # _cmd_status ears/mouth modullerinden get_active_device'i gecikmeli import
+    # eder (gercek modelleri yukler) - testte hafif sahte modullerle degistir.
+    monkeypatch.setitem(sys.modules, "src.jarvis.ears.listener",
+                        types.SimpleNamespace(get_active_device=lambda: "cpu"))
+    monkeypatch.setitem(sys.modules, "src.jarvis.mouth.tts",
+                        types.SimpleNamespace(get_active_device=lambda: "cpu"))
+
+    from src.jarvis.core import pending_tasks
+    monkeypatch.setattr(
+        pending_tasks, "list_pending",
+        lambda limit=10, db_path=None: [
+            {"id": 3, "source": "scheduled", "text": "gunluk ozet", "status": "pending"}
+        ],
+    )
+
+    from src.jarvis.core.cli_commands import _cmd_status
+    _cmd_status([{"role": "system", "content": "x"}])
+    out = capsys.readouterr().out
+    assert "#3" in out and "scheduled" in out
+
+
+def test_status_no_pending_line(monkeypatch, capsys):
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "src.jarvis.ears.listener",
+                        types.SimpleNamespace(get_active_device=lambda: "cpu"))
+    monkeypatch.setitem(sys.modules, "src.jarvis.mouth.tts",
+                        types.SimpleNamespace(get_active_device=lambda: "cpu"))
+    from src.jarvis.core import pending_tasks
+    monkeypatch.setattr(pending_tasks, "list_pending", lambda limit=10, db_path=None: [])
+
+    from src.jarvis.core.cli_commands import _cmd_status
+    _cmd_status([{"role": "system", "content": "x"}])
+    assert "Bekleyen onaylar" in capsys.readouterr().out
