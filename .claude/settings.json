@@ -11,13 +11,13 @@
       "Bash(git add*)",
       "Bash(git commit*)"
     ],
-    "ask": [
-      "Bash(git push*)",
-      "Bash(pip install*)"
-    ],
     "deny": [
       "Read(./.env)",
       "Read(./secrets/**)"
+    ],
+    "ask": [
+      "Bash(git push*)",
+      "Bash(pip install*)"
     ]
   },
   "hooks": {
@@ -32,5 +32,9 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "claude-mem-cowork@thedotmack": true
   }
 }
