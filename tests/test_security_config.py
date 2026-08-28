@@ -179,3 +179,13 @@ def test_load_security_config_defaults_enabled_dynamic_agents_to_empty(tmp_path)
     config = load_security_config(str(yaml_path))
 
     assert config.enabled_dynamic_agents == []
+
+
+def test_load_security_config_ignores_scalar_enabled_dynamic_agents(tmp_path):
+    # liste yerine duz string yazilirsa karakter karakter iterasyon olmasin
+    yaml_path = tmp_path / "security.yaml"
+    yaml_path.write_text("enabled_dynamic_agents: home_assistant_lights\n", encoding="utf-8")
+
+    config = load_security_config(str(yaml_path))
+
+    assert config.enabled_dynamic_agents == []

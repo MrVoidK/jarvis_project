@@ -374,9 +374,14 @@ Statik `dict` — her tool **açıkça import edilip** elle konur. Otomatik
 keşif yok ("bir araç yanlışlıkla kayıtlı olamaz" = güvenlik özelliği).
 Anahtarlar router'a bildirilen araç adlarıyla birebir aynı olmalı.
 
-- `all_tools()` → `{**TOOL_REGISTRY, **MCP_adapter.discover_tools()}`
-  (birleşik görünüm; `TOOL_REGISTRY`'nin kendisi değişmez).
-- `get_tool(name)` → önce yerel, sonra MCP-keşfedilen.
+- `all_tools()` → **üç kaynağın** birleşik görünümü (Faz 6.4): statik
+  `TOOL_REGISTRY` + `core/registry_loader.py:load_dynamic_tools()`
+  (allowlist'li `agents/registry/*.yaml` manifest'leri) + MCP keşfi.
+  `TOOL_REGISTRY`'nin kendisi değişmez; öncelik **statik > dinamik manifest
+  > MCP** ve statik ad çakışmasında her zaman kazanır.
+- `get_tool(name)` → önce statik, sonra dinamik manifest, en son MCP.
+- Dinamik manifest: dosya koymak tek başına aktive etmez — dosya kökü ayrıca
+  `config/security.yaml:enabled_dynamic_agents` allowlist'inde olmalı.
 
 ### 8.3 Kayıtlı araçlar
 
@@ -687,7 +692,8 @@ src/jarvis/
     language.py             # detect_language() — paylaşılan langdetect sarmalayıcı
     paths.py                # PROJECT_ROOT (CWD-bağımsız)
     text.py                 # strip_trailing_punct() (STT'nin komut sonuna eklediği noktalama)
-    security_config.py      # security.yaml okuma + is_path_safe() + resolve_app_command()
+    security_config.py      # security.yaml okuma + is_path_safe() + resolve_app_command() + enabled_dynamic_agents
+    registry_loader.py      # agents/registry/*.yaml → dinamik Tool (allowlist'li, fail-soft, Faz 6.4)
     telemetry.py            # psutil/nvidia-smi — SystemInfoTool + HUD ortak
     hud_bus.py              # thread-safe pub/sub: sync thread → asyncio WebSocket kuyrukları
     api.py                  # FastAPI + /ws (ayrı daemon thread, port 8000, Origin doğrulaması)
@@ -707,7 +713,7 @@ src/jarvis/
 
   tools/
     base.py                 # Tool (ABC): name/description/risk_level/parameters_schema/execute()
-    registry.py             # TOOL_REGISTRY (statik) + all_tools()/get_tool() (yerel + MCP birleşik view)
+    registry.py             # TOOL_REGISTRY (statik) + all_tools()/get_tool() (statik + dinamik manifest + MCP birleşik view, Faz 6.4)
     notes_tool.py           # CreateNoteTool, ReadNotesTool (Obsidian vault, sabit dosya)
     files.py                # ListFilesTool (jarvis_workspace/ salt-okunur)
     terminal_tool.py        # RunCommandTool (HIGH), LaunchAppTool (MEDIUM, allowlist)
@@ -742,7 +748,8 @@ jarvis_workspace/           # ListFilesTool'un baktığı izole dizin
 | `build_ollama_tools()` / `build_function_schema()` | `adapters/tool_schema.py` | `Tool` → Ollama function-calling şeması. |
 | `validate_arguments()` | `adapters/tool_schema.py` | Router argümanlarını şemaya karşı doğrular (**fail-closed**; şema dışı anahtar elenir, yanlış tip → tüm çağrı reddedilir). |
 | `Tool.execute()` | `tools/*.py` | Aracı çalıştırır, TTS'e kısa cümle döner. |
-| `all_tools()` / `get_tool()` | `tools/registry.py` | yerel + MCP birleşik görünüm. |
+| `all_tools()` / `get_tool()` | `tools/registry.py` | statik + dinamik manifest + MCP birleşik görünüm (öncelik statik > dinamik > MCP). |
+| `load_dynamic_tools()` | `core/registry_loader.py` | `agents/registry/*.yaml` → `Tool`; yalnızca `security.yaml:enabled_dynamic_agents` allowlist'indeki dosya kökleri, fail-soft (Faz 6.4). |
 | `GuardrailChain.run()` | `core/guardrail/base.py` | Check'leri sırayla çalıştırır, ilk RED'de durur. |
 | `requires_approval()` / `request_approval()` | `core/risk.py` | LOW dışı → [Y/N]; varsayılan RED. |
 | `speak()` | `mouth/tts.py` | XTTS-v2 streaming oynatma; `stop_event`/`speaking_event` kancaları. |

@@ -666,7 +666,10 @@ ROADMAP Faz 6.4, v2 §3).
   sınıfı kendi `name`/`risk_level`/`parameters_schema`'sını taşır. Manifest
   `name`/`risk_level` sınıfla çelişirse manifest fail-closed atlanır (manifest
   gerçek riski gizleyemez). `execution_mode: scheduled|continuous` + MEDIUM+
-  risk boot'ta reddedilir (§11, v2 §5.3).
+  risk boot'ta reddedilir (§11, v2 §5.3). `risk_level: critical` de reddedilir
+  (v2 §10: CRITICAL/RFID kapsam dışı, `TrustElevation` yok). Manifest
+  `description` + parametre açıklamaları `InputInjectionCheck`'ten geçer
+  (§9.5 MCP "tool poisoning" emsali).
 - **Üç kaynak**: `tools/registry.py:all_tools()` = statik `TOOL_REGISTRY` +
   `load_dynamic_tools()` + `MCPClientAdapter` keşfi. Üçü de aynı `Tool`
   sözleşmesine uyar; hiçbiri diğerine sessizce enjekte olmaz (§9.2 ile aynı

@@ -349,6 +349,18 @@ karşılar (kod değişikliği yok, sadece YAML + tek satır config) ama
 "bir araç yanlışlıkla kayıtlı olamaz" ilkesini de korur (iki açık adım
 gerekir, hiçbiri otomatik değildir).
 
+> **Uygulama notu (Faz 6.4, ROADMAP §6.4):** yukarıdaki `all_tools()` kod
+> parçacığı sıralamayı yanıltıcı gösteriyor — `{**TOOL_REGISTRY, **dynamic,
+> **mcp}` dict-birleşiminde son yazan kazandığı için MCP statiği ezerdi.
+> Uygulama bilinçli olarak **statiği en son uygular** (öncelik statik >
+> dinamik manifest > MCP, ad çakışmasında statik kazanır + uyarı loglar).
+> Ek olarak: manifest `module:class` instantiate edilir ve **sınıf otoriterdir**
+> (manifest `name`/`risk_level` sınıfla çelişirse fail-closed atlanır);
+> `description` + parametre açıklamaları `InputInjectionCheck`'ten geçer
+> (§8.2 MCP "tool poisoning" emsali); `risk_level: critical` reddedilir
+> (§10); bozuk/import-zamanında patlayan manifest fail-soft atlanır, boot
+> sürer. `enabled_dynamic_agents` anahtarı = manifest **dosya kökü** (stem).
+
 ---
 
 ## 4. Hafıza Katmanı — Mem0 Entegrasyonu (YENİ: `core/memory.py`)

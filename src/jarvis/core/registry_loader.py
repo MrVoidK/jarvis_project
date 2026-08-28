@@ -21,6 +21,7 @@ allowlist'i onaylayan insan gercek riski gorur.
 
 import importlib
 import logging
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -57,8 +58,11 @@ _REQUIRED_FIELDS = ("name", "kind", "risk_level", "module", "class")
 _DESCRIPTION_GUARDRAIL = GuardrailChain([InputInjectionCheck()])
 
 # Argumansiz cagrinin sonucu (security_config._get_config deseni). Testler
-# explicit registry_dir/allowlist gecerek bu cache'i bypass eder.
+# explicit registry_dir/allowlist gecerek bu cache'i bypass eder. Kilit
+# mcp_client_adapter.py:_default_adapter_lock deseniyle ayni - `all_tools()`
+# birden cok thread'den cagrilirsa ilk turda _discover iki kez kosmasin.
 _dynamic_tools_cache: Optional[dict[str, Tool]] = None
+_cache_lock = threading.Lock()
 
 
 def load_dynamic_tools(
@@ -76,19 +80,19 @@ def load_dynamic_tools(
     `registry_dir` VE `allowlist`'i birlikte vererek taze okuma yapar.
     """
     global _dynamic_tools_cache
-    use_cache = registry_dir is None and allowlist is None
-    if use_cache and _dynamic_tools_cache is not None:
-        return _dynamic_tools_cache
+    if registry_dir is None and allowlist is None:
+        if _dynamic_tools_cache is not None:
+            return _dynamic_tools_cache
+        with _cache_lock:
+            if _dynamic_tools_cache is None:
+                _dynamic_tools_cache = _discover(
+                    REGISTRY_DIR, _get_config().enabled_dynamic_agents
+                )
+            return _dynamic_tools_cache
 
     resolved_dir = REGISTRY_DIR if registry_dir is None else Path(registry_dir)
-    if allowlist is None:
-        allowlist = _get_config().enabled_dynamic_agents
-
-    result = _discover(resolved_dir, allowlist)
-
-    if use_cache:
-        _dynamic_tools_cache = result
-    return result
+    resolved_allow = allowlist if allowlist is not None else _get_config().enabled_dynamic_agents
+    return _discover(resolved_dir, resolved_allow)
 
 
 def _discover(registry_dir: Path, allowlist: list[str]) -> dict[str, Tool]:
@@ -104,7 +108,7 @@ def _discover(registry_dir: Path, allowlist: list[str]) -> dict[str, Tool]:
     result: dict[str, Tool] = {}
     for path in sorted(registry_dir.glob("*.yaml")):
         stem = path.stem
-        if stem.endswith(".example") or stem not in enabled:
+        if stem.lower().endswith(".example") or stem not in enabled:
             logger.debug("Manifest allowlist'te degil, atlandi: %s", path.name)
             continue
 
@@ -175,6 +179,14 @@ def _load_manifest(path: Path) -> Optional[tuple[str, Tool]]:
     if risk_level is None:
         _skip(path, f"bilinmeyen risk_level: {raw['risk_level']!r}")
         return None
+    if risk_level is RiskLevel.CRITICAL:
+        # v2 §10: CRITICAL/RFID v2 kapsami disi, TrustElevation modulu henuz yok.
+        # Statik registry'de CRITICAL bir arac eklemek yeni bir sinif + kod
+        # incelemesi ister; dinamik yol o kapiyi atladigi icin CRITICAL'i
+        # yalnizca YAML+allowlist ile devreye sokmak yanlis (siradan [Y/N]
+        # onayiyla calisirdi).
+        _skip(path, "risk_level=critical v2 kapsami disi (TrustElevation yok)")
+        return None
 
     execution_mode = str(raw.get("execution_mode", "on_demand")).strip().lower()
     if execution_mode not in _VALID_EXECUTION_MODES:
@@ -192,7 +204,9 @@ def _load_manifest(path: Path) -> Optional[tuple[str, Tool]]:
         )
         return None
 
-    description = str(raw.get("description", ""))
+    # mcp_client_adapter._wrap_mcp_tool ile ayni ust sinir - cok uzun bir
+    # aciklama router LLM baglamini sisirip diger arac semalarini bastirmasin.
+    description = str(raw.get("description", ""))[:500]
     scan_text = " ".join(
         [str(raw["name"]), description, _param_descriptions(raw.get("parameters_schema", {}))]
     )
@@ -203,8 +217,12 @@ def _load_manifest(path: Path) -> Optional[tuple[str, Tool]]:
 
     try:
         module = importlib.import_module(str(raw["module"]))
-    except ImportError as exc:
-        _skip(path, f"module import edilemedi ({raw['module']!r}): {exc}")
+    except Exception as exc:  # noqa: BLE001 - guvenilmeyen modul, import-zamani kod
+        # Sadece ImportError degil: modul ust-seviye kodunda SyntaxError, keyfi
+        # raise, bos/bozuk modul adinda ValueError/TypeError de olabilir. Hepsi
+        # tek bir manifest yuzunden ilk dispatch turunda Jarvis'i cokertmemeli
+        # (fail-soft, bkz. modul docstring'i) - manifest atlanir, uygulama surer.
+        _skip(path, f"module yuklenemedi ({raw['module']!r}): {exc}")
         return None
 
     cls = getattr(module, str(raw["class"]), None)

@@ -77,10 +77,18 @@ def load_security_config(path: str = CONFIG_PATH) -> SecurityConfig:
         str(name).strip().lower(): str(command)
         for name, command in (raw.get("known_applications") or {}).items()
     }
+    raw_dynamic_agents = raw.get("enabled_dynamic_agents") or []
+    if not isinstance(raw_dynamic_agents, list):
+        # Kullanici liste yerine duz string yazarsa (`enabled_dynamic_agents: foo`)
+        # karakter karakter iterasyon olurdu - sessiz yanlis yapilandirma yerine
+        # net bir uyari + bos kabul.
+        logger.warning(
+            "security.yaml:enabled_dynamic_agents bir liste degil (%r), yok sayildi.",
+            raw_dynamic_agents,
+        )
+        raw_dynamic_agents = []
     enabled_dynamic_agents = [
-        str(entry).strip()
-        for entry in (raw.get("enabled_dynamic_agents") or [])
-        if str(entry).strip()
+        str(entry).strip() for entry in raw_dynamic_agents if str(entry).strip()
     ]
 
     obsidian_vault: Optional[Path] = None

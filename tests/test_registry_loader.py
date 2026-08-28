@@ -149,7 +149,25 @@ def test_unimportable_module_is_skipped(tmp_path, caplog):
         tools = load_dynamic_tools(registry_dir=reg, allowlist=["fake"])
 
     assert tools == {}
-    assert any("import edilemedi" in r.message for r in caplog.records)
+    assert any("yuklenemedi" in r.message for r in caplog.records)
+
+
+def test_module_that_raises_at_import_is_skipped_not_crashed(tmp_path, monkeypatch, caplog):
+    # security-reviewer bulgusu: sadece ImportError degil, import-zamani her
+    # istisna fail-soft yakalanmali - yoksa tek bozuk manifest ilk dispatch
+    # turunda Jarvis'i cokertir.
+    reg = tmp_path / "registry"
+    (tmp_path / "dynmod_boom.py").write_text(
+        "raise RuntimeError('import zamani patlama')\n", encoding="utf-8"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    _write_manifest(reg, "fake", **_valid_fields("dynmod_boom"))
+
+    with caplog.at_level(logging.WARNING, logger="jarvis.core.registry_loader"):
+        tools = load_dynamic_tools(registry_dir=reg, allowlist=["fake"])  # raise ETMEMELI
+
+    assert tools == {}
+    assert any("yuklenemedi" in r.message for r in caplog.records)
 
 
 def test_class_not_a_tool_subclass_is_skipped(tmp_path, monkeypatch, caplog):
@@ -259,6 +277,28 @@ def test_injection_in_description_is_rejected(tmp_path, monkeypatch, caplog):
 
     assert tools == {}
     assert any("injection" in r.message.lower() for r in caplog.records)
+
+
+def test_critical_risk_level_is_rejected(tmp_path, monkeypatch, caplog):
+    # v2 §10: CRITICAL/RFID v2 kapsami disi - dinamik yol statik registry'nin
+    # kod-inceleme kapisini atladigi icin CRITICAL manifest reddedilmeli.
+    reg = tmp_path / "registry"
+    _write_tool_module(tmp_path, monkeypatch, "dynmod_crit", risk="CRITICAL")
+    _write_manifest(reg, "fake", **_valid_fields("dynmod_crit", risk_level="critical"))
+
+    with caplog.at_level(logging.WARNING, logger="jarvis.core.registry_loader"):
+        tools = load_dynamic_tools(registry_dir=reg, allowlist=["fake"])
+
+    assert tools == {}
+    assert any("critical" in r.message.lower() for r in caplog.records)
+
+
+def test_example_suffix_check_is_case_insensitive(tmp_path, monkeypatch):
+    reg = tmp_path / "registry"
+    _write_tool_module(tmp_path, monkeypatch, "dynmod_exci")
+    _write_manifest(reg, "fake.Example", **_valid_fields("dynmod_exci"))
+
+    assert load_dynamic_tools(registry_dir=reg, allowlist=["fake.Example"]) == {}
 
 
 def test_kind_agent_is_skipped(tmp_path, monkeypatch):

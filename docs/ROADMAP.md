@@ -1024,9 +1024,18 @@ Uygulama notları / v2 §3'ten bilinçli sapmalar:
 - **execution_mode risk kapısı 6.4'te uygulandı** (v2 §5.3): `scheduled|
   continuous` + `risk_level` MEDIUM+ → boot'ta reddedilir.
 - **Per-manifest fail-soft** (`mcp_config.py` deseni): bozuk/uyumsuz manifest
-  uyarı + `print_system` ile atlanır, Jarvis yine başlar.
-- Testler: `tests/test_registry_loader.py` (+21), `tests/test_registry_merge.py`
-  (+5), `tests/test_security_config.py` (+2). `pytest tests/` 165 yeşil.
+  uyarı + `print_system` ile atlanır, Jarvis yine başlar. `import_module`
+  yalnızca `ImportError` değil **her import-zamanı istisnasını** yakalar
+  (`SyntaxError`, keyfi `raise`) — security-reviewer bulgusu.
+- **`risk_level: critical` reddedilir** (v2 §10: CRITICAL/RFID kapsam dışı,
+  `TrustElevation` yok — dinamik yol kod-inceleme kapısını atladığı için).
+- Ek sertleştirmeler: `.example` kontrolü case-insensitive; `description`
+  `[:500]` kırpılır (router bağlamı); `enabled_dynamic_agents` skaler verilirse
+  yok sayılır; `_dynamic_tools_cache` `threading.Lock` ile korunur.
+- Testler: `tests/test_registry_loader.py` (+25), `tests/test_registry_merge.py`
+  (+5), `tests/test_security_config.py` (+3). `pytest tests/` 169 yeşil.
+  `security-reviewer` subagent: tasarım sağlam, 1 uyarı (import fail-soft) +
+  5 öneri — hepsi uygulandı.
 
 ### 6.5 Kalıcı Hafıza Katmanı — Mem0 (v2 Faz E) ⬜
 
