@@ -167,3 +167,23 @@ def test_mic_producer_forwards_speaking_event_to_listen_loop_as_mute_event(monke
     from src.jarvis.core import hud_bus
 
     assert captured["on_state_change"] is hud_bus.publish_state
+
+
+def test_submit_event_enqueues_any_source():
+    hub = InputHub(threading.Event())
+    hub.submit_event(InputEvent(source="scheduled", text="gunluk ozet"))
+    evt = hub.next_event(poll_interval=0.05)
+    assert evt.source == "scheduled" and evt.text == "gunluk ozet"
+
+
+def test_submit_event_skips_blank():
+    hub = InputHub(threading.Event())
+    hub.submit_event(InputEvent(source="continuous", text="   "))
+    assert hub._queue.empty()
+
+
+def test_submit_external_text_still_wraps_to_text_source():
+    hub = InputHub(threading.Event())
+    hub.submit_external_text("merhaba")
+    evt = hub.next_event(poll_interval=0.05)
+    assert evt.source == "text" and evt.text == "merhaba"
