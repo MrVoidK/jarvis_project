@@ -373,12 +373,23 @@ gerekir, hiçbiri otomatik değildir).
 
 ---
 
-## 4. Hafıza Katmanı — Mem0 Entegrasyonu (YENİ: `core/memory.py`)
+## 4. Hafıza Katmanı — Kalıcı Semantic Hafıza (YENİ: `core/memory.py`)
+
+> **Faz 6.5 kararı (ROADMAP §6.5):** Mem0 **kullanılmıyor**. Her `remember()`'da
+> fact-extraction için ekstra Ollama LLM turu (VRAM bütçesiyle çakışır),
+> `openai` bağımlılığı ve v2.x hızlı değişen API nedeniyle elendi. Yerine
+> **DIY minimal**: `sentence-transformers` (`paraphrase-multilingual-MiniLM-L12-v2`,
+> CPU — iki-dillilik için `all-MiniLM-L6-v2`'den sapma, §4.4) + merkezi
+> `data/jarvis.db` (SQLite/WAL, `core/db.py` — 6.5.1'in de temeli) + in-process
+> numpy brute-force cosine. LLM-in-loop yok; embedding'ler tabloda `BLOB`;
+> ayrı FAISS index dosyası yok (`>10k` girişte `faiss-cpu` escape hatch,
+> arayüz sabit). Aşağıdaki §4.1–4.3 (arayüz + güvenlik ilkeleri) aynen geçerli;
+> yalnızca §4.4'teki backend seçimi değişti.
 
 ### 4.1 Mevcut kısa-vadeli hafıza ile ilişki
 
 `brain/llm.py`'deki `history` (system dahil son 12 mesaj) **değişmeden
-kalır** — bu, tek oturumluk konuşma bağlamı. Mem0 **ayrı, kalıcı** bir
+kalır** — bu, tek oturumluk konuşma bağlamı. Kalıcı hafıza **ayrı** bir
 katman: oturumlar arası ("geçen hafta bahsettiğin proje", kullanıcı
 tercihleri, aktif proje bağlamı) bilgiyi tutar.
 

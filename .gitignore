@@ -38,6 +38,11 @@ config/mcp_servers.yaml
 notes/
 jarvis_workspace/
 
+# Merkezi SQLite veritabani - kalici semantic hafiza (Faz 6.5) + yapisal
+# veri (Faz 6.5.1: traces, tasks, ...). Kisisel konusma icerigi + embedding'ler.
+# WAL yan dosyalari dahil. Sema migrations/ altinda commit'lenir; veri girmez.
+data/
+
 # Operating System Remnants
 Thumbs.db
 .DS_Store

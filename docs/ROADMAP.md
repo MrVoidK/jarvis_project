@@ -863,7 +863,7 @@ olmalı.
 | 6.2 | B | §2.2–2.4 | Tek paylaşımlı model + `respond_stream()` + mini router |
 | 6.3 | C | §2.5–2.6 | `ClaudeCodeAdapter` (run_command) + delegasyon sentinel'leri |
 | 6.4 | D | §3 | Agent Registry / allowlist manifest |
-| 6.5 | E | §4 | Kalıcı hafıza — Mem0 (değerlendiriliyor) |
+| 6.5 | E | §4 | Kalıcı semantic hafıza — DIY (sentence-transformers + SQLite), Mem0 DEĞİL |
 | 6.6 | F | §5 | Execution modes — scheduled + continuous |
 | 6.7 | G | §6 | `CreateProjectTool` + `spawn_detached()` |
 | 6.8 | H | §8 | MCP genişletme — Google Drive + Home Assistant |
@@ -1041,53 +1041,105 @@ Uygulama notları / v2 §3'ten bilinçli sapmalar:
   `security-reviewer` subagent: tasarım sağlam, 1 uyarı (import fail-soft) +
   5 öneri — hepsi uygulandı.
 
-### 6.5 Kalıcı Hafıza Katmanı — Mem0 (v2 Faz E) ⬜
+### 6.5 Kalıcı Semantic Hafıza Katmanı (v2 Faz E) ⬜
 
-**Karar verilmedi — değerlendiriliyor.** Mem0'a bağlanmak, self-hosted bir
-alternatif seçmek veya bu katmanı ertelemek arasında karar netleşince bu alt
-faz güncellenecek. Aşağıdaki adımlar seçilen yön Mem0/benzeri olursa geçerli.
+**Karar verildi — Mem0 DEĞİL, DIY minimal.** `sentence-transformers`
+(`paraphrase-multilingual-MiniLM-L12-v2`, CPU — Jarvis iki dilli olduğu için
+İngilizce-ağırlıklı `all-MiniLM-L6-v2` yerine; aynı 384-boyut) + merkezi
+`data/jarvis.db` (SQLite, WAL) + in-process numpy brute-force cosine.
+
+- **Mem0 reddedildi:** her `remember()`'da fact-extraction için ekstra Ollama
+  LLM turu (12 GB VRAM bütçesiyle çakışır — hermes3+qwen+whisper+xtts),
+  `openai` bağımlılığı, v2.x hızlı değişen API; tek-kullanıcı ölçeğinde
+  fact-dedup değeri marjinal. **Yeniden değerlendirme tetiği:** ham-cümle
+  hafızası çok gürültü/tekrar üretirse.
+- **sqlite-vec reddedildi:** Windows pip wheel'i yok (Mart 2026), pre-release.
+- **Mimari karar:** `core/db.py` + `data/jarvis.db` + migration iskeleti bu
+  fazda kurulur (6.5.1 onun üstüne biner); embedding'ler tabloda `BLOB`,
+  ayrı FAISS index dosyası YOK.
 
 Alt adımlar:
-- [ ] **Arayüz** — `core/memory.py`: `remember(text, metadata) -> None` ve
-      `recall(query, k=5) -> list[str]`, ikisi de fail-soft (no-op + log /
-      boş liste). Mevcut `brain/llm.py:history` (son 12 mesaj) değişmez — bu
-      ayrı, oturumlar-arası bir katman.
-- [ ] **Guardrail kapısı** (v2 §4.3, en yüksek riskli ekleme) — `remember()`
-      yalnızca guardrail'den geçmiş TTS metnini yazar (ham LLM çıktısı değil);
-      `recall()` sonuçları context'e girmeden önce input-guardrail'den geçer.
-      Gerekçe: kalıcı hafızaya sızan bir injection her gelecek turda tekrar
-      enjekte olur.
-- [ ] **`_handle_turn()` entegrasyonu** — dispatcher öncesi (hafıza routing'i
-      etkileyebildiği için) `recall()`, yanıt sonrası `remember()`.
-- [ ] **Yerel-öncelikli** — self-hosted Mem0 + yerel vektör deposu **FAISS**
-      (Mem0'ın desteklediği sağlayıcılar arasında; ham SQLite bir vektör
-      deposu değil, bu yüzden elenmiştir) + CPU embedding modeli
-      (`all-MiniLM-L6-v2`), GPU bütçesine dokunmaz. Docker/WSL2 gerektirmez —
-      salt Python kütüphanesi. `requirements.txt` seçim netleşince güncellenir.
-      
+- [ ] **`core/db.py`** (YENİ, 6.5.1'in temeli) — tek bağlantı noktası,
+      `data/jarvis.db`. `PRAGMA journal_mode=WAL` + `busy_timeout=5000` +
+      `foreign_keys=ON`. `data/` `.gitignore`'a eklenir (kişisel veri —
+      `.env`/`security.yaml` ilkesi). Yazma çevresinde modül-seviyesi `Lock`
+      (Jarvis çok-thread'li; WAL eşzamanlı okuma + tek yazar).
+- [ ] **Migration** — `schema_version` tablosu + `migrations/NNN_*.sql`
+      sıralı/idempotent uygulama (her boot'ta eksik migration'lar koşar).
+      6.5 → `001_memories.sql`.
+- [ ] **`core/memory.py`** (YENİ) — `remember(text, metadata=None) -> None`,
+      `recall(query, k=5) -> list[str]`. **Fail-soft mutlak:** her istisna
+      (model yükleme / DB / embed) → `logger.warning` + no-op / `[]`; Jarvis
+      hafızasız sürer. Mevcut `brain/llm.py:history` (son 12 mesaj, oturum-içi)
+      DEĞİŞMEZ — bu ayrı, oturumlar-arası bir katman.
+- [ ] **Embedding** — lazy modül-singleton
+      `SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2",
+      device="cpu")`, `normalize_embeddings=True` (cosine = dot). İlk
+      kullanımda ~470 MB HF cache'e iner (Whisper/XTTS deseni). CPU'da —
+      **VRAM bütçesine dokunmaz** (v2 §4.4). `_embed` test için
+      monkeypatch'lenir. **v2 §4.4 sapması:** `all-MiniLM-L6-v2` İngilizce-
+      ağırlıklı, TR sorgularda cross-lingual eşleşme zayıf — çok-dilli kardeş
+      seçildi (sema aynı, 384-boyut).
+- [ ] **Depolama + arama** — `memories(id, ts, text, metadata_json,
+      embedding BLOB)` (`np.float32` 384-dim). `recall`: in-process
+      `_matrix (N×384)` + `_texts` ilk çağrıda tablodan yüklenir,
+      `remember`'da eklenir; `_matrix @ q` → `argpartition` top-k → eşik
+      (`>= ~0.30`). `<10k` giriş için ms-altı; `>10k` → `faiss-cpu` escape
+      hatch, **`memory.py` arayüzü değişmez**.
+- [ ] **Guardrail kapıları** (v2 §4.3, en yüksek riskli ekleme) —
+      `remember(text)`: yazmadan önce `_OUTPUT_GUARDRAIL.run(text)`, takılırsa
+      yazma. `recall(query)`: dönen her metin `_INPUT_GUARDRAIL.run(result)`,
+      takılan listeden çıkar. Gerekçe: kalıcı hafızaya sızan injection her
+      gelecek turda tekrar enjekte olur.
+- [ ] **Provenance** — `metadata.source` (`"assistant_turn"` / `"user_stated"`
+      / ...). 6.5 alanı yazar; tool-çıktısı-türevi hafızayı otomatik güvenmeme
+      politikasını 6.10 uygular (6.10 kabul edilen sınır (f)).
+- [ ] **`_handle_turn()` entegrasyonu** — 6.5 kapsamı YALNIZCA `remember()`:
+      her asistan turu sonunda guardrail'den geçmiş tam yanıt
+      `remember(response, {"source": "assistant_turn", "lang": lang})` ile
+      yazılır (additif, düşük risk). **`recall()` wiring 6.10'a ait** (seçim
+      sonrası, `memory_aware` set'ler, `role: system` değil sınırlandırılmış
+      blok) — v2 §4.3'ün "dispatcher öncesi recall" yerleşimi 6.10 ile
+      güncellendi.
+- [ ] **Bağımlılık** — `requirements.txt` += `sentence-transformers`
+      (torch/transformers/scikit-learn/huggingface_hub zaten var — marjinal).
+- [ ] **Testler** — `tests/test_db.py` (WAL/pragma; migration idempotency;
+      `schema_version` ilerlemesi); `tests/test_memory.py` (`remember`+`recall`
+      round-trip sahte `_embed_fn` ile; fail-soft — DB yolu bozuk → no-op;
+      guardrail kapıları; `k` sınırı; boş DB → `[]`; provenance korunuyor).
+
+**Değişmezler:** (1) Fail-soft mutlak — hiçbir koşulda Jarvis'i çökertmez/
+bloklamaz. (2) `remember` yalnızca `_OUTPUT_GUARDRAIL`'den geçmiş metni yazar;
+`recall` sonuçları `_INPUT_GUARDRAIL`'den geçmeden dönmez (v2 §4.3). (3)
+Embedding CPU'da — VRAM'e dokunmaz. (4) `data/` gitignore'da. (5)
+`brain/llm.py:history` değişmez. (6) LLM-in-loop yok — `remember`/`recall`
+deterministik.
+
+**Kabul edilen sınırlar:** (a) Ham-cümle hafızası (fact-extraction yok) →
+tekrar/gürültü birikebilir; `recall` eşiği + `k` hafifletir; dedup şart
+olursa Mem0 yeniden değerlendirilir. (b) Brute-force cosine `>~10k` girişte
+yavaşlar → `faiss-cpu` escape hatch. (c) Kalıcı tool-poisoning-via-memory
+kalan-riski (6.10 (f) ile aynı) — `_INPUT_GUARDRAIL` regex tabanlı, tam çözüm
+değil; provenance alanı + 6.10 MEDIUM+ argüman guardrail'i savunma katmanları.
+
 #### 6.5.1 Genel Yapısal Veri Katmanı — SQLite ⬜
 
-**Amaç**: Mem0'ın anlamsal (bulanık/semantic) hafızasından ayrı olarak,
-kesin/yapısal sorgular gerektiren veri için (trace log agregasyonu, görev
-takibi, takvim cache'i, IoT cihaz durumu) tek bir merkezi SQLite dosyası.
-NoSQL değil çünkü: tek makine/tek kullanıcı, yatay ölçekleme veya yüksek
-yazma hacmi ihtiyacı yok — SQLite'ın JSON1 uzantısı şema-esnek veri
-(takvim/IoT gibi) için de yeterli. 6.5'ten bağımsız ilerleyebilir; ikisi
-paylaşımlı hiçbir bileşene ihtiyaç duymaz.
+**Amaç**: 6.5'in anlamsal (semantic) hafızasından ayrı olarak, kesin/yapısal
+sorgular gerektiren veri için (trace log agregasyonu, görev takibi, takvim
+cache'i, IoT cihaz durumu). NoSQL değil çünkü: tek makine/tek kullanıcı,
+yatay ölçekleme yok — SQLite'ın JSON1 uzantısı şema-esnek veri için de
+yeterli. **`core/db.py` + `data/jarvis.db` + migration iskeleti 6.5'te
+kuruldu**; 6.5.1 yalnızca yeni tablolar + migration'lar ekler.
 
 Alt adımlar:
-- [ ] **Merkezi modül** — `core/db.py`: tek bağlantı noktası, `data/jarvis.db`
-      dosyasına yazar. WAL modu açık (eşzamanlı okuma/yazma için).
+- [x] **Merkezi modül** — `core/db.py` (6.5'te kuruldu: tek bağlantı, WAL,
+      `schema_version` + `migrations/NNN_*.sql`).
 - [ ] **§9'un genellenmesi** — `core/trace.py`'nin kendi ayrı `trace.db`
-      dosyası yerine bu merkezi veritabanındaki `traces` tablosunu kullanması
-      (v2 §9 ile birleştirilir, ayrı dosya kalmaz).
+      dosyası yerine `data/jarvis.db`'deki `traces` tablosunu kullanması
+      (v2 §9 / 6.9 ile birleştirilir, ayrı dosya kalmaz). `002_traces.sql`.
 - [ ] **İlk tablolar** — `traces` (v2 §9), `tasks` (görev takibi), henüz
-      bağlanmamış olsa da ileride gerekecek `calendar_cache` ve
-      `iot_devices` için şema iskeleti (JSON1 ile şema-esnek sütunlar, örn.
-      `raw_json TEXT` + `json_extract` ile türetilmiş sütunlar).
-- [ ] **Migration stratejisi** — basit bir `schema_version` tablosu ve
-      sıralı migration betikleri (`migrations/001_initial.sql` gibi),
-      şema değiştikçe veri kaybı olmadan ilerlemek için.
+      bağlanmamış `calendar_cache` + `iot_devices` için JSON1 iskeleti
+      (`raw_json TEXT` + `json_extract` türetilmiş sütunlar).
 
 ### 6.6 Execution Modes — Scheduled & Continuous (v2 Faz F) ⬜
 

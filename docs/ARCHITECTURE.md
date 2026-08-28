@@ -259,7 +259,7 @@ Eşzamanlı çalışan modellerin kaba VRAM bütçesi:
 | Ears | openWakeWord (ONNX, IDLE'da) | ihmal edilebilir (CPU'da da çalışır) |
 | Orkestratör + Hermes rolü | `hermes3:8b` (Ollama, Q4_K_M — **paylaşımlı**) | ~4.7–5 GB |
 | Router | `qwen2.5:3b` (Ollama) | ~2.2 GB (v2 Faz B) |
-| Hafıza (opsiyonel, kararsız) | Mem0 CPU embedding (`all-MiniLM-L6-v2`) | ~0 GB GPU (CPU) |
+| Kalıcı hafıza (Faz 6.5) | `paraphrase-multilingual-MiniLM-L12-v2` CPU embedding (`sentence-transformers`) | ~0 GB GPU (CPU) |
 | Mouth | XTTS-v2 (tek instance) | ~2–3 GB |
 | **Toplam (4'ü de hot — ÖLÇÜLEN)** | | **~11.5 GB / 12 GB** |
 
@@ -366,7 +366,8 @@ src/jarvis/
 │   ├── telemetry.py             # psutil/nvidia-smi sistem telemetrisi (✅, Faz 3.4)
 │   ├── api.py                    # FastAPI + WebSocket bridge (web-ui) (✅, Faz 3.4)
 │   ├── web_ui_process.py         # web-ui Vite dev sunucusu alt-sureci (✅, Faz 3.4)
-│   ├── memory.py                 # Mem0 sarmalayıcı: remember()/recall(), fail-soft (Faz 6.5) ⬜ kararsız
+│   ├── db.py                     # merkezi SQLite (data/jarvis.db, WAL) + migrations/ (Faz 6.5; 6.5.1 temeli) ⬜
+│   ├── memory.py                 # kalıcı semantic hafıza: remember()/recall(), sentence-transformers + db.py, fail-soft (Faz 6.5) ⬜
 │   ├── scheduler.py              # cron-tabanlı InputEvent üretici, source="scheduled" (Faz 6.6) ⬜
 │   ├── continuous_runner.py      # arka plan izleme thread'i, source="continuous" (Faz 6.6) ⬜
 │   ├── registry_loader.py        # (repo-kökü) agents/registry/*.yaml → dinamik Tool yükleyici (Faz 6.4) ✅
@@ -596,30 +597,44 @@ bırakıldı — ⬜):**
 > Ayrıntılı spec o dokümandadır; buradaki amaç "nasıl/neden"i ve mevcut
 > §1–9 ilkeleriyle nasıl tutarlı kaldığını kaydetmektir.
 
-## 10. Kalıcı Hafıza Katmanı — Mem0 (⬜ değerlendiriliyor)
+## 10. Kalıcı Semantic Hafıza Katmanı (⬜ Faz 6.5 — karar verildi)
 
-**Karar verilmedi.** Mem0'a bağlanmak, self-hosted bir alternatif seçmek veya
-katmanı ertelemek arasında karar netleşmedi — bu bölüm seçilen yön Mem0/benzeri
-olursa geçerlidir (bkz. ROADMAP Faz 6.5, v2 §4).
+**Mem0 DEĞİL, DIY minimal** (bkz. ROADMAP §6.5, v2 §4). Mem0 elendi: her
+`remember()`'da fact-extraction için ekstra Ollama LLM turu (VRAM bütçesiyle
+çakışır), `openai` bağımlılığı, v2.x hızlı değişen API. sqlite-vec de elendi
+(Windows pip wheel yok).
 
 - **Kapsam ayrımı**: `brain/llm.py`'deki `history` (son ~12 mesaj) tek-oturum
-  bağlamıdır ve **değişmez**. Mem0, ondan ayrı, **oturumlar-arası kalıcı** bir
-  katmandır: geçmiş projeler, kullanıcı tercihleri, aktif proje bağlamı.
-- **Arayüz**: `core/memory.py` → `remember(text, metadata) -> None` ve
-  `recall(query, k=5) -> list[str]`, ikisi de **fail-soft** (hata → no-op +
-  log / boş liste; hafıza servisi çökerse Jarvis çalışmaya devam eder).
+  bağlamıdır ve **değişmez**. Kalıcı hafıza ondan ayrı, **oturumlar-arası**
+  bir katmandır: geçmiş projeler, kullanıcı tercihleri, aktif proje bağlamı.
+- **Arayüz**: `core/memory.py` → `remember(text, metadata=None) -> None` ve
+  `recall(query, k=5) -> list[str]`, ikisi de **fail-soft mutlak** (her istisna
+  → no-op + log / boş liste; Jarvis hafızasız çalışmaya devam eder).
+- **Backend**: `sentence-transformers` (`paraphrase-multilingual-MiniLM-L12-v2`
+  — Jarvis iki dilli; İngilizce-ağırlıklı `all-MiniLM-L6-v2`'den bilinçli
+  sapma, aynı 384-boyut — `device="cpu"`, lazy singleton,
+  `normalize_embeddings=True`) + merkezi `data/jarvis.db`
+  (SQLite/WAL, `core/db.py` — §12.5 / 6.5.1'in de temeli). `memories(id, ts,
+  text, metadata_json, embedding BLOB)`; `recall` = in-process numpy
+  brute-force cosine top-k + eşik. LLM-in-loop YOK. Ayrı FAISS index dosyası
+  yok; `>10k` girişte `faiss-cpu` escape hatch (arayüz sabit).
 - **Guardrail kapısı (en yüksek riskli ekleme, v2 §4.3)**: kalıcı hafızaya
   sızan bir prompt injection tek turluk değildir — her gelecek `recall()`'da
-  context'e yeniden girer. Bu yüzden `remember()` yalnızca `OutputSafetyCheck`'ten
-  geçmiş (TTS'e giden) metni yazar, ham LLM çıktısını değil; `recall()`
-  sonuçları context'e eklenmeden önce `InputInjectionCheck`'ten geçer.
-  `core/app.py:_handle_turn()`'de `recall()` çağrısı dispatcher'dan **önce**
-  gelir (hafıza, yönlendirmeyi etkileyebilir).
-- **Yerel-öncelikli (v2 §4.4)**: self-hosted Mem0 + yerel vektör deposu (Qdrant
-  veya SQLite+embedding) + CPU embedding modeli (`all-MiniLM-L6-v2`) — GPU
-  bütçesine (§5) dokunmaz.
+  context'e yeniden girer. `remember()` yazmadan önce `OutputSafetyCheck`;
+  `recall()` sonuçları dönmeden önce her biri `InputInjectionCheck`'ten geçer,
+  takılan çıkarılır. `recall()`'un `_handle_turn` içindeki yerleşimi **Faz
+  6.10** tasarımına devredildi (seçim sonrası, `memory_aware` tool-set'ler,
+  `role: system` değil sınırlandırılmış blok); 6.5 yalnızca tur sonu
+  `remember()` bağlar.
+- **Provenance**: `metadata.source` (`assistant_turn` / `user_stated`) — 6.5
+  yazar; tool-çıktısı-türevi hafızayı güvenmeme politikasını 6.10 uygular.
+- **Yerel-öncelikli (v2 §4.4)**: CPU embedding — GPU bütçesine (§5) dokunmaz.
+  Docker/server yok, salt Python kütüphanesi.
 - **OWASP eşlemesi (§6)**: LLM01'in "kalıcı hafıza" varyantı — girdi taraması
   hem `recall()` çıktısına hem `remember()` girişine uygulanır.
+- **Kalan risk**: ham-cümle hafızası (dedup yok) → gürültü birikebilir
+  (`recall` eşiği + `k` hafifletir); kalıcı tool-poisoning-via-memory
+  (`InputInjectionCheck` regex tabanlı, tam çözüm değil — bkz. §14 (f)).
 
 ## 11. Execution Modes — Scheduled & Continuous (⬜)
 

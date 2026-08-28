@@ -33,6 +33,7 @@ from src.jarvis.core.guardrail.output_checks import OutputSafetyCheck
 from src.jarvis.core.handlers import HANDLERS
 from src.jarvis.core.input_hub import InputEvent, InputHub
 from src.jarvis.core.language import detect_language
+from src.jarvis.core.memory import remember
 from src.jarvis.core.risk import evaluate_approval_answer, request_approval, requires_approval
 from src.jarvis.mouth.tts import speak
 from src.jarvis.tools.base import Tool
@@ -649,6 +650,8 @@ def run_jarvis() -> None:
             # tekrar acilmiyor (Brain zaten stream halinde urettigi icin aralarda
             # gozle gorulur bir bekleme olmuyor, spinner'i her cumlede ac/kapa
             # gereksiz titreme yaratirdi).
+            spoken_parts: list[str] = []
+            turn_lang = "en"
             with status_spinner("Jarvis düşünüyor...") as spinner:
                 first_sentence = True
 
@@ -675,6 +678,15 @@ def run_jarvis() -> None:
                     _stop_spinner_once()
                     print_agent("Jarvis", sentence)
                     speak(sentence, language=lang, stop_event=stop_event, speaking_event=speaking_event)
+                    spoken_parts.append(sentence)
+                    turn_lang = lang or turn_lang
+
+            # Tur tamamlandi: kullaniciya soylenen tam yaniti kalici hafizaya
+            # yaz (oturumlar-arasi, Faz 6.5). `remember()` her istisnayi kendi
+            # icinde yutar (fail-soft) - ana dongu asla etkilenmez. Kapatma
+            # turu (SHUTDOWN mesaji) hatirlanmaz.
+            if spoken_parts and not stop_event.is_set():
+                remember(" ".join(spoken_parts), {"source": "assistant_turn", "lang": turn_lang})
     except KeyboardInterrupt:
         print_system("Kapatma istendi (Ctrl+C) - güvenli şekilde kapatılıyor...", level="warning")
         stop_event.set()
