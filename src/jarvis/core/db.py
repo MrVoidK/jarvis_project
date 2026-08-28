@@ -1,8 +1,9 @@
 """Merkezi SQLite - `data/jarvis.db`. Tek baglanti noktasi + sirali migration.
 
 Faz 6.5 (kalici semantic hafiza, `core/memory.py`) burada kuruldu; Faz 6.5.1
-(yapisal veri: traces, tasks, calendar_cache, iot_devices) ayni dosya + ayni
-`core/db.py` uzerine biner - ayri bir `trace.db` kalmaz.
+yapisal veri tablolarini (traces, tasks, calendar_cache, iot_devices) ayni
+dosyaya `002_structural_tables.sql` ile ekledi - ayri bir `trace.db` YOK
+(v2 §9'un `core/trace.py`'si Faz 6.9'da bu `traces` tablosunu hedefler).
 
 WAL modu: eszamanli okuma + TEK yazar. Jarvis cok-thread'li (mic / text-input /
 tool worker'lari, bkz. core/input_hub.py) - bu yuzden `check_same_thread=False`

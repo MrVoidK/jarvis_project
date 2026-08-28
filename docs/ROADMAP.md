@@ -839,7 +839,7 @@ Alt adımlar:
       bir GPU dahil) taşınırken hangi adımların (bkz. `CLAUDE.md` Komutlar
       bölümü) tekrarlanması gerektiği netleştirilir.
 
-## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.5 tamam, 6.5.1+ bekliyor)
+## Faz 6 — Multi-Agent Mimarisi v2 (Rol Konsolidasyonu + Execution Modes + Gözlemlenebilirlik) 🟡 (6.1-6.5.1 tamam, 6.6+ bekliyor)
 
 `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`'deki "Faz A–I" planının
 ROADMAP numaralandırmasına taşınmış hâli — mimari gerekçe ve tam spec o
@@ -1122,7 +1122,7 @@ yavaşlar → `faiss-cpu` escape hatch. (c) Kalıcı tool-poisoning-via-memory
 kalan-riski (6.10 (f) ile aynı) — `_INPUT_GUARDRAIL` regex tabanlı, tam çözüm
 değil; provenance alanı + 6.10 MEDIUM+ argüman guardrail'i savunma katmanları.
 
-#### 6.5.1 Genel Yapısal Veri Katmanı — SQLite ⬜
+#### 6.5.1 Genel Yapısal Veri Katmanı — SQLite ✅ (şema kuruldu; satır yazan kod 6.6/6.8/6.9'a ait)
 
 **Amaç**: 6.5'in anlamsal (semantic) hafızasından ayrı olarak, kesin/yapısal
 sorgular gerektiren veri için (trace log agregasyonu, görev takibi, takvim
@@ -1134,12 +1134,17 @@ kuruldu**; 6.5.1 yalnızca yeni tablolar + migration'lar ekler.
 Alt adımlar:
 - [x] **Merkezi modül** — `core/db.py` (6.5'te kuruldu: tek bağlantı, WAL,
       `schema_version` + `migrations/NNN_*.sql`).
-- [ ] **§9'un genellenmesi** — `core/trace.py`'nin kendi ayrı `trace.db`
-      dosyası yerine `data/jarvis.db`'deki `traces` tablosunu kullanması
-      (v2 §9 / 6.9 ile birleştirilir, ayrı dosya kalmaz). `002_traces.sql`.
-- [ ] **İlk tablolar** — `traces` (v2 §9), `tasks` (görev takibi), henüz
-      bağlanmamış `calendar_cache` + `iot_devices` için JSON1 iskeleti
-      (`raw_json TEXT` + `json_extract` türetilmiş sütunlar).
+- [x] **§9'un genellenmesi** — ayrı bir `trace.db` YOK; `traces` tablosu
+      `data/jarvis.db`'de (`002_structural_tables.sql`). `core/trace.py`'nin
+      kendisi (satır yazımı + `/trace` komutu) Faz 6.9'a ait ve bu tabloyu
+      hedefler — 6.5.1 yalnızca şemayı ve "ayrı dosya kalmaz" kararını sabitler.
+- [x] **İlk tablolar** — `002_structural_tables.sql` 4 tabloyu kurar:
+      `traces` (v2 §9: `role/model/input_summary/duration_ms/token_count/result`
+      CHECK'li), `tasks` (`source/text/status` CHECK + `detail_json`, 6.6
+      pending-approval için), `calendar_cache` + `iot_devices` JSON1 iskeleti
+      (`raw_json TEXT` + `json_extract` VIRTUAL türetilmiş sütunlar +
+      indeksler). Testler: `tests/test_db.py` (+7: sürüm 2'ye ilerleme,
+      4 tablo, idempotency `[1,2]`, CHECK kısıtları, generated-column round-trip).
 
 ### 6.6 Execution Modes — Scheduled & Continuous (v2 Faz F) ⬜
 

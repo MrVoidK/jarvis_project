@@ -83,7 +83,7 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
    not, dosya listeleme, terminal/uygulama başlatma, sistem izleme, medya kontrolü)
 6. **Otonom Ajan Döngüsü** — ileri düzey görev zincirleri (durum: bekliyor)
 7. **Multi-Agent Mimari v2** — rol konsolidasyonu, Claude Code delegasyonu,
-   execution modes, registry, kalıcı semantic hafıza (`core/memory.py` + `core/db.py`), tracing, akıllı aksiyon katmanı (Faz 6.10) (durum: 6.1-6.4 + 6.5 çekirdeği tamam — bkz. `docs/ROADMAP.md` Faz 6 + `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`)
+   execution modes, registry, kalıcı semantic hafıza (`core/memory.py` + `core/db.py`), tracing, akıllı aksiyon katmanı (Faz 6.10) (durum: 6.1-6.5.1 tamam [semantic hafıza + `migrations/00{1,2}_*.sql` yapısal tablolar], 6.6+ bekliyor — bkz. `docs/ROADMAP.md` Faz 6 + `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`)
 
 ## Komutlar
 
