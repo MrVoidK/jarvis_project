@@ -691,3 +691,52 @@ ROADMAP Faz 6.4, v2 §3).
 - **Amaç**: §5'teki çift-çağrı gecikmesinin (`docs/mimari-genel-bakis.md` §20
   madde 1) gerçek etkisini ölçmek, `delegate_complex_task`'ın kaç adımda
   tamamlandığını görmek, hangi rolün en çok zaman/token harcadığını anlamak.
+
+## 14. Akıllı Aksiyon Katmanı — Genel Orkestrasyon (⬜)
+
+Tek komut → tek araç eşlemesinin ötesine geçip birden fazla **uzman
+tool-set**'i bağlama göre zincirleyen genel amaçlı orkestrasyon (bkz. ROADMAP
+Faz 6.10). §4 iletişim şemasındaki `tool_agent` çok-adımlı döngüsünü (6.3'te
+sınırlı hâlde inen `_run_delegate_complex`) genelleştirir. Senaryoya özel dal
+YOK — yeni yetenek = yeni bir `agents/registry/<set>.toolset.yaml` + allowlist
+girişi; `core/dispatcher.py`/`core/app.py` değişmez.
+
+- **`kind: toolset` manifest**: `core/registry_loader.py` `kind` ayrımını
+  `tool | toolset` yapar; `load_toolsets()` kendi `*.toolset.yaml` glob'unu
+  kullanır (`load_dynamic_tools()` bu deseni atlar). Set = üye araç ADLARININ
+  (statik/manifest/MCP, `get_tool` ile çözülür) grubu + orkestrasyon
+  metadatası (`description`, `trigger_hints`, `risk_ceiling`, `max_steps`,
+  `memory_aware`). `description` + `trigger_hints` yükleme-zamanında
+  `InputInjectionCheck`'ten geçer. `risk_ceiling` **advisory** (yükleme +
+  call-time re-check); otoriter zorlayıcı `_run_tool_pipeline`'ın per-tool
+  risk kapısıdır. Üyeler asla `CRITICAL`; mutasyon-yetkili delegasyon araçları
+  üye olamaz (döngü ikinci onayı sağlayamaz).
+- **Seçim adımı**: `_run_delegate_complex` başında tek ucuz `router` çağrısı
+  task'ı kayıtlı set `description` + `trigger_hints` birleşimine karşı
+  sınıflandırır → 1–N set. Seçim promptu (`_TOOLSET_SELECT_SYSTEM_PROMPT`,
+  `core/app.py`'de — dispatcher'da DEĞİL) set-özel statik metin içermez.
+  0 set / boş seçim / seçim hatası → döngü düz `all_tools()` şemasıyla çalışır
+  (fail-open; güvenlik kontrolü değil, bağlam daraltması).
+- **Kapsamlı şema**: döngünün araç şeması seçilen set üyeleriyle sınırlanır;
+  döngü, monte edilmiş set dışındaki araç adını fail-soft atar (hem daraltma
+  hem çalıştırma hapsi).
+- **`Tool.preview_args(params) -> dict`**: opsiyonel ABC kancası, onay
+  ÖNCESİ çağrılır (varsayılan: identity). `_run_tool_pipeline` step (2)
+  `risky_values`'ı bundan üretir → bir aracın çözdüğü nihai/mutlak değerler
+  (ör. `create_event` timezone'lu ISO tarih) onay panelinde görünür.
+- **Güvenlik değişmezleri** (KAPSAM değil GÜVENLİK sınırı): global sabit adım
+  tavanı `_MAX_DELEGATE_STEPS` (set yalnızca düşürür; bozuk `max_steps` →
+  global tavan); her araç-adımı `_execute_tool` (→ `_run_tool_pipeline`)'dan
+  geçer; kapsamlı şema çalıştırma hapsi; tool-set'ler `enabled_dynamic_agents`
+  allowlist'iyle kapılı; geri çağrılan hafıza + tool sonuçları `role: system`
+  DEĞİL sınırlandırılmış blokla enjekte edilir; `recall()` girişte
+  `_INPUT_GUARDRAIL`'den (§4.3); MCP üyeler fail-soft, asla `LOW`.
+- **Mutasyon yetkili delegasyon** (6.10.3, `_run_delegate_code`'a özgü):
+  `ClaudeCodeAdapter.respond(..., writable=False)` per-çağrı argümanı.
+  `writable=True` → `claude -p --allowedTools "Edit" "Write"` (**`Bash`/komut
+  YASAK, `--dangerously-skip-permissions` hiçbir koşulda kullanılmaz**);
+  koşu SADECE `jarvis_workspace/<proje>/` hapsinde (Jarvis'in kendi deposu
+  writable OLAMAZ; denylist: `.git/ .env secrets/ config/ .claude/
+  agents/registry/ system_prompt.txt src/jarvis/`). İki-aşamalı onay
+  (2. onay çözülmüş mutlak yol + kesin bayrakları gösterir); 2. onay reddi
+  → iptal. Zero-Trust "varsayılan RED"in doğal uzantısı.

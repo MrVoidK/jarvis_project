@@ -750,6 +750,8 @@ jarvis_workspace/           # ListFilesTool'un baktığı izole dizin
 | `Tool.execute()` | `tools/*.py` | Aracı çalıştırır, TTS'e kısa cümle döner. |
 | `all_tools()` / `get_tool()` | `tools/registry.py` | statik + dinamik manifest + MCP birleşik görünüm (öncelik statik > dinamik > MCP). |
 | `load_dynamic_tools()` | `core/registry_loader.py` | `agents/registry/*.yaml` → `Tool`; yalnızca `security.yaml:enabled_dynamic_agents` allowlist'indeki dosya kökleri, fail-soft (Faz 6.4). |
+| `load_toolsets()` | `core/registry_loader.py` | `agents/registry/*.toolset.yaml` → `ToolSet` (üye araç adları + orkestrasyon metadatası); `risk_ceiling` yükleme-zamanı kontrolü, allowlist kapılı (Faz 6.10). |
+| `_run_delegate_complex()` | `core/app.py` | Genel orkestrasyon döngüsü: tool-set seçimi → kapsamlı şema → sınırlı adım döngüsü (`_MAX_DELEGATE_STEPS` clamp) → her adım `_run_tool_pipeline`'dan geçer. 0 tool-set → düz `all_tools()` (Faz 6.3 + 6.10). |
 | `GuardrailChain.run()` | `core/guardrail/base.py` | Check'leri sırayla çalıştırır, ilk RED'de durur. |
 | `requires_approval()` / `request_approval()` | `core/risk.py` | LOW dışı → [Y/N]; varsayılan RED. |
 | `speak()` | `mouth/tts.py` | XTTS-v2 streaming oynatma; `stop_event`/`speaking_event` kancaları. |

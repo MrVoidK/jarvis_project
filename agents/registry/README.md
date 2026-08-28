@@ -34,6 +34,25 @@ Yükleyici: `src/jarvis/core/registry_loader.py:load_dynamic_tools()`.
 Örnek: `home_assistant_lights.example.yaml` (bu dizinde; `.example` uzantısı
 olduğu için asla yüklenmez — canlı şablon).
 
+## `kind: toolset` manifest şeması (Faz 6.10 — planlı)
+
+`<set>.toolset.yaml` dosyaları, birden fazla aracı **uzman tool-set** olarak
+gruplar; genel orkestrasyon döngüsü (`_run_delegate_complex`) göreve göre
+yalnızca ilgili set(ler)in üye şemasını yükler. `load_toolsets()` kendi
+`*.toolset.yaml` glob'unu kullanır; allowlist girişi `<set>.toolset` stem'idir
+(yani `enabled_dynamic_agents`'a hem üye `<araç>` hem `<set>.toolset` eklenir).
+
+| Alan | Zorunlu | Açıklama |
+|------|---------|----------|
+| `name` | ✅ | Tool-set kimliği. |
+| `kind` | ✅ | `toolset`. |
+| `description` | ✅ | Seçim adımının gördüğü tek şey. `InputInjectionCheck` + 500 karakter kırpma. |
+| `trigger_hints` | — | TR/EN örnek ifadeler; küçük router modeli için per-set disambiguation'ın TEK yeri. Injection taramasından geçer. |
+| `tools` | ✅ | Üye araç **adları** (`all_tools()`'tan çözülür — statik/manifest/MCP). Set davranış tanımlamaz, gruplar. Çözülemeyen üye fail-soft atlanır. |
+| `risk_ceiling` | — | Advisory (yükleme + call-time re-check). Otoriter zorlayıcı `_run_tool_pipeline` per-tool risk kapısıdır. Üyeler asla `CRITICAL`; mutasyon-yetkili delegasyon araçları üye olamaz. Yoksa varsayılan = HIGH'a kadar izin. |
+| `max_steps` | — | `1 <= max_steps <= _MAX_DELEGATE_STEPS`; eksik/bozuk → global tavana düşer (asla sınırsıza). Global tavanı ASLA yükseltemez. |
+| `memory_aware` | — | `true` ise seçim sonrası `recall(task)` (ham task) bağlamı bu set'in adımlarına `role: user` / sınırlandırılmış blokla girer (asla `role: system`). |
+
 ## Fail-soft
 
 Bozuk / uyumsuz / import edilemeyen bir manifest yalnızca **atlanır** (uyarı

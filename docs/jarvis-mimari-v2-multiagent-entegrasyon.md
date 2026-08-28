@@ -286,6 +286,16 @@ elif intent.name == "delegate_code":
     # response TTS'e kısa özet olarak, tam çıktı HUD paneline
 ```
 
+> **Faz 6.10 notu (ROADMAP §6.10):** `delegate_complex` dalı genelleştirildi —
+> döngü başına tek ucuz `router` çağrısı task'ı kayıtlı **tool-set** (`kind:
+> toolset` manifest) açıklamalarına karşı sınıflandırıp yalnızca ilgili
+> set(ler)in üye araç şemasını döngüye sokar (bağlam şişmesini önler). 0
+> tool-set kayıtlıyken adım atlanır, döngü yukarıdaki düz `all_tools()`
+> davranışıyla çalışır (birebir geri uyum). Global sabit adım tavanı ve
+> adım-başı `_run_tool_pipeline` risk kapısı değişmez. `delegate_code` ise
+> **Faz 6.10.3**'te dosya DEĞİŞTİREN moda (`ClaudeCodeAdapter` `writable`)
+> genişler — ikinci bir açık onaydan sonra.
+
 ---
 
 ## 3. Agent Registry — Dinamik Ekleme (mevcut güvenlik ilkesini bozmadan)

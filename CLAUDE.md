@@ -82,8 +82,8 @@ Kısa özet — **alt adımlı detaylı versiyon için `docs/ROADMAP.md`'ye bak.
 5. **Sistem Entegrasyonları / Tool Use** (durum: tamam, yerel/API'siz — Obsidian
    not, dosya listeleme, terminal/uygulama başlatma, sistem izleme, medya kontrolü)
 6. **Otonom Ajan Döngüsü** — ileri düzey görev zincirleri (durum: bekliyor)
-7. **Multi-Agent Mimari v2** — rol konsolidasyonu, run_command'lı Claude Code
-   delegasyonu, execution modes, registry, kalıcı hafıza (kararsız), tracing (durum: planlandı — bkz. `docs/ROADMAP.md` Faz 6 + `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`)
+7. **Multi-Agent Mimari v2** — rol konsolidasyonu, Claude Code delegasyonu,
+   execution modes, registry, kalıcı hafıza, tracing, akıllı aksiyon katmanı (genel orkestrasyon + uzman tool-set'ler, Faz 6.10) (durum: 6.1-6.4 tamam — bkz. `docs/ROADMAP.md` Faz 6 + `docs/jarvis-mimari-v2-multiagent-entegrasyon.md`)
 
 ## Komutlar
 
