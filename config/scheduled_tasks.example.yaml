@@ -15,6 +15,15 @@ scheduled:
     cron: "0 8 * * *"          # her gun 08:00 (YEREL saat)
     text: "günlük özetimi hazırla"
 
+# !!! DIKKAT - watcher `path` secimi:
+#   (a) IZLENEN dosya, tetiklenen gorevin KENDISININ yazdigi bir dosya OLMAMALI
+#       (ornegin "not al" gorevi + Obsidian vault icindeki bir dosyayi izlemek) -
+#       gorev dosyayi degistirir, watcher tekrar tetiklenir: sonsuz dongu.
+#   (b) IZLENEN dosya append-agirlikli OLMAMALI (log dosyasi, aktif senkronize
+#       edilen bir not, surekli yazilan bir .md) - her degisiklik tam bir tur
+#       baslatir (LLM + TTS), hiz siniri YOKTUR ve kuyruk sinirsizdir; hizli
+#       ardisik degisiklikler Jarvis'i doldurup bloke edebilir.
+#   Guvenli kullanim: nadiren, elle degistirilen bir "gelen kutusu" dosyasi.
 watchers:
   - name: inbox_file
     type: file_mtime            # bu fazdaki TEK tip

@@ -100,4 +100,7 @@ class ContinuousRunner:
 
     def _run(self) -> None:
         while not self._stop_event.wait(self._poll_interval):
-            self._poll_once()
+            try:
+                self._poll_once()
+            except Exception:  # noqa: BLE001 - bir hata daemon thread'i sessizce oldurmesin
+                logger.exception("continuous: poll dongusunde beklenmeyen hata")

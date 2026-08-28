@@ -103,6 +103,30 @@ def test_wait_for_text_answer_defers_new_voice_events_to_pending():
     ]
 
 
+def test_wait_for_text_answer_defers_scheduled_events_to_pending():
+    # Faz 6.6 spec §2.1: onay bekleme sirasinda GELEN bir "scheduled" (veya
+    # "continuous") olay CEVAP SAYILMAMALI - sesli/zamanlanmis girdi onay
+    # cevabi olamaz; pending'e eklenip onay sonuclandiktan SONRA normal bir
+    # tur olarak islenmeli, kaybolmamali. Ek kod gerekmiyor (wait_for_text_answer
+    # zaten sadece source == "text" olani doner), bu test o degismezi kilitler.
+    hub = _idle_hub()
+    _mark_text_thread_alive(hub)
+
+    def _deliver_later() -> None:
+        time.sleep(0.05)
+        hub._queue.put(InputEvent(source="scheduled", text="zamanlanmis gorev tetiklendi"))
+        time.sleep(0.05)
+        hub._queue.put(InputEvent(source="text", text="y"))
+
+    threading.Thread(target=_deliver_later, daemon=True).start()
+
+    pending: list[InputEvent] = []
+    answer = hub.wait_for_text_answer(pending, poll_interval=0.05)
+
+    assert answer == "y"
+    assert pending == [InputEvent(source="scheduled", text="zamanlanmis gorev tetiklendi")]
+
+
 def test_wait_for_text_answer_defaults_to_reject_when_text_thread_is_dead():
     # Metin thread'i (stdin'in TEK sahibi) EOFError ile sonlanmissa, bir
     # daha ASLA yeni bir "text" olayi gelmeyecek - sonsuza kadar beklemek

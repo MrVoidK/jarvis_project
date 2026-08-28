@@ -20,7 +20,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 import yaml
 
@@ -149,8 +149,19 @@ class Scheduler:
     def _run(self) -> None:
         last_check = self._now_fn()
         while not self._stop_event.wait(self._poll_interval):
-            now = self._now_fn()
-            for task in self._due(last_check, now):
-                logger.info("scheduler: '%s' tetiklendi -> kuyruga", task.name)
-                self._hub.submit_event(InputEvent(source="scheduled", text=task.text))
-            last_check = now
+            try:
+                now = self._now_fn()
+                # DST/saat-geri-alma korumasi: yerel saat geri alinirsa (sonbahar
+                # DST donusu, NTP duzeltmesi) [last_check, now] TERS bir pencereye
+                # doner - `_due` bunu yanlis degerlendirip bir fire'i bastirabilir
+                # veya (bir sonraki normal pencerede) cift tetikleyebilir. Pencereyi
+                # sifirlayip bir sonraki poll'e birak.
+                if now < last_check:
+                    last_check = now
+                    continue
+                for task in self._due(last_check, now):
+                    logger.info("scheduler: '%s' tetiklendi -> kuyruga", task.name)
+                    self._hub.submit_event(InputEvent(source="scheduled", text=task.text))
+                last_check = now
+            except Exception:  # noqa: BLE001 - bir hata daemon thread'i sessizce oldurmesin
+                logger.exception("scheduler: poll dongusunde beklenmeyen hata")

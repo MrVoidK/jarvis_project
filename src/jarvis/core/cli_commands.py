@@ -135,11 +135,14 @@ def _cmd_status(history: list[dict]) -> None:
         lines.append(f"  - {_tool_risk_label(tool)}")
     pending_rows = pending_tasks.list_pending(limit=5)
     if pending_rows:
-        lines.append(f"[bold]Bekleyen onaylar ({len(pending_rows)}):[/bold]")
+        # "son 5" - list_pending(limit=5) sabit tavan; ham sayiyi yazmak
+        # (ör. "(5)") 5'ten fazla bekleyen varsa yaniltir.
+        lines.append("[bold]Bekleyen onaylar (son 5):[/bold]")
         for row in pending_rows:
             text = row["text"]
             snippet = (text[:60] + "…") if len(text) > 60 else text
-            lines.append(f"  - #{row['id']} · {row['source']} · {snippet}")
+            ts = str(row.get("ts", ""))[:16]  # "2026-08-28T14:23" (tarih+saat, saniyesiz)
+            lines.append(f"  - #{row['id']} · {ts} · {row['source']} · {snippet}")
     else:
         lines.append("[bold]Bekleyen onaylar:[/bold] yok")
     print_panel("Jarvis Durumu", "\n".join(lines), border_style="bold cyan")

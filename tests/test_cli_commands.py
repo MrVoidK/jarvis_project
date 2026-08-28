@@ -262,6 +262,11 @@ def test_status_command_reports_without_real_models_or_mcp(monkeypatch):
     monkeypatch.setitem(sys.modules, "src.jarvis.ears.listener", fake_listener)
     monkeypatch.setitem(sys.modules, "src.jarvis.mouth.tts", fake_tts)
 
+    from src.jarvis.core import pending_tasks
+    # Hermetiklik: _cmd_status artik list_pending() cagiriyor - gercek
+    # data/jarvis.db'ye dokunmasin.
+    monkeypatch.setattr(pending_tasks, "list_pending", lambda **k: [])
+
     from src.jarvis.core.risk import RiskLevel
 
     class _FakeTool:
@@ -293,7 +298,8 @@ def test_status_shows_pending_approvals(monkeypatch, capsys):
     monkeypatch.setattr(
         pending_tasks, "list_pending",
         lambda limit=10, db_path=None: [
-            {"id": 3, "source": "scheduled", "text": "gunluk ozet", "status": "pending"}
+            {"id": 3, "ts": "2026-08-28T14:23:45.123+00:00", "source": "scheduled",
+             "text": "gunluk ozet", "status": "pending"}
         ],
     )
 
@@ -301,6 +307,8 @@ def test_status_shows_pending_approvals(monkeypatch, capsys):
     _cmd_status([{"role": "system", "content": "x"}])
     out = capsys.readouterr().out
     assert "#3" in out and "scheduled" in out
+    assert "son 5" in out  # kapali sayac yerine "son 5" etiketi
+    assert "2026-08-28T14:23" in out  # timestamp (tarih+saat) render ediliyor
 
 
 def test_status_no_pending_line(monkeypatch, capsys):

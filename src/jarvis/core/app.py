@@ -144,6 +144,19 @@ def _execute_tool(
     bir "start" ve bir "end" olayi garanti edilir - guvenlik akisi asagida
     hicbir sekilde degismedi.
     """
+    # Faz 6.6 final review (IMPORTANT #4): scheduled/continuous + onay gerektiren
+    # bir arac icin pending-gate `_run_tool_pipeline` ICINDE devreye girer ve arac
+    # HIC calismaz - HUD "start"/"end" wrapper'i bu durumda "calisti ve pending
+    # mesaji dondu" seklinde HAYALET bir tool olayi gosterirdi. Bu tek durumda
+    # wrapper atlanip govde dogrudan cagriliyor; parametre guardrail'i yine
+    # `_run_tool_pipeline`'in EN BASINDA calisir (sira degismedi).
+    if source in ("scheduled", "continuous") and requires_approval(tool.risk_level):
+        return _run_tool_pipeline(
+            tool, intent, stop_event, input_hub=input_hub, pending=pending,
+            on_start=on_start, speaking_event=speaking_event,
+            source=source, event_text=event_text,
+        )
+
     visible_params = {
         key: str(value) for key, value in intent.parameters.items() if key != "lang" and value not in (None, "")
     }
@@ -293,7 +306,7 @@ def _run_tool_pipeline(
         if source in ("scheduled", "continuous"):
             task_id = record_pending(
                 source,
-                event_text,
+                event_text or tool.name,  # event_text bos ise /status'ta bos satir gorunmesin
                 {"tool": tool.name, "risk": tool.risk_level.value, "params": risky_values},
             )
             ref = f"#{task_id}" if task_id is not None else "(kayit edilemedi, bkz. log)"
@@ -541,6 +554,35 @@ def _handle_turn(
                 stop_event.set()
             lang = intent.parameters.get("lang", "en")
             yield _localized(_SHUTDOWN_MESSAGES, lang), lang
+            return
+
+        # Faz 6.6 final review (CRITICAL #1): scheduled/continuous kaynakli bir olay
+        # delege intent'ine siniflanirsa, `_run_delegate_*` adim-basi tool'larini
+        # interaktif `_prompt_for_approval` yolundan calistirirdi (source iletilmiyor)
+        # - insan klavyede olmadigi icin bu, `run_jarvis` ana dongusunu suresiz
+        # bloklar ve kullanicinin sonraki yazdigi satiri onay cevabi olarak yutar
+        # (§7.3 ihlali). Cozum: tum delege zincirini reddet, TEK bir pending kaydi
+        # olustur (adim-basi pending semantigi `/approve` ile birlikte, bu fazin
+        # kapsami disinda). `_run_delegate_*` imzalarina DOKUNULMUYOR.
+        if intent.name in (DELEGATE_COMPLEX_INTENT_NAME, DELEGATE_CODE_INTENT_NAME) and source in (
+            "scheduled",
+            "continuous",
+        ):
+            lang = intent.parameters.get("lang", "en")
+            task_desc = intent.parameters.get("task", "") or user_text
+            task_id = record_pending(
+                source,
+                user_text,
+                {"tool": intent.name, "risk": "high", "params": {"task": task_desc}},
+            )
+            ref = f"#{task_id}" if task_id is not None else "(kayit edilemedi, bkz. log)"
+            logger.info("[%s] delegate intent onaya alindi %s: %s", source, ref, intent.name)
+            print_system(
+                f"[{source}] '{intent.name}' delege zinciri onay gerektiriyor "
+                f"- otomatik calistirilmadi, beklemede {ref}.",
+                level="warning",
+            )
+            yield _localized(_PENDING_RECORDED_MESSAGES, lang), lang
             return
 
         if intent.name == DELEGATE_COMPLEX_INTENT_NAME:

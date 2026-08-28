@@ -1,7 +1,5 @@
 """core/pending_tasks.py - tasks tablosuna fail-soft bekleyen-onay kaydi."""
 
-import pytest
-
 from src.jarvis.core import db as db_module
 from src.jarvis.core.pending_tasks import record_pending, list_pending
 

@@ -96,8 +96,9 @@ history         = [{"role": "system", "content": SYSTEM_PROMPT}]
 
 hub = InputHub(stop_event, speaking_event); hub.start()   # mic thread + text thread
 api.register_input_hub(hub)                                # HUD'dan gelen yazılı komutlar için
-Scheduler(...).start()          # jarvis-scheduler daemon (opt-in, cron -> InputEvent source="scheduled")
-ContinuousRunner(...).start()   # jarvis-continuous daemon (opt-in, koşul izleme -> source="continuous")
+scheduled_tasks, watcher_specs = load_scheduled_config()  # config/scheduled_tasks.yaml yoksa ([], [])
+if scheduled_tasks:  Scheduler(hub, stop_event, scheduled_tasks).start()          # jarvis-scheduler daemon (opt-in, cron -> InputEvent source="scheduled")
+if watcher_specs:    ContinuousRunner(hub, stop_event, build_watchers(watcher_specs)).start()  # jarvis-continuous daemon (opt-in, koşul izleme -> source="continuous")
 pending: list[InputEvent] = []                             # onay beklerken biriken "voice" olayları
 ```
 

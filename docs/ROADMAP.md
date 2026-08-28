@@ -1174,12 +1174,10 @@ Alt adımlar:
       `requires_approval` → `core/pending_tasks.py:record_pending()` ile `tasks`
       tablosuna `pending` kayıt, `/status`'ta görünür. `/approve`/`/deny`
       tüketimi ertelendi.
-- [x] **Kabul edilen sınır** — scheduled/continuous kaynaklı bir olay
-      `delegate_complex`/`delegate_code` intent'ine sınıflanırsa, o çok-adımlı
-      zincirdeki MEDIUM+ araç adımları pending-approval gate'e uğramaz
-      (`_run_delegate_*` `source` iletmiyor) — interaktif onay istemine düşer.
-      Delegate zincirine pending semantiği taşımak (adım-başı mı zincir-başı mı
-      kayıt) ayrı bir tasarım kararı; bu fazın kapsamı dışında.
+- [x] **Delege zinciri gate kapsamı** — scheduled/continuous kaynaklı bir olay
+      `delegate_complex`/`delegate_code` intent'ine sınıflanırsa, tüm delege
+      zinciri reddedilir ve TEK bir pending kaydı oluşturulur (adım-başı pending
+      semantiği `/approve` ile birlikte ele alınacak, bu fazın kapsamı dışında).
 
 ### 6.7 Proje Başlatma Aracı — CreateProjectTool (v2 Faz G) ⬜
 
