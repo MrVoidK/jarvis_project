@@ -147,60 +147,76 @@ _DELEGATE_CODE_SCHEMA: dict = {
     },
 }
 
+# 2026-08-29 (Cluster C + F-hafif): ~50 satirlik yogun prompt qwen2.5:3b'de
+# tutarsiz uygulaniyordu (canli testte "sarkiyi devam ettir" -> run_command
+# `taskmgr /restart` uydurmasi). Kisa, yapisal, ornek-agirlikli bir surumle
+# degistirildi - kucuk router modeli boyle daha guvenilir. run_command
+# halusinasyonuna ayrica KOD-SEVIYESI guard var (`_command_appears_in_transcript`,
+# classify()).
 _ROUTER_SYSTEM_PROMPT = (
-    "You are JARVIS's tool-routing module. Look at the user's spoken command: if "
-    "one of the provided functions clearly matches their intent, call ONLY that "
-    "function, exactly once. If the user is just chatting, asking a general "
-    f"question, or no function clearly matches their intent, call the "
-    f"`{_NO_TOOL_FUNCTION_NAME}` function instead.\n\n"
-    f"Examples where you must call `{_NO_TOOL_FUNCTION_NAME}` (plain chat/greeting/\n"
-    "farewell/small talk, even if a tool exists that is loosely related):\n"
-    f'- "Hello" / "Merhaba" / "Görüşürüz" / "Bye" -> call {_NO_TOOL_FUNCTION_NAME}.\n'
-    f'- "How are you?" / "Nasılsın?" -> call {_NO_TOOL_FUNCTION_NAME}.\n'
-    f'- "Jarvis, my name is Tony." / "Jarvis, wake up." -> call {_NO_TOOL_FUNCTION_NAME}.\n'
-    '- Any question about JARVIS itself, opinions, or general knowledge that\n'
-    f"  none of the functions are literally about -> call {_NO_TOOL_FUNCTION_NAME}.\n"
-    f"When genuinely uncertain whether a function applies, prefer calling "
-    f"`{_NO_TOOL_FUNCTION_NAME}` - a missed tool call is far cheaper than a wrong one.\n\n"
-    # search_music (Faz 3.3 gercek kullanim testi bulgusu): kucuk yerel modeller
-    # "play <song>" gibi istekler icin belirli bir arac varken bile run_command'a
-    # kacip URL/dosya yolu UYDURUYORDU (orn. var olmayan bir YouTube video ID'si
-    # veya olmayan bir kurulum yolu). Bu iki kural, modelin kendi "dunya
-    # bilgisine" guvenip halusinasyon uretmesini ACIKCA yasaklar.
-    "If the user asks to play, search for, or listen to a SPECIFIC song or "
-    "artist by name, you MUST call search_music with that song/artist as the "
-    "query - NEVER call run_command for this, even if you think you know a "
-    "file path or URL for it.\n"
-    "NEVER invent a file path, program location, or URL for run_command's "
-    "command argument. Only use run_command for a command the user explicitly "
-    "and literally dictated word-for-word. If you are not certain of the exact "
-    f"command, call {_NO_TOOL_FUNCTION_NAME} instead.\n"
-    # gercek kullanim testi bulgusu: "I need your approval, please check the
-    # terminal" (Jarvis'in KENDI onay anonsu, bkz. core/app.py:_APPROVAL_PENDING_MESSAGES)
-    # gibi SADECE "terminal"/"command"/"computer" KELIMELERINI ICEREN ama
-    # ASLINDA hicbir komut DIKTE ETMEYEN cumleler modelin bunu bizzat bir
-    # run_command cagrisi sanmasina yol aciyordu.
-    'A sentence that merely MENTIONS a terminal, command, or computer (e.g. '
-    '"I need your approval, please check the terminal") is NOT itself a '
-    f"command to run - call {_NO_TOOL_FUNCTION_NAME} unless the user dictates "
-    "an actual, literal command.\n\n"
-    # Faz 6.3 delegasyon: bu ikisi SADECE gercekten cok adimli/agir-kod isi icin;
-    # basit tek-eylem veya duz soru icin ASLA (dogrudan arac ya da no_tool_needed).
-    # delegate_complex kucuk router modelinde (qwen2.5:3b) yeterince tetiklenmiyordu
-    # (ilk alt-eylemi kapip tek arac seciyordu) - no_tool_needed'daki gibi somut
-    # ornekler + "ve/sonra/once...sonra" ipucu eklendi (canli test bulgusu, Faz 6.3).
-    f"If the request describes MORE THAN ONE action to do in order - joined by "
-    f'words like "and then", "after that", "first ... then", "ve", "sonra", "once ... sonra" '
-    f"- or an action whose input depends on another action's result, call "
-    f"`{_DELEGATE_COMPLEX_FUNCTION_NAME}` with the WHOLE request as the task. Do "
-    f"NOT just pick the first tool. Examples:\n"
-    f'- "check the system status and then close an app if memory is high" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}.\n'
-    f'- "sistem durumuna bak, sonra bir not al" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}.\n'
-    f'- "search for the weather and take a note about it" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}.\n'
-    "For heavy software work - writing/refactoring code, debugging a program, "
-    f"deep codebase analysis - call `{_DELEGATE_CODE_FUNCTION_NAME}`. Do NOT use "
-    "either delegate function for a single simple action or a plain question."
+    "You route a JARVIS voice command to ONE function.\n\n"
+    "RULES:\n"
+    "1. If exactly one function clearly matches what the user wants, call it once.\n"
+    f"2. Otherwise call `{_NO_TOOL_FUNCTION_NAME}`: plain chat, greetings, "
+    "questions, opinions, or unclear/garbled input. When unsure, choose this - "
+    "a missed tool is cheap, a wrong one is not.\n"
+    "3. `run_command` ONLY when the user literally dictates a shell command "
+    "word-for-word. Merely mentioning a terminal/command/computer is NOT a "
+    "command. Never invent a command, path, or URL.\n"
+    "4. A specific song/artist by name -> `search_music` (never `run_command`).\n"
+    f"5. If the request has SEVERAL ordered steps (\"... and then ...\", "
+    f"\"once ... sonra\", \"ve sonra ...\") or one step's input depends on "
+    f"another's result -> `{_DELEGATE_COMPLEX_FUNCTION_NAME}` with the WHOLE "
+    "request as `task`. Do not just pick the first step.\n"
+    f"6. Heavy software work (writing/refactoring/debugging code, deep repo "
+    f"analysis) -> `{_DELEGATE_CODE_FUNCTION_NAME}`.\n\n"
+    "EXAMPLES:\n"
+    f'- "Merhaba" / "how are you" / "tesekkurler" -> {_NO_TOOL_FUNCTION_NAME}\n'
+    f'- "Jarvis, wake up" / "adim Tony" -> {_NO_TOOL_FUNCTION_NAME}\n'
+    f'- "onayini bekliyorum, terminale bak" -> {_NO_TOOL_FUNCTION_NAME} '
+    "(mentions a terminal, dictates nothing)\n"
+    '- "sesi ac" / "sesi yukselt" / "louder" -> media_volume_up\n'
+    '- "sesi kis" / "sesi dusur" / "sesi azalt" / "quieter" -> media_volume_down\n'
+    '- "siradaki sarki" / "siradaki sarkiya gec" / "next track" / "skip" -> media_next_track\n'
+    '- "onceki sarki" / "geri git" / "previous track" -> media_previous_track\n'
+    '- "muzigi durdur" / "duraklat" / "pause" / "sarkiyi devam ettir" -> media_play_pause '
+    "(NOT run_command - nothing dictated)\n"
+    '- "Iron Man cal" / "play Bohemian Rhapsody" -> search_music (query = the song)\n'
+    '- "notlarimi oku" -> read_notes   |   "not al: sut al" -> create_note\n'
+    '- "sistem durumu" / "CPU kullanimi" -> get_system_info\n'
+    '- "run dir" / "calistir: git status" -> run_command\n'
+    f'- "sistem durumuna bak, sonra bir not al" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}\n'
+    f'- "hava durumunu arastir ve not dus" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}\n'
+    f'- "dispatcher.py\'yi refactor et" -> {_DELEGATE_CODE_FUNCTION_NAME}\n'
 )
+
+
+def _command_appears_in_transcript(command: str, transcript: str) -> bool:
+    """C2 (2026-08-29): router'in UYDURDUGU bir `run_command` cagrisini ele.
+
+    Dikte edilen komutun ILK token'i (calistirilabilir - `taskmgr`, `dir`,
+    `git`...) transkriptte bir KELIME olarak gecmiyorsa, kullanici boyle bir
+    komut soylememis demektir. Canli testte "Jarvis sarkiyi devam ettir" ->
+    router `run_command: taskmgr /restart` uretti ve HIGH onay kapisina kadar
+    gitti. Bu, o kapinin USTUNE ikinci bir savunma katmani (defense-in-depth).
+    """
+    stripped = command.strip()
+    if not stripped:
+        return False
+    first_token = stripped.split()[0].lower()
+    words = set(re.findall(r"[\w\-./\\]+", transcript.lower()))
+    return first_token in words
+
+
+def _selection_confidence(tool, validated_arguments: dict) -> float:
+    """C3 (2026-08-29): hardcoded 0.9 yerine kaba ama GERCEK bir sinyal - onay
+    panelindeki "guven: 0.90" her kararda ayni cikmasin. Tum required
+    parametreler dolu geldiyse 0.8; validate gecti ama bir required bos/eksikse
+    0.6 (router argumani yakalayamamis, daha az emin)."""
+    required = getattr(tool, "required_parameters", None) or []
+    if all(str(validated_arguments.get(key, "")).strip() for key in required):
+        return 0.8
+    return 0.6
 
 
 class Intent(BaseModel):
@@ -344,7 +360,22 @@ class Dispatcher:
             )
             return Intent(name=DEFAULT_INTENT_NAME, confidence=0.3, source="llm")
 
+        # C2 (2026-08-29): run_command halusinasyon guard'i - router'in urettigi
+        # komut transkriptte fiilen dikte edilmediyse reddet (bkz.
+        # _command_appears_in_transcript).
+        if call.name == "run_command" and not _command_appears_in_transcript(
+            str(validated_arguments.get("command", "")), text
+        ):
+            logger.warning(
+                "Dispatcher: run_command reddedildi - komut %r transkriptte (%r) "
+                "dikte edilmemis (router uydurmasi) -> chat.",
+                validated_arguments.get("command"),
+                text,
+            )
+            return Intent(name=DEFAULT_INTENT_NAME, confidence=0.3, source="llm")
+
         lang = detect_language(text)
         parameters = {**validated_arguments, "lang": lang}
-        logger.info("Dispatcher: router aracı secti (%s).", call.name)
-        return Intent(name=call.name, confidence=0.9, source="llm", parameters=parameters)
+        confidence = _selection_confidence(tool, validated_arguments)
+        logger.info("Dispatcher: router aracı secti (%s, guven=%.2f).", call.name, confidence)
+        return Intent(name=call.name, confidence=confidence, source="llm", parameters=parameters)

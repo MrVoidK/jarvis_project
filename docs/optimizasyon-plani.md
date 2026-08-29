@@ -84,30 +84,36 @@ Manuel (bekliyor): sessiz oda / kulaklık kontrol / kendi sesi izolasyonu.
 **Not:** `VAD_AGGRESSIVENESS=3` + `MIN_SPEECH_FRAMES=3` ayarlanabilir — gerçek
 kullanımda çok kısa gerçek komutlar ("dur") düşerse gevşetilir.
 
-**Commit:** `<B>`
+**Commit:** `00074f2`
 
 ---
 
-## Cluster C — Router kalitesi (qwen2.5:3b) ⬜
+## Cluster C — Router kalitesi (qwen2.5:3b) ✅
 
 **Belirti:** "Jarvis şarkıyı devam ettir" → `run_command: taskmgr /restart`;
 "sesi kıs" → `media_volume_up`; her karar `güven: 0.90` (hardcoded).
 
 **Kök neden:**
 - C1 — `_ROUTER_SYSTEM_PROMPT` ~50 satır yoğun İngilizce; 3B model tutmuyor.
-- C2 — `run_command` için "transkript gerçekten komut dikte ediyor mu" kontrolü
-  yok (`~dispatcher.py:328`).
-- C3 — `confidence=0.9` hardcoded (`~dispatcher.py:350`).
+- C2 — `run_command` için "transkript gerçekten komut dikte ediyor mu" kontrolü yok.
+- C3 — `confidence=0.9` hardcoded.
 
-**Yapılacaklar (karar: prompt + confidence + guard; model DEĞİŞMEZ):**
-- [ ] C1: prompt ~25 satıra sadeleştir + 6–8 few-shot.
-- [ ] C2: `_command_appears_in_transcript(cmd, text)` guard'ı.
-- [ ] C3: gerçek confidence (0.8/0.6/0.3 senaryoya göre); `print_router_decision`.
+**Yapıldı (karar: prompt + confidence + guard; model DEĞİŞMEZ):**
+- [x] C1: `_ROUTER_SYSTEM_PROMPT` ~30 satıra sadeleştirildi, 6 kural + 16
+  few-shot (TR diakritikli media formları dahil). F-hafif'in delegate_complex
+  few-shot'ları da buraya kondu.
+- [x] C2: `_command_appears_in_transcript(cmd, text)` — komutun ilk token'ı
+  transkriptte kelime olarak yoksa `run_command` reddedilir → chat.
+- [x] C3: `_selection_confidence(tool, args)` — required'lar dolu → 0.8, eksik →
+  0.6; `no_tool_needed` zaten 0.6. `console.py` değişmedi (mevcut `güven: %.2f`
+  formatı artık gerçekten değişiyor).
 
-**Test:** `test_dispatcher_router.py` (guard + confidence); yeni
-`test_router_accuracy.py` (`@pytest.mark.integration`, 25 canned komut).
+**Test:** `test_dispatcher_router.py` +3 (guard + confidence). Yeni
+`test_router_accuracy.py` — opt-in batarya (`JARVIS_ROUTER_BATTERY=1`), 22 vaka,
+gerçek Ollama: 20 pass, 2 xfail (bilinen 3B sınırı: "hatırla"→note, çok-adım
+flaky). Full default suite 234 pass / 23 skip.
 
-**Commit:** —
+**Commit:** `<C>`
 
 ---
 

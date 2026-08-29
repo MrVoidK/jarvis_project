@@ -221,3 +221,55 @@ def test_classify_delegate_falls_back_to_text_when_task_arg_missing(monkeypatch)
 
     assert intent.name == dispatcher_module.DELEGATE_COMPLEX_INTENT_NAME
     assert intent.parameters["task"] == "çok adımlı bir iş yap"
+
+
+# --- 2026-08-29 Cluster C: run_command guard + gerçek confidence ---
+
+
+def test_run_command_rejected_when_executable_not_in_transcript(monkeypatch):
+    """C2: router bir müzik komutundan `taskmgr /restart` uydurdu (canli test) -
+    dikte edilen komutun ilk token'i transkriptte geçmiyorsa çağrı reddedilir,
+    chat'e düşer (HIGH onay kapısının üstüne defense-in-depth)."""
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(
+            tool_calls=[ToolCall(name="run_command", arguments={"command": "taskmgr /restart"})]
+        ),
+    )
+
+    intent = Dispatcher().classify("Jarvis şarkıyı devam ettir")
+
+    assert intent.name == DEFAULT_INTENT_NAME
+    assert intent.source == "llm"
+
+
+def test_run_command_accepted_when_executable_is_dictated(monkeypatch):
+    """C2 karşı-testi: kullanıcı komutu gerçekten dikte ettiyse (ilk token
+    transkriptte var) çağrı geçer."""
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(tool_calls=[ToolCall(name="run_command", arguments={"command": "dir"})]),
+    )
+
+    intent = Dispatcher().classify("run command dir please")
+
+    assert intent.name == "run_command"
+    assert intent.parameters["command"] == "dir"
+
+
+def test_router_confidence_reflects_selection_kind(monkeypatch):
+    """C3: `confidence` artık hardcoded 0.9 değil - somut araç 0.8,
+    no_tool_needed 0.6."""
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(tool_calls=[ToolCall(name="media_play_pause", arguments={})]),
+    )
+    assert Dispatcher().classify("müziği durdur").confidence == pytest.approx(0.8)
+
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(
+            tool_calls=[ToolCall(name=dispatcher_module._NO_TOOL_FUNCTION_NAME, arguments={})]
+        ),
+    )
+    assert Dispatcher().classify("nasılsın bakalım").confidence == pytest.approx(0.6)
