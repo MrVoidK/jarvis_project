@@ -207,7 +207,30 @@ near-miss log spam.
 **Test:** `test_pending_tasks.py` +3, `test_cli_commands.py` +3. Full suite
 254 pass / 23 skip.
 
-**Commit:** `<G>`
+**Commit:** `b598f0d`
+
+---
+
+## Durum: A–G kod + test ✅ (2026-08-29) — manuel doğrulama bekliyor
+
+Tüm kümeler commit'lendi (`9c8ca5a`→`b598f0d`); `python -m pytest tests/`
+**254 pass / 23 skip**. `python main.py` ile gerçek mikrofon doğrulaması:
+
+- [ ] **Feedback**: hoparlör açık, "kendinden bahset" → uzun yanıt → sus. Log'da
+  `User: <Jarvis cümlesi>` = 0; tur sonunda "yankı/feedback ses olayı kuyruktan
+  atıldı" logu.
+- [ ] **Sessiz oda**: 5 dk sessizlik → sıfır `User:`, sıfır `transkribe ediliyor`.
+- [ ] **Kulaklık kontrol grubu**: aynı senaryo kulaklıkla düzgün.
+- [ ] **Gecikme**: 5 komut arka arkaya; kuyruk birikmesi yok.
+- [ ] **Router**: "sesi kıs"→volume_down, "şarkıyı devam ettir"→play_pause,
+  run_command uydurması yok (`JARVIS_ROUTER_BATTERY=1 pytest
+  tests/test_router_accuracy.py` ile de).
+- [ ] **TTS**: `/test run_command command=dir` → kısa sesli onay, `dir` çıktısı
+  sadece konsolda.
+- [ ] **Ses kademesi**: "sesi çok aç" belirgin fark yaratıyor mu.
+- [ ] **Dil**: 10 net TR + 10 net EN → `dil=es/fr/de` yok.
+- [ ] **VRAM**: `nvidia-smi -l 1` — tepe 12 GB altında mı (backlog).
+- [ ] **`/deny`**: `/status` bayat `#1/#2` → `/deny all` → listeden düşüyor.
 
 ---
 
