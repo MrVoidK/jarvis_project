@@ -257,6 +257,20 @@ belirti — kök neden (dosya:satır) — durum`)_
   "komutu çalıştır sonra sonucuna göre..." senaryosu zayıfladı. 6.10 kapsamlı
   orkestrasyonla birlikte `spoken_form()` hook'u değerlendirilir. — ⬜
 
+### 2026-08-29 2. canlı test (A–G sonrası) — sonuçlar iyi, kalan ufak maddeler
+- ✅ Feedback döngüsü gitti (logda sıfır self-echo turu), kuyruk gecikmesi yok.
+- ✅ `run_command` guard gerçek bir uydurmayı yakaladı ("Jarvis sitesi kıs" →
+  `curl … | grep …` reddedildi → chat).
+- ✅ `amount` çıkarımı çalışıyor ("biraz aç"→biraz, "baya bir kıs"→cok).
+- ⬜ `media_volume_down`/`up` yanıt metni sabit "biraz" diyor — `amount: cok`
+  iken "epeyce" demeli (`media_tool.py:_VOLUME_*_MESSAGES` `amount`'a göre).
+- ⬜ TTS ilk-chunk gecikmesi ara sıra 3–4 s (`Ilk ses chunk'i hazir: 4.14s`) —
+  muhtemelen `sentence_transformers` embed'i (Faz 6.5 `remember`) ile GPU
+  çekişmesi; embed'i tur sonrası ayrı bir düşük-öncelikli thread'e almak.
+- ⬜ STT hataları ("Sesli kız", "Stradik şarkıya geç", "Jarvis sitesi kıs") —
+  whisper `turbo` TR kısa cümle doğruluğu; ayrı iş (custom prompt / dictionary
+  boost / `hotwords`).
+
 ---
 
 ## Kapatılanlar
