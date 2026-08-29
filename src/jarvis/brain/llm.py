@@ -29,12 +29,14 @@ MAX_HISTORY_MESSAGES = 12
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 
 # 2026-08-29 (canli test): hermes3:8b system_prompt'un "1-2 cumle" kuralini
-# yer yer YOK SAYIP 3+ cumlelik nutuklar veriyordu (bir yanit 22 sn TTS,
-# xtts 226-char TR limiti asildi). Sesli asistan icin sert bir tavan:
-# bu limitleri asinca stream TUKETIMI durur (Ollama arka planda uretmeye
-# devam etse de biz okumayiz), o ana kadarki cumleler history'ye yazilir.
-_MAX_CHAT_SENTENCES = 3
-_MAX_CHAT_CHARS = 360
+# yer yer YOK SAYIP tek bir 40 kelimelik run-on cumle veriyordu (21 sn TTS,
+# xtts'in 226-char TR limiti asildi -> ses kirpiliyor/bozuluyor). Sert tavan:
+# 2 cumle VEYA 240 char (XTTS TR limitinin hemen altinda). Asilinca stream
+# TUKETIMI durur (Ollama arka planda uretse de biz okumayiz), o ana kadarki
+# cumleler history'ye yazilir. Ayrica ilk cumle tek basina 240 char'i asarsa
+# o da kesilir (kelime siniri).
+_MAX_CHAT_SENTENCES = 2
+_MAX_CHAT_CHARS = 240
 
 
 def _trim_history(history: list[dict]) -> list[dict]:
@@ -93,7 +95,18 @@ def think_and_respond_stream(user_input: str, history: list[dict]) -> Iterator[s
                     yield sentence
             if _at_cap():
                 _capped = True
-                break  # sesli asistan - 3 cumle/360 char sonrasi stream'i birak
+                break  # 2 cumle / 240 char'a ulasildi - stream'i birak
+            # Noktalamasiz uzayan tek bir run-on cumle: buffer tavani asarsa
+            # kelime sinirindan kes, yield et, dur (hermes3 bazen 400 char'lik
+            # tek cumle veriyor - xtts limiti + gecikme).
+            if len(buffer) >= _MAX_CHAT_CHARS:
+                clipped = buffer[:_MAX_CHAT_CHARS].rsplit(" ", 1)[0].strip()
+                if clipped:
+                    parts.append(clipped)
+                    yield clipped
+                buffer = ""
+                _capped = True
+                break
         if not _capped and buffer.strip():
             parts.append(buffer.strip())
             yield buffer.strip()

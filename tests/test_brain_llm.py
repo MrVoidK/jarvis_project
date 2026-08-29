@@ -42,28 +42,33 @@ def _fresh_history():
 
 
 def test_stream_splits_raw_chunks_into_sentences(monkeypatch):
-    _patch_agent(monkeypatch, _StubAgent(chunks=["Bir cümle. ", "İki cümle. Üç."]))
+    # Not: yanit tavani 2 cumle - bu test bolme mantigini test ettigi icin
+    # 2 cumleyle sinirli tutuldu (tavan icin ayri test var).
+    _patch_agent(monkeypatch, _StubAgent(chunks=["Bir cümle. ", "İki cümle."]))
 
     out = list(think_and_respond_stream("merhaba", _fresh_history()))
 
-    assert out == ["Bir cümle.", "İki cümle.", "Üç."]
+    assert out == ["Bir cümle.", "İki cümle."]
 
 
 def test_stream_caps_at_max_chat_sentences(monkeypatch):
-    # 2026-08-29: sesli asistan - 3 cumle sonrasi stream birakilir.
+    # 2026-08-29: sesli asistan - 2 cumle sonrasi stream birakilir.
     _patch_agent(
         monkeypatch,
-        _StubAgent(chunks=["Bir. ", "İki. ", "Üç. ", "Dört. ", "Beş. ", "Altı."]),
+        _StubAgent(chunks=["Bir. ", "İki. ", "Üç. ", "Dört. ", "Beş."]),
     )
     out = list(think_and_respond_stream("anlat", _fresh_history()))
-    assert out == ["Bir.", "İki.", "Üç."]
+    assert out == ["Bir.", "İki."]
 
 
-def test_stream_caps_at_max_chat_chars(monkeypatch):
-    long_sentence = "kelime " * 60 + "son."  # ~420 char, tek cumle
-    _patch_agent(monkeypatch, _StubAgent(chunks=[long_sentence, " Devam cümlesi."]))
+def test_stream_caps_a_runon_sentence_at_word_boundary(monkeypatch):
+    # Noktalamasiz uzayan tek cumle: 240 char'da kelime sinirindan kesilir.
+    runon = "kelime " * 80  # ~560 char, hic nokta yok
+    _patch_agent(monkeypatch, _StubAgent(chunks=[runon, " son cümle."]))
     out = list(think_and_respond_stream("anlat", _fresh_history()))
-    assert out == [long_sentence.strip()]  # ilk cumle >360 char -> ikinci hic gelmez
+    assert len(out) == 1
+    assert len(out[0]) <= 240
+    assert out[0].endswith("kelime")  # kelime sinirindan kesilmis, yarim kelime yok
 
 
 def test_stream_appends_user_and_assistant_to_history(monkeypatch):
