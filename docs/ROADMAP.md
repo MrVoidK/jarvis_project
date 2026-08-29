@@ -1214,21 +1214,32 @@ Alt adımlar:
   `cwd` ile), kullanıcı isterse ayrıca `security-reviewer` çalıştırılabilir.
 - **Kapsam dışı:** `claude -p` yazma modu + iki-aşamalı onay → Faz 6.10.3.
 
-### 6.8 MCP Genişletme — Google Drive + Home Assistant (v2 Faz H) ⬜
+### 6.8 MCP Genişletme — Google Drive + Home Assistant (v2 Faz H) 🟡
 
 Bağımsız — herhangi bir zaman. "MCP yalnızca bilgi/veri erişimi, OS/fiziksel
-kontrol yerel kalır" ilkesini (`docs/ARCHITECTURE.md` §9) korur.
+kontrol yerel kalır" ilkesini (`docs/ARCHITECTURE.md` §9) korur. **2026-08-29:
+kapsam kullanıcı altyapısına göre daraltıldı** — Google Drive şablon eklendi
+(kullanıcı OAuth kurunca aktif), Home Assistant ayrı bir alt-faza bırakıldı
+(kullanıcı HA'yı ileride kuracak).
 
 Alt adımlar:
-- [ ] **Google Drive MCP** — standart `config/mcp_servers.yaml` girdisi;
-      not alma/okuma ile aynı kategori, risk `MEDIUM` (MCP araçlarına asla
-      `LOW` verilmez).
-- [ ] **Home Assistant — durum okuma** — Home Assistant MCP sunucusu üzerinden
-      (hangi lambalar açık, sıcaklık vb.); salt bilgi.
-- [ ] **Home Assistant — kontrol** — yerel `tools/iot_tool.py:HomeAssistantTool`
-      (HA REST API'sini doğrudan çağırır, `TOOL_REGISTRY`'ye statik kayıtlı);
-      MCP üzerinden DEĞİL — fiziksel etki = OS kontrolü kategorisi. Risk cihaz
-      tipine göre: ışık/priz `MEDIUM`, kilit/güvenlik cihazı `HIGH`.
+- [x] **Google Drive MCP — ŞABLON** — `config/mcp_servers.example.yaml`'a yorumlu
+      `gdrive` girdisi (`@modelcontextprotocol/server-gdrive`, npx) + kurulum
+      notu (Google Cloud OAuth "Desktop app", credentials JSON,
+      `GDRIVE_CREDENTIALS_PATH`), `enabled: false`, salt-okuma `allowed_tools`
+      (`gdrive_search`/`gdrive_read_file`). **Kod değişikliği yok** —
+      `core/mcp_config.py` + `mcp_client_adapter.py` jenerik; kullanıcı
+      `mcp_servers.yaml`'a girip `enabled: true` yapınca çalışır. Env-interpolation
+      hâlâ yok (GitHub girdisiyle aynı sınır) → `GDRIVE_CREDENTIALS_PATH` sistem
+      ortam değişkeni olarak ayarlanır.
+- [ ] **Home Assistant — durum okuma** (Faz 6.8.2, ertelendi) — Home Assistant
+      MCP sunucusu üzerinden (hangi lambalar açık, sıcaklık vb.); salt bilgi.
+      Kullanıcı HA'yı kurup URL + long-lived token sağladığında ele alınır.
+- [ ] **Home Assistant — kontrol** (Faz 6.8.2, ertelendi) — yerel
+      `tools/iot_tool.py:HomeAssistantTool` (HA REST API'sini doğrudan çağırır,
+      `TOOL_REGISTRY`'ye statik kayıtlı); MCP üzerinden DEĞİL — fiziksel etki =
+      OS kontrolü kategorisi. Risk cihaz tipine göre: ışık/priz `MEDIUM`, kilit/
+      güvenlik cihazı `HIGH`.
 
 ### 6.9 Gözlemlenebilirlik — Tracing (v2 Faz I) ⬜
 

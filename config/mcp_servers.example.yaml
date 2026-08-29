@@ -84,3 +84,32 @@ servers:
   #   args: ["-y", "@modelcontextprotocol/server-github"]
   #   default_risk_level: "high"
   #   enabled: false
+
+  # --- Google Drive MCP (docs/ROADMAP.md Faz 6.8 - SABLON, henuz etkin degil) ---
+  # "MCP yalnizca bilgi/veri erisimi" ilkesine uygun: not alma/okuma ile ayni
+  # kategori (SALT-OKUMA), risk "medium" (MCP araclarina asla "low" verilmez).
+  #
+  # KURULUM (kullanici tarafindan, bir kez - Spotify/Calendar'daki "kendi OAuth
+  # uygulamani kaydet" deseniyle ayni):
+  #   1. Google Cloud Console'da bir proje ac, "Google Drive API"yi etkinlestir.
+  #   2. OAuth consent screen + "OAuth client ID" (tur: Desktop app) olustur,
+  #      credentials JSON'u indir (or. C:\Path\To\gcp-oauth.keys.json).
+  #   3. Sunucunun tek seferlik auth akisini calistir (tarayici acilir, izin ver);
+  #      olusan token dosyasinin yolunu GDRIVE_CREDENTIALS_PATH ile ver.
+  #      (Bkz. @modelcontextprotocol/server-gdrive README - tam adim + arac adlari.)
+  #   4. Asagidaki blogu yorumdan cikarip yollari kendine gore doldur, enabled: true.
+  #
+  # `env` ile process ortam degiskeni gecmek IÇIN Jarvis tarafinda henuz
+  # env-interpolation YOK (GitHub girdisindeki ayni sinir) - o eklenene kadar
+  # GDRIVE_CREDENTIALS_PATH'i sistem/kullanici ortam degiskeni olarak ayarlayin.
+  #
+  # allowed_tools: sunucunun SALT-OKUMA araclari (tam adlar surume gore
+  # degisebilir - README'den dogrulayin; tipik: gdrive_search, gdrive_read_file).
+  # - name: "gdrive"
+  #   command: "npx"
+  #   args: ["-y", "@modelcontextprotocol/server-gdrive"] # yayinlaninca surumu PINLE (@X.Y.Z)
+  #   default_risk_level: "medium"
+  #   allowed_tools:
+  #     - "gdrive_search"
+  #     - "gdrive_read_file"
+  #   enabled: false
