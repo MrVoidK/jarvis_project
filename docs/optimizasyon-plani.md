@@ -246,7 +246,16 @@ sistemi.
   varsayılan=12, çok=30) uygular ve yeni seviyeyi söyler. Yeni **`set_volume`**
   aracı (`level` 0-100): "sesi 84 yap" / "set volume to 30". Router few-shot.
   Commit `<P1>`.
-- **P2 — Not sistemi v2** ⬜ (sırada)
+- **P2 — Not sistemi v2** ✅ `notes_tool.py` yeniden yazıldı. Başlıklı notlar
+  (ayrı `.md` dosyaları, `# başlık`), `create_note` opsiyonel `title` (yoksa eski
+  günlük log davranışı korundu). Yeni araçlar: `list_notes`, `read_notes` (artık
+  `title` alır), `append_to_note`, `open_note` (`obsidian://open` URI),
+  `merge_notes` (kaynakları `Archive/`'e taşır, SİLME yok). Hepsi
+  `<vault>/Jarvis Notes/` alt ağacında hapis: `_note_filename()` slug (Türkçe
+  harf + tire, yol ayıracı/`.`/`..`/gizli/Windows-ayrılmış elenir) + `is_path_safe`
+  + `is_relative_to` ikinci kat. Tümü MEDIUM (onaylı). Router 6 few-shot.
+  Testler: `test_tools.py` +9. **`security-reviewer` önerilir** (vault yazma
+  yüzeyi genişledi — kullanıcı döndüğünde). Commit `<P2>`.
 - **P3 — STT algı (`hotwords`)** ⬜
 - **P4 — Hız: tur-sonu `remember()` arka plana** ⬜
 

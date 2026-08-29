@@ -102,6 +102,119 @@ def test_create_note_rejects_empty_content(monkeypatch, tmp_path):
     assert not (vault / notes_module.NOTES_SUBDIR).exists()  # dosya hic olusturulmamali
 
 
+# --- notes v2 (2026-08-29 pre-6.10): basliklar, listeleme, ekle/ac/birlestir ---
+
+
+def _notes_dir(vault):
+    return vault / notes_module.NOTES_SUBDIR
+
+
+def test_note_filename_slugifies_and_guards():
+    assert notes_module._note_filename("Alışveriş Listesi") == "alışveriş-listesi.md"
+    assert notes_module._note_filename("  ../../evil ") == "evil.md"  # yol ayiraci/nokta elenir
+    assert notes_module._note_filename("a/b\\c") == "abc.md"
+    assert notes_module._note_filename("con") == "note-con.md"  # Windows ayrilmis ad
+    assert notes_module._note_filename("") is None
+    assert notes_module._note_filename("!!!") is None
+
+
+def test_create_titled_note_makes_separate_file(monkeypatch, tmp_path):
+    vault = _patch_vault(monkeypatch, tmp_path)
+
+    result = notes_module.CreateNoteTool().execute(
+        {"lang": "tr", "title": "Alışveriş Listesi", "content": "süt, ekmek"}
+    )
+    note = _notes_dir(vault) / "alışveriş-listesi.md"
+    assert note.is_file()
+    text = note.read_text(encoding="utf-8")
+    assert text.startswith("# Alışveriş Listesi")
+    assert "süt, ekmek" in text
+    assert "Alışveriş Listesi" in result
+
+
+def test_create_titled_note_twice_appends_section(monkeypatch, tmp_path):
+    vault = _patch_vault(monkeypatch, tmp_path)
+    tool = notes_module.CreateNoteTool()
+    tool.execute({"lang": "tr", "title": "günlük", "content": "ilk"})
+    tool.execute({"lang": "tr", "title": "günlük", "content": "ikinci"})
+
+    text = (_notes_dir(vault) / "günlük.md").read_text(encoding="utf-8")
+    assert "ilk" in text and "ikinci" in text
+    assert text.count("##") >= 1  # ikinci giris ## <ts> bolumu olarak eklendi
+
+
+def test_list_notes_excludes_log_and_lists_titles(monkeypatch, tmp_path):
+    _patch_vault(monkeypatch, tmp_path)
+    notes_module.CreateNoteTool().execute({"lang": "tr", "content": "günlük giriş"})  # log
+    notes_module.CreateNoteTool().execute({"lang": "tr", "title": "fikirler", "content": "x"})
+    notes_module.CreateNoteTool().execute({"lang": "tr", "title": "yapılacaklar", "content": "y"})
+
+    result = notes_module.ListNotesTool().execute({"lang": "tr"})
+    assert "fikirler" in result and "yapılacaklar" in result
+    assert "jarvis log" not in result.lower()
+
+
+def test_read_notes_by_title(monkeypatch, tmp_path):
+    _patch_vault(monkeypatch, tmp_path)
+    notes_module.CreateNoteTool().execute({"lang": "tr", "title": "notum", "content": "gizli içerik"})
+
+    hit = notes_module.ReadNotesTool().execute({"lang": "tr", "title": "notum"})
+    assert "gizli içerik" in hit
+    miss = notes_module.ReadNotesTool().execute({"lang": "tr", "title": "olmayan"})
+    assert "bulamad" in miss.lower()
+
+
+def test_append_to_note_adds_and_creates(monkeypatch, tmp_path):
+    vault = _patch_vault(monkeypatch, tmp_path)
+    notes_module.CreateNoteTool().execute({"lang": "tr", "title": "liste", "content": "süt"})
+
+    notes_module.AppendNoteTool().execute({"lang": "tr", "title": "liste", "content": "yumurta"})
+    text = (_notes_dir(vault) / "liste.md").read_text(encoding="utf-8")
+    assert "süt" in text and "yumurta" in text
+
+    # yoksa olusturur
+    notes_module.AppendNoteTool().execute({"lang": "tr", "title": "yeni", "content": "ilk madde"})
+    assert (_notes_dir(vault) / "yeni.md").is_file()
+
+
+def test_open_note_uses_obsidian_uri(monkeypatch, tmp_path):
+    _patch_vault(monkeypatch, tmp_path)
+    notes_module.CreateNoteTool().execute({"lang": "tr", "title": "acilacak", "content": "x"})
+    opened: list[str] = []
+    monkeypatch.setattr(notes_module.os, "startfile", opened.append)
+
+    result = notes_module.OpenNoteTool().execute({"lang": "tr", "title": "acilacak"})
+    assert opened and opened[0].startswith("obsidian://open?vault=")
+    assert "acilacak" in opened[0]
+    assert "açtım" in result.lower()
+
+
+def test_merge_notes_combines_and_archives(monkeypatch, tmp_path):
+    vault = _patch_vault(monkeypatch, tmp_path)
+    c = notes_module.CreateNoteTool()
+    c.execute({"lang": "tr", "title": "a", "content": "alfa"})
+    c.execute({"lang": "tr", "title": "b", "content": "beta"})
+
+    result = notes_module.MergeNotesTool().execute(
+        {"lang": "tr", "sources": "a, b", "target": "birlesik"}
+    )
+    merged = (_notes_dir(vault) / "birlesik.md").read_text(encoding="utf-8")
+    assert "alfa" in merged and "beta" in merged
+    assert not (_notes_dir(vault) / "a.md").exists()  # arsive tasindi
+    assert (_notes_dir(vault) / notes_module.ARCHIVE_SUBDIR / "a.md").is_file()
+    assert "2" in result
+
+
+def test_merge_notes_needs_two_existing(monkeypatch, tmp_path):
+    _patch_vault(monkeypatch, tmp_path)
+    notes_module.CreateNoteTool().execute({"lang": "tr", "title": "tek", "content": "x"})
+
+    result = notes_module.MergeNotesTool().execute(
+        {"lang": "tr", "sources": "tek, olmayan", "target": "hedef"}
+    )
+    assert "iki" in result.lower() or "two" in result.lower()
+
+
 def test_create_note_blocked_by_unsafe_path(monkeypatch, tmp_path):
     """is_path_safe() False donerse not YAZILMAMALI - security.yaml yanlis
     yapilandirilsa bile vault disina yazma engellenir (bkz. modul docstring'i)."""

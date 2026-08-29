@@ -43,7 +43,14 @@ from src.jarvis.tools.media_tool import (
     SearchMusicTool,
     SetVolumeTool,
 )
-from src.jarvis.tools.notes_tool import CreateNoteTool, ReadNotesTool
+from src.jarvis.tools.notes_tool import (
+    AppendNoteTool,
+    CreateNoteTool,
+    ListNotesTool,
+    MergeNotesTool,
+    OpenNoteTool,
+    ReadNotesTool,
+)
 from src.jarvis.tools.project_tool import CreateProjectTool
 from src.jarvis.tools.system_info import SystemInfoTool
 from src.jarvis.tools.terminal_tool import LaunchAppTool, RunCommandTool
@@ -55,6 +62,10 @@ TOOL_REGISTRY: dict[str, Tool] = {
     for tool in (
         CreateNoteTool(),
         ReadNotesTool(),
+        ListNotesTool(),
+        AppendNoteTool(),
+        OpenNoteTool(),
+        MergeNotesTool(),
         ListFilesTool(),
         RunCommandTool(),
         LaunchAppTool(),
