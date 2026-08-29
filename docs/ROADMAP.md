@@ -1474,6 +1474,9 @@ döngüsüne dokunmaz.
 
 - Bu dosya `CLAUDE.md`'nin 200 satır kısıtından muaf; detay burada birikir.
   Mimari tasarımın "nasıl/neden"i için `docs/ARCHITECTURE.md`'ye bak.
+- Performans/kararlılık sorunları ve bug takibi (feature değil) ayrı bir canlı
+  listede: `docs/optimizasyon-plani.md` — canlı test bulguları ve session-arası
+  optimizasyon backlog'u oraya eklenir.
 - Her adım tamamlandığında durum etiketini (✅/🟡/⬜) güncelle, böylece
   `CLAUDE.md`'deki kısa özetle senkron kalır.
 - Yeni bir adıma başlarken önce **plan mode** ile keşif yap (bkz. rehber
