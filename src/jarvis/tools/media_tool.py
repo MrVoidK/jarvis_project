@@ -36,6 +36,7 @@ yok).
 import ctypes
 import logging
 import os
+import re
 from urllib.parse import quote
 
 from src.jarvis.core.risk import RiskLevel
@@ -55,15 +56,69 @@ KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP = 0x0002
 INPUT_KEYBOARD = 1
 
-# D3 (2026-08-29): tek VK_VOLUME_* keypress Windows'ta ~%2 - kullanici "sesi ac"
-# dedigimde "hicbir sey olmuyor / hep ayni" diye bildirdi. Varsayilan olarak
-# birkac kademe basiyoruz; opsiyonel `amount` ("biraz"/"cok"/sayi) ile ayarlanir.
-VOLUME_STEP_PRESSES = 4          # varsayilan (~%8)
-VOLUME_STEP_PRESSES_SMALL = 2   # "biraz" / "a bit"
-VOLUME_STEP_PRESSES_LARGE = 8   # "cok" / "a lot"
-VOLUME_STEP_MAX = 15            # sayisal `amount` bu degere kadar clamp'lenir
+# Ses seviyesi (2026-08-29 "pre-6.10 cilalama"): artik MUTLAK kontrol de var.
+# `pycaw` (Windows Core Audio) ile mevcut seviye okunup yuzde-puani cinsinden
+# ayarlaniyor - "sesi 84 yap" (SetVolumeTool), "biraz/cok ac" (delta). pycaw
+# yoksa/COM hatasi varsa FAIL-SOFT: eski VK_VOLUME_* keypress yoluna dusulur
+# (her keypress ~%2, delta//2 kez basilir).
+VOLUME_DELTA_DEFAULT = 12  # yuzde puani - "sesi ac/kis" (amount verilmezse)
+VOLUME_DELTA_SMALL = 6     # "biraz" / "az" / "a bit"
+VOLUME_DELTA_LARGE = 30    # "cok" / "epey" / "a lot"
 _VOLUME_SMALL_WORDS = {"biraz", "az", "hafif", "a bit", "a little", "slightly"}
-_VOLUME_LARGE_WORDS = {"cok", "çok", "fazla", "epey", "a lot", "lots", "way up", "much"}
+_VOLUME_LARGE_WORDS = {
+    "cok", "çok", "fazla", "epey", "baya", "bayagi", "bayağı",
+    "a lot", "lots", "way up", "much", "lot",
+}
+
+_VOLUME_ENDPOINT_UNSET = object()
+_volume_endpoint = _VOLUME_ENDPOINT_UNSET  # lazy: ilk kullanimda pycaw denenir
+
+
+def _get_volume_endpoint():
+    """pycaw `IAudioEndpointVolume`'i lazy olusturur - FAIL-SOFT (pycaw kurulu
+    degil / COM hatasi / ses aygiti yok -> None; cagiranlar keypress'e duser)."""
+    global _volume_endpoint
+    if _volume_endpoint is _VOLUME_ENDPOINT_UNSET:
+        try:
+            from ctypes import POINTER, cast
+
+            from comtypes import CLSCTX_ALL
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+
+            speakers = AudioUtilities.GetSpeakers()
+            interface = speakers.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            _volume_endpoint = cast(interface, POINTER(IAudioEndpointVolume))
+        except Exception as exc:  # noqa: BLE001 - fail-soft (bkz. yukaridaki not)
+            logger.warning("Mutlak ses kontrolu kullanilamiyor (pycaw): %s", exc)
+            _volume_endpoint = None
+    return _volume_endpoint
+
+
+def pct_control_available() -> bool:
+    return _get_volume_endpoint() is not None
+
+
+def _get_volume_percent() -> "int | None":
+    endpoint = _get_volume_endpoint()
+    if endpoint is None:
+        return None
+    try:
+        return round(endpoint.GetMasterVolumeLevelScalar() * 100)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Ses seviyesi okunamadi: %s", exc)
+        return None
+
+
+def _set_volume_percent(pct: int) -> bool:
+    endpoint = _get_volume_endpoint()
+    if endpoint is None:
+        return False
+    try:
+        endpoint.SetMasterVolumeLevelScalar(max(0, min(100, int(pct))) / 100.0, None)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Ses seviyesi ayarlanamadi: %s", exc)
+        return False
 
 
 _ULONG_PTR = ctypes.c_uint64 if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_uint32
@@ -164,30 +219,57 @@ _PLAY_PAUSE_MESSAGES = {
 }
 _NEXT_TRACK_MESSAGES = {"tr": "Sonraki şarkıya geçtim.", "en": "Skipped to the next track."}
 _PREV_TRACK_MESSAGES = {"tr": "Önceki şarkıya döndüm.", "en": "Went back to the previous track."}
-_VOLUME_UP_MESSAGES = {"tr": "Sesi biraz açtım.", "en": "I've turned the volume up a bit."}
-_VOLUME_DOWN_MESSAGES = {"tr": "Sesi biraz kıstım.", "en": "I've turned the volume down a bit."}
+_VOLUME_UP_MESSAGES = {"tr": "Sesi açtım.", "en": "I've turned the volume up."}
+_VOLUME_DOWN_MESSAGES = {"tr": "Sesi kıstım.", "en": "I've turned the volume down."}
+_VOLUME_SET_MESSAGES = {"tr": "Sesi %{pct} yaptım.", "en": "Volume is now {pct}%."}
+_VOLUME_ABS_UNAVAILABLE_MESSAGES = {
+    "tr": "Kesin ses seviyesi kontrolü şu an kullanılamıyor, sadece kademeli açıp kısabilirim.",
+    "en": "Exact volume control isn't available right now; I can only step it up or down.",
+}
+_VOLUME_BAD_LEVEL_MESSAGES = {
+    "tr": "Hangi seviyeye ayarlayacağımı anlayamadım (0-100 arası bir sayı söyleyin).",
+    "en": "I didn't catch the level to set (say a number from 0 to 100).",
+}
 
 
 def _localized(messages: dict[str, str], lang: str) -> str:
     return messages.get(lang, messages["en"])
 
 
-def _resolve_volume_steps(params: dict) -> int:
-    """`amount` parametresinden kademe (keypress) sayisi cikarir (D3).
+def _resolve_volume_delta(params: dict) -> int:
+    """`amount` parametresinden yuzde-puani cinsinden (isaretsiz) miktar cikarir.
 
-    'biraz'/'a bit' -> 2, 'cok'/'a lot' -> 8, bir sayi -> 1..VOLUME_STEP_MAX
-    clamp, aksi halde (yok/taninmayan) -> VOLUME_STEP_PRESSES varsayilani.
+    'biraz'/'az' -> VOLUME_DELTA_SMALL, 'cok'/'epey' -> VOLUME_DELTA_LARGE,
+    icinde bir sayi -> 1..100 clamp, aksi halde -> VOLUME_DELTA_DEFAULT.
     """
     amount = str(params.get("amount") or "").strip().lower()
     if not amount:
-        return VOLUME_STEP_PRESSES
-    if amount.isdigit():
-        return max(1, min(VOLUME_STEP_MAX, int(amount)))
+        return VOLUME_DELTA_DEFAULT
+    digits = re.sub(r"[^\d]", "", amount)
+    if digits:
+        return max(1, min(100, int(digits)))
     if amount in _VOLUME_SMALL_WORDS:
-        return VOLUME_STEP_PRESSES_SMALL
+        return VOLUME_DELTA_SMALL
     if amount in _VOLUME_LARGE_WORDS:
-        return VOLUME_STEP_PRESSES_LARGE
-    return VOLUME_STEP_PRESSES
+        return VOLUME_DELTA_LARGE
+    return VOLUME_DELTA_DEFAULT
+
+
+def _apply_relative_volume(direction: int, params: dict, lang: str) -> str:
+    """direction = +1 (ac) / -1 (kis). pycaw varsa mevcut seviye + direction*delta
+    olarak ayarlar ve yeni yuzdeyi soyler; yoksa keypress'e duser."""
+    delta = _resolve_volume_delta(params)
+    current = _get_volume_percent()
+    if current is not None:
+        target = max(0, min(100, current + direction * delta))
+        if _set_volume_percent(target):
+            logger.info("Ses seviyesi %d%% -> %d%%.", current, target)
+            return _localized(_VOLUME_SET_MESSAGES, lang).format(pct=target)
+    vk = VK_VOLUME_UP if direction > 0 else VK_VOLUME_DOWN
+    presses = max(1, delta // 2)  # her keypress ~%2
+    _send_vk(vk, times=presses)
+    logger.info("Medya ses tusu gonderildi (keypress fallback, %d kez).", presses)
+    return _localized(_VOLUME_UP_MESSAGES if direction > 0 else _VOLUME_DOWN_MESSAGES, lang)
 
 
 class MediaPlayPauseTool(Tool):
@@ -259,25 +341,23 @@ class MediaVolumeUpTool(Tool):
 
     name = "media_volume_up"
     description = (
-        "Sistem ses seviyesini artirir. Kullanici 'sesi ac', 'sesi artir', "
-        "'sesi yukselt', 'volume up', 'louder', 'turn it up' gibi bir sey "
-        "soyledigi HER SEFERINDE bu araci kullan. Kullanici 'biraz' veya 'cok' "
-        "derse bunu `amount` olarak gecir."
+        "Sistem ses seviyesini GORECELI olarak artirir ('biraz', 'cok' veya "
+        "belirtilmezse orta kademe). Kullanici 'sesi ac', 'sesi artir', 'volume "
+        "up', 'louder' derse kullan. 'biraz'/'az'/'cok' ifadesini `amount` olarak "
+        "gecir. KESIN bir seviye ('sesi 50 yap', 'set volume to 30') icin bunu "
+        "DEGIL set_volume kullan."
     )
     risk_level = RiskLevel.LOW
     parameters_schema: dict = {
         "amount": {
             "type": "string",
-            "description": "Istege bagli: 'biraz', 'cok' veya bir kademe sayisi.",
+            "description": "Istege bagli: 'biraz', 'cok' veya yuzde-puani miktari.",
         }
     }
     required_parameters: list[str] = []
 
     def execute(self, params: dict) -> str:
-        lang = params.get("lang", "en")
-        _send_vk(VK_VOLUME_UP, times=_resolve_volume_steps(params))
-        logger.info("Medya ses-artir tusu gonderildi.")
-        return _localized(_VOLUME_UP_MESSAGES, lang)
+        return _apply_relative_volume(+1, params, params.get("lang", "en"))
 
 
 class MediaVolumeDownTool(Tool):
@@ -285,25 +365,50 @@ class MediaVolumeDownTool(Tool):
 
     name = "media_volume_down"
     description = (
-        "Sistem ses seviyesini azaltir. Kullanici 'sesi kis', 'sesi azalt', "
-        "'sesi dusur', 'volume down', 'quieter', 'turn it down' gibi bir "
-        "sey soyledigi HER SEFERINDE bu araci kullan. Kullanici 'biraz' veya "
-        "'cok' derse bunu `amount` olarak gecir."
+        "Sistem ses seviyesini GORECELI olarak azaltir ('biraz', 'cok' veya "
+        "belirtilmezse orta kademe). Kullanici 'sesi kis', 'sesi azalt', 'volume "
+        "down', 'quieter' derse kullan. 'biraz'/'az'/'cok' ifadesini `amount` "
+        "olarak gecir. KESIN bir seviye icin set_volume kullan."
     )
     risk_level = RiskLevel.LOW
     parameters_schema: dict = {
         "amount": {
             "type": "string",
-            "description": "Istege bagli: 'biraz', 'cok' veya bir kademe sayisi.",
+            "description": "Istege bagli: 'biraz', 'cok' veya yuzde-puani miktari.",
         }
     }
     required_parameters: list[str] = []
 
     def execute(self, params: dict) -> str:
+        return _apply_relative_volume(-1, params, params.get("lang", "en"))
+
+
+class SetVolumeTool(Tool):
+    """Sistem sesini KESIN bir yuzdeye ayarlar (pycaw; yoksa fail-soft mesaj)."""
+
+    name = "set_volume"
+    description = (
+        "Sistem ses seviyesini KESIN bir yuzdeye ayarlar. Kullanici BELIRLI bir "
+        "seviye soyledigi zaman kullan: 'sesi 84 yap', 'sesi %50 yap', 'set "
+        "volume to 30', 'sesi yariya indir' (level=50). Sadece 'ac'/'kis'/'biraz'/"
+        "'cok' derse bunu DEGIL media_volume_up / media_volume_down kullan."
+    )
+    risk_level = RiskLevel.LOW
+    parameters_schema: dict = {
+        "level": {"type": "string", "description": "Hedef ses seviyesi, 0-100 arasi bir sayi."}
+    }
+    required_parameters: list[str] = ["level"]
+
+    def execute(self, params: dict) -> str:
         lang = params.get("lang", "en")
-        _send_vk(VK_VOLUME_DOWN, times=_resolve_volume_steps(params))
-        logger.info("Medya ses-azalt tusu gonderildi.")
-        return _localized(_VOLUME_DOWN_MESSAGES, lang)
+        digits = re.sub(r"[^\d]", "", str(params.get("level") or ""))
+        if not digits:
+            return _localized(_VOLUME_BAD_LEVEL_MESSAGES, lang)
+        level = max(0, min(100, int(digits)))
+        if _set_volume_percent(level):
+            logger.info("Ses seviyesi %d%% olarak ayarlandi.", level)
+            return _localized(_VOLUME_SET_MESSAGES, lang).format(pct=level)
+        return _localized(_VOLUME_ABS_UNAVAILABLE_MESSAGES, lang)
 
 
 _EMPTY_QUERY_MESSAGES = {

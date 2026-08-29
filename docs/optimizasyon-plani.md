@@ -234,6 +234,22 @@ Tüm kümeler commit'lendi (`9c8ca5a`→`b598f0d`); `python -m pytest tests/`
 
 ---
 
+## 2026-08-29 "Pre-6.10 cilalama" turu (kullanıcı talebi, uzaktan uygulandı)
+
+Hedef: 6.10 orkestral agentic sisteme geçmeden önce Alexa/Siri seviyesi
+asistanlık — daha hızlı, daha isabetli algı, mutlak ses kontrolü, etkili not
+sistemi.
+
+- **P1 — Ses seviyesi: mutlak + kademe** ✅ `media_tool.py` (+`pycaw`/`comtypes`).
+  `pycaw` ile Windows Core Audio: `_get/_set_volume_percent()` fail-soft (pycaw
+  yok → keypress fallback). `media_volume_up/down` artık % delta (biraz=6,
+  varsayılan=12, çok=30) uygular ve yeni seviyeyi söyler. Yeni **`set_volume`**
+  aracı (`level` 0-100): "sesi 84 yap" / "set volume to 30". Router few-shot.
+  Commit `<P1>`.
+- **P2 — Not sistemi v2** ⬜ (sırada)
+- **P3 — STT algı (`hotwords`)** ⬜
+- **P4 — Hız: tur-sonu `remember()` arka plana** ⬜
+
 ## Yeni bulgular (backlog)
 
 _(Yeni bug/optimizasyon sorunları buraya tarihli eklenir. Format: `- [YYYY-MM-DD]

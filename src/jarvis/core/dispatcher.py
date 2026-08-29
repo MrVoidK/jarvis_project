@@ -176,8 +176,10 @@ _ROUTER_SYSTEM_PROMPT = (
     f'- "Jarvis, wake up" / "adim Tony" -> {_NO_TOOL_FUNCTION_NAME}\n'
     f'- "onayini bekliyorum, terminale bak" -> {_NO_TOOL_FUNCTION_NAME} '
     "(mentions a terminal, dictates nothing)\n"
-    '- "sesi ac" / "sesi yukselt" / "louder" -> media_volume_up\n'
-    '- "sesi kis" / "sesi dusur" / "sesi azalt" / "quieter" -> media_volume_down\n'
+    '- "sesi ac" / "sesi yukselt" / "louder" -> media_volume_up '
+    '(| "sesi biraz ac" -> media_volume_up amount=biraz | "sesi cok ac" -> amount=cok)\n'
+    '- "sesi kis" / "sesi dusur" / "quieter" -> media_volume_down\n'
+    '- "sesi 84 yap" / "sesi %50 yap" / "set volume to 30" -> set_volume level=84\n'
     '- "siradaki sarki" / "siradaki sarkiya gec" / "next track" / "skip" -> media_next_track\n'
     '- "onceki sarki" / "geri git" / "previous track" -> media_previous_track\n'
     '- "muzigi durdur" / "duraklat" / "pause" / "sarkiyi devam ettir" -> media_play_pause '

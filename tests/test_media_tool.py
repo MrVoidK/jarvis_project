@@ -79,36 +79,73 @@ def test_previous_track_sends_correct_vk(monkeypatch):
     assert "previous" in result.lower()
 
 
-def test_volume_up_sends_default_step_presses(monkeypatch):
-    # D3 (2026-08-29): tek keypress (~%2) belirsiz geliyordu - varsayilan
-    # VOLUME_STEP_PRESSES kadar bas.
+# --- ses seviyesi: mutlak (pycaw) + goreceli (2026-08-29 pre-6.10) ---
+
+
+def _no_pct_control(monkeypatch):
+    """pycaw yolunu kapat - keypress fallback'ini test et."""
+    monkeypatch.setattr(media_module, "_get_volume_percent", lambda: None)
+    monkeypatch.setattr(media_module, "_set_volume_percent", lambda pct: False)
+
+
+def _fake_pct_control(monkeypatch, current: int):
+    """pycaw'i taklit et - _get_volume_percent sabit, _set_volume_percent'i yakala."""
+    sets: list[int] = []
+    monkeypatch.setattr(media_module, "_get_volume_percent", lambda: current)
+    monkeypatch.setattr(media_module, "_set_volume_percent", lambda pct: (sets.append(pct), True)[1])
+    return sets
+
+
+def test_volume_up_uses_pct_control_when_available(monkeypatch):
+    sets = _fake_pct_control(monkeypatch, current=50)
+    result = media_module.MediaVolumeUpTool().execute({"lang": "en"})
+    assert sets == [50 + media_module.VOLUME_DELTA_DEFAULT]
+    assert "%" in result or str(50 + media_module.VOLUME_DELTA_DEFAULT) in result
+
+
+def test_volume_up_cok_adds_large_delta(monkeypatch):
+    sets = _fake_pct_control(monkeypatch, current=50)
+    media_module.MediaVolumeUpTool().execute({"lang": "tr", "amount": "çok"})
+    assert sets == [50 + media_module.VOLUME_DELTA_LARGE]
+
+
+def test_volume_down_biraz_subtracts_small_delta_and_clamps(monkeypatch):
+    sets = _fake_pct_control(monkeypatch, current=3)
+    media_module.MediaVolumeDownTool().execute({"lang": "tr", "amount": "biraz"})
+    assert sets == [0]  # 3 - 6 -> clamp 0
+
+
+def test_volume_up_falls_back_to_keypress_without_pct_control(monkeypatch):
+    _no_pct_control(monkeypatch)
     calls = _capture_vk(monkeypatch)
     media_module.MediaVolumeUpTool().execute({"lang": "en"})
-    assert calls == [media_module.VK_VOLUME_UP] * media_module.VOLUME_STEP_PRESSES
+    # delta 12 -> 12//2 = 6 keypress
+    assert calls == [media_module.VK_VOLUME_UP] * (media_module.VOLUME_DELTA_DEFAULT // 2)
 
 
-def test_volume_down_sends_default_step_presses(monkeypatch):
-    calls = _capture_vk(monkeypatch)
-    media_module.MediaVolumeDownTool().execute({"lang": "en"})
-    assert calls == [media_module.VK_VOLUME_DOWN] * media_module.VOLUME_STEP_PRESSES
+def test_set_volume_sets_exact_percent(monkeypatch):
+    sets = _fake_pct_control(monkeypatch, current=20)
+    result = media_module.SetVolumeTool().execute({"lang": "tr", "level": "84"})
+    assert sets == [84]
+    assert "84" in result
 
 
-def test_volume_amount_biraz_sends_fewer_presses(monkeypatch):
-    calls = _capture_vk(monkeypatch)
-    media_module.MediaVolumeUpTool().execute({"lang": "tr", "amount": "biraz"})
-    assert calls == [media_module.VK_VOLUME_UP] * 2
+def test_set_volume_parses_percent_sign_and_clamps(monkeypatch):
+    sets = _fake_pct_control(monkeypatch, current=20)
+    media_module.SetVolumeTool().execute({"lang": "en", "level": "%150"})
+    assert sets == [100]
 
 
-def test_volume_amount_cok_sends_more_presses(monkeypatch):
-    calls = _capture_vk(monkeypatch)
-    media_module.MediaVolumeUpTool().execute({"lang": "tr", "amount": "çok"})
-    assert calls == [media_module.VK_VOLUME_UP] * 8
+def test_set_volume_unavailable_returns_soft_message(monkeypatch):
+    _no_pct_control(monkeypatch)
+    result = media_module.SetVolumeTool().execute({"lang": "en", "level": "50"})
+    assert "available" in result.lower() or "kullanıl" in result.lower()
 
 
-def test_volume_amount_integer_is_clamped(monkeypatch):
-    calls = _capture_vk(monkeypatch)
-    media_module.MediaVolumeDownTool().execute({"lang": "en", "amount": "999"})
-    assert calls == [media_module.VK_VOLUME_DOWN] * 15  # clamp 1..15
+def test_set_volume_bad_level(monkeypatch):
+    _fake_pct_control(monkeypatch, current=20)
+    result = media_module.SetVolumeTool().execute({"lang": "en", "level": "loud"})
+    assert "didn't catch" in result.lower() or "anlayamad" in result.lower()
 
 
 def test_search_music_opens_spotify_search_uri_when_track_not_found(monkeypatch):
@@ -179,5 +216,6 @@ def test_all_media_tools_are_low_risk():
         media_module.MediaPreviousTrackTool,
         media_module.MediaVolumeUpTool,
         media_module.MediaVolumeDownTool,
+        media_module.SetVolumeTool,
     ):
         assert tool_cls.risk_level is RiskLevel.LOW
