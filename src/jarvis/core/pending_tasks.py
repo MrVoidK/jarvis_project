@@ -38,6 +38,27 @@ def record_pending(
         return None
 
 
+def set_status(task_id: int, status: str, db_path: Optional[str] = None) -> bool:
+    """Bir `tasks` satirinin status'unu gunceller (G1, 2026-08-29 - `/deny` icin
+    'denied'). Basari -> True; satir yok / DB hatasi -> False (fail-soft).
+
+    NOT: `status` migrations/002'deki CHECK'e uymali
+    ('pending'|'approved'|'denied'|'done'|'error') - uymayan bir deger
+    IntegrityError firlatir, burada yakalanip False donulur.
+    """
+    try:
+        conn = db_module.get_connection(db_path=db_path)
+        with db_module.write_lock():
+            cur = conn.execute(
+                "UPDATE tasks SET status = ? WHERE id = ?", (status, int(task_id))
+            )
+            conn.commit()
+        return cur.rowcount > 0
+    except Exception as exc:  # noqa: BLE001 - fail-soft (bkz. modul docstring'i)
+        logger.warning("set_status basarisiz (yok sayildi): %s", exc)
+        return False
+
+
 def list_pending(limit: int = 10, db_path: Optional[str] = None) -> list[dict]:
     """status='pending' satirlar, en yeni once. Hata -> []."""
     try:

@@ -1,7 +1,7 @@
 """core/pending_tasks.py - tasks tablosuna fail-soft bekleyen-onay kaydi."""
 
 from src.jarvis.core import db as db_module
-from src.jarvis.core.pending_tasks import record_pending, list_pending
+from src.jarvis.core.pending_tasks import list_pending, record_pending, set_status
 
 
 def test_record_pending_writes_row(tmp_path):
@@ -27,6 +27,27 @@ def test_list_pending_newest_first_and_limit(tmp_path):
 
 def test_list_pending_empty_db(tmp_path):
     assert list_pending(db_path=str(tmp_path / "t.db")) == []
+
+
+def test_set_status_removes_from_pending(tmp_path):
+    dbp = str(tmp_path / "t.db")
+    task_id = record_pending("scheduled", "bayat gorev", {}, db_path=dbp)
+
+    assert set_status(task_id, "denied", db_path=dbp) is True
+    assert list_pending(db_path=dbp) == []  # artik 'pending' degil
+
+
+def test_set_status_unknown_id_returns_false(tmp_path):
+    assert set_status(999, "denied", db_path=str(tmp_path / "t.db")) is False
+
+
+def test_set_status_failsoft(monkeypatch):
+    from src.jarvis.core import pending_tasks
+
+    monkeypatch.setattr(
+        pending_tasks.db_module, "get_connection", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db down"))
+    )
+    assert pending_tasks.set_status(1, "denied") is False
 
 
 def test_record_pending_failsoft(monkeypatch):

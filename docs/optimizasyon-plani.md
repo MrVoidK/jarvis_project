@@ -185,23 +185,29 @@ Almanca → en fonetiği (Jarvis kapsamı dışı).
 **Test:** yeni `test_delegate_complex.py` +3 (tamamlama + step cap + sabit).
 Full suite 248 pass / 23 skip.
 
-**Commit:** `<F>`
+**Commit:** `8eabec7`
 
 ---
 
-## Cluster G — Kozmetik ⬜
+## Cluster G — Kozmetik ✅
 
 **Belirti:** `/status` 2026-08-28 bayat pending onayları gösteriyor; clap
 near-miss log spam.
 
-**Yapılacaklar:**
-- [ ] G1: `pending_tasks.set_status(id, status)` + `/dismiss <id>` / `/dismiss all`;
-  `_cmd_status` pending satırına yaş.
-- [ ] G2: `listener.py` near-miss logları `info→debug`.
+**Yapıldı:**
+- [x] G1: `pending_tasks.set_status(id, status)` (fail-soft). `cli_commands.py`
+  `/deny <id>` / `/deny all` → `status='denied'` (migrations/002 CHECK'inde
+  zaten var; `dismissed` yok). `_cmd_status` pending satırına `_relative_age()`
+  ("3 gün önce"). Otomatik `/approve`+çalıştırma roadmap 6.6'da ertelendi —
+  bu sadece listeden düşürme.
+- [x] G2: `listener.py` clap near-miss logları (`info→debug`) — müzik/konuşma
+  açıkken her chunk'ta basılıp logu boğuyordu. Başarılı "Cift alkis algilandi"
+  `info` kaldı.
 
-**Test:** `test_pending_tasks.py` (set_status), `test_cli_commands.py` (/dismiss).
+**Test:** `test_pending_tasks.py` +3, `test_cli_commands.py` +3. Full suite
+254 pass / 23 skip.
 
-**Commit:** —
+**Commit:** `<G>`
 
 ---
 

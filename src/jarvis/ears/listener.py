@@ -415,10 +415,11 @@ def _wait_for_wakeword(
         elif not is_impulsive:
             # Yeterince yuksek ama yeterince "keskin" degil - uzaktan gelen bir alkis
             # (oda yankisi crest factor'u dusurur) veya impulsif olmayan bir gurultu
-            # patlamasi (bagirma vb.) olabilir. INFO seviyesinde logluyoruz ki
-            # CLAP_MIN_CREST_FACTOR ayari gerekip gerekmedigi gercek kullanimda
-            # gorulebilsin.
-            logger.info(
+            # patlamasi (bagirma vb.) olabilir. G2 (2026-08-29): DEBUG seviyesine
+            # cekildi - normal kullanimda (muzik/konusma acikken) her chunk'ta
+            # basilip logu bogüyordu; CLAP_MIN_CREST_FACTOR ayari gerektiginde
+            # `/debug` ile gorulebilir.
+            logger.debug(
                 "Yuksek ama yeterince impulsif degil (rms=%.0f, esik=%.0f, crest=%.1f, "
                 "gereken=%.1f) - alkis sayilmadi.",
                 rms, dynamic_threshold, crest_factor, CLAP_MIN_CREST_FACTOR,
@@ -437,7 +438,7 @@ def _wait_for_wakeword(
                 )
                 return chunk
             if last_clap_time is not None:
-                logger.info(
+                logger.debug(  # G2: near-miss, DEBUG (bkz. yukaridaki not)
                     "Yuksek+impulsif chunk algilandi ama cift alkis penceresi disinda "
                     "(rms=%.0f, crest=%.1f, onceki alkistan %.0fms sonra - pencere %d-%dms).",
                     rms,

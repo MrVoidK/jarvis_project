@@ -325,3 +325,36 @@ def test_status_no_pending_line(monkeypatch, capsys):
     from src.jarvis.core.cli_commands import _cmd_status
     _cmd_status([{"role": "system", "content": "x"}])
     assert "Bekleyen onaylar" in capsys.readouterr().out
+
+
+def test_deny_command_sets_status_by_id(monkeypatch):
+    """G1 (2026-08-29): `/deny <id>` bayat bir pending kaydi listeden dusurur
+    (status -> 'denied'). Otomatik calistirma YOK (roadmap 6.6)."""
+    from src.jarvis.core import pending_tasks
+
+    calls: list[tuple] = []
+    monkeypatch.setattr(pending_tasks, "set_status", lambda tid, status, **k: calls.append((tid, status)) or True)
+
+    handle_cli_command("/deny 3", history=[{"role": "system", "content": "x"}])
+
+    assert calls == [(3, "denied")]
+
+
+def test_deny_all_denies_every_pending(monkeypatch):
+    from src.jarvis.core import pending_tasks
+
+    monkeypatch.setattr(
+        pending_tasks, "list_pending",
+        lambda **k: [{"id": 1, "ts": "", "source": "scheduled", "text": "a", "status": "pending"},
+                     {"id": 2, "ts": "", "source": "scheduled", "text": "b", "status": "pending"}],
+    )
+    denied: list[int] = []
+    monkeypatch.setattr(pending_tasks, "set_status", lambda tid, status, **k: denied.append(tid) or True)
+
+    handle_cli_command("/deny all", history=[{"role": "system", "content": "x"}])
+
+    assert sorted(denied) == [1, 2]
+
+
+def test_deny_command_in_commands_help():
+    assert any(key.startswith("/deny") for key in _COMMANDS)

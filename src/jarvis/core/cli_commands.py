@@ -39,6 +39,7 @@ _COMMANDS: dict[str, str] = {
     "/debug": "Ayrıntılı (DEBUG) log seviyesini açar/kapatır.",
     "/clear": "Sohbet geçmişini sıfırlar ve ekranı temizler.",
     "/test <araç_adı> [key=value ...]": "Router'ı atlayıp doğrudan bir aracı çalıştırır.",
+    "/deny <id> | all": "Bekleyen bir onay kaydını (scheduled/continuous) listeden düşürür (çalıştırmaz).",
     "/exit": "Jarvis'i güvenli şekilde kapatır (Ctrl+C ile aynı, ayrıca sesli 'sistemi kapat' ile de tetiklenir).",
 }
 
@@ -80,6 +81,8 @@ def handle_cli_command(
             pending=pending,
             speaking_event=speaking_event,
         )
+    elif command == "/deny":
+        _cmd_deny(argument)
     elif command == "/exit":
         _cmd_exit(stop_event)
     else:
@@ -137,15 +140,69 @@ def _cmd_status(history: list[dict]) -> None:
     if pending_rows:
         # "son 5" - list_pending(limit=5) sabit tavan; ham sayiyi yazmak
         # (ör. "(5)") 5'ten fazla bekleyen varsa yaniltir.
-        lines.append("[bold]Bekleyen onaylar (son 5):[/bold]")
+        lines.append("[bold]Bekleyen onaylar (son 5) - '/deny <id>' ile düşür:[/bold]")
         for row in pending_rows:
             text = row["text"]
             snippet = (text[:60] + "…") if len(text) > 60 else text
             ts = str(row.get("ts", ""))[:16]  # "2026-08-28T14:23" (tarih+saat, saniyesiz)
-            lines.append(f"  - #{row['id']} · {ts} · {row['source']} · {snippet}")
+            age = _relative_age(str(row.get("ts", "")))
+            lines.append(f"  - #{row['id']} · {ts} ({age}) · {row['source']} · {snippet}")
     else:
         lines.append("[bold]Bekleyen onaylar:[/bold] yok")
     print_panel("Jarvis Durumu", "\n".join(lines), border_style="bold cyan")
+
+
+def _relative_age(iso_ts: str) -> str:
+    """ISO timestamp'ten kabaca "3 gün önce" / "5 saat önce" üretir - `_cmd_status`
+    bayat pending kayitlarini gorunur kilsin diye (G1). Parse edilemezse "?"."""
+    from datetime import datetime, timezone
+
+    try:
+        then = datetime.fromisoformat(iso_ts)
+    except (ValueError, TypeError):
+        return "?"
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=timezone.utc)
+    delta = datetime.now(timezone.utc) - then
+    secs = int(delta.total_seconds())
+    if secs < 60:
+        return "az önce"
+    if secs < 3600:
+        return f"{secs // 60} dk önce"
+    if secs < 86400:
+        return f"{secs // 3600} saat önce"
+    return f"{secs // 86400} gün önce"
+
+
+def _cmd_deny(argument: str) -> None:
+    """`/deny <id>` veya `/deny all` - bekleyen bir onay kaydini (scheduled/
+    continuous kaynakli MEDIUM+ eylem) listeden dusurur (status -> 'denied').
+
+    ARACI CALISTIRMAZ - `/approve` + otomatik calistirma roadmap 6.6'da
+    ertelendi; bu sadece bayat kayitlarin `/status`'i kirletmesini onler.
+    """
+    arg = argument.strip().lower()
+    if not arg:
+        print_system("Kullanım: /deny <id>  veya  /deny all", level="warning")
+        return
+
+    if arg == "all":
+        rows = pending_tasks.list_pending(limit=1000)
+        if not rows:
+            print_system("Bekleyen onay yok.", level="info")
+            return
+        done = sum(1 for row in rows if pending_tasks.set_status(row["id"], "denied"))
+        print_system(f"{done} bekleyen onay düşürüldü.", level="success")
+        return
+
+    if not arg.isdigit():
+        print_system(f"Geçersiz id: {argument!r} (sayı ya da 'all' bekleniyor).", level="error")
+        return
+
+    if pending_tasks.set_status(int(arg), "denied"):
+        print_system(f"#{arg} bekleyen onaydan düşürüldü.", level="success")
+    else:
+        print_system(f"#{arg} bulunamadı (zaten işlenmiş olabilir).", level="warning")
 
 
 def _cmd_debug() -> None:
