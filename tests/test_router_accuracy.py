@@ -69,11 +69,11 @@ _CASES = [
 
 @pytest.fixture(scope="module")
 def dispatcher():
-    from src.jarvis.adapters.agent_factory import check_ollama_connection
+    from src.jarvis.adapters.agent_factory import ROUTER_MODEL_NAME, check_ollama_connection
 
-    ok, msg = check_ollama_connection("qwen2.5:3b")
+    ok, msg = check_ollama_connection(ROUTER_MODEL_NAME)
     if not ok:
-        pytest.skip(f"Ollama/qwen2.5:3b erişilemiyor: {msg}")
+        pytest.skip(f"Ollama/{ROUTER_MODEL_NAME} erişilemiyor: {msg}")
     from src.jarvis.core.dispatcher import Dispatcher
 
     return Dispatcher()

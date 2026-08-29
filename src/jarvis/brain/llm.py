@@ -28,6 +28,14 @@ MAX_HISTORY_MESSAGES = 12
 # ortasindaki nokta erken bolunmeye yol acmaz (bosluk henuz gelmediyse).
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 
+# 2026-08-29 (canli test): hermes3:8b system_prompt'un "1-2 cumle" kuralini
+# yer yer YOK SAYIP 3+ cumlelik nutuklar veriyordu (bir yanit 22 sn TTS,
+# xtts 226-char TR limiti asildi). Sesli asistan icin sert bir tavan:
+# bu limitleri asinca stream TUKETIMI durur (Ollama arka planda uretmeye
+# devam etse de biz okumayiz), o ana kadarki cumleler history'ye yazilir.
+_MAX_CHAT_SENTENCES = 3
+_MAX_CHAT_CHARS = 360
+
 
 def _trim_history(history: list[dict]) -> list[dict]:
     """History'yi MAX_HISTORY_MESSAGES'e kirpar, system mesaji (index 0) her zaman kalir."""
@@ -64,6 +72,11 @@ def think_and_respond_stream(user_input: str, history: list[dict]) -> Iterator[s
     _ttft_ms: Optional[int] = None
     _trace_result = "success"
 
+    _capped = False
+
+    def _at_cap() -> bool:
+        return len(parts) >= _MAX_CHAT_SENTENCES or sum(len(p) for p in parts) >= _MAX_CHAT_CHARS
+
     try:
         buffer = ""
         # context=history: system + onceki turlar (bu turun user mesaji HENUZ
@@ -78,7 +91,10 @@ def think_and_respond_stream(user_input: str, history: list[dict]) -> Iterator[s
                 if sentence:
                     parts.append(sentence)
                     yield sentence
-        if buffer.strip():
+            if _at_cap():
+                _capped = True
+                break  # sesli asistan - 3 cumle/360 char sonrasi stream'i birak
+        if not _capped and buffer.strip():
             parts.append(buffer.strip())
             yield buffer.strip()
 

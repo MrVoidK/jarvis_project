@@ -92,9 +92,10 @@ def test_respond_stream_does_not_swallow_provider_errors(monkeypatch):
 
 
 def test_factory_maps_roles_to_models():
+    # 2026-08-29: mini router kaldirildi - tum roller hermes3:8b paylasiyor.
     assert AgentFactory.create("orchestrator")._model_name == "hermes3:8b"
     assert AgentFactory.create("tool_agent")._model_name == "hermes3:8b"
-    assert AgentFactory.create("router")._model_name == "qwen2.5:3b"
+    assert AgentFactory.create("router")._model_name == "hermes3:8b"
     assert isinstance(AgentFactory.create("deep_reasoning"), ClaudeCodeAdapter)
 
 
@@ -105,16 +106,17 @@ def test_factory_rejects_unknown_role():
         AgentFactory.create("bogus")
 
 
-# --- Faz 6.3: router keep_alive (VRAM) + ClaudeCodeAdapter ---
+# --- keep_alive mekanizmasi + ClaudeCodeAdapter ---
 
 
-def test_router_adapter_has_short_keep_alive():
-    assert AgentFactory.create("router")._keep_alive == "0"
-    assert AgentFactory.create("orchestrator")._keep_alive is None
-    assert AgentFactory.create("tool_agent")._keep_alive is None
+def test_all_roles_use_default_keep_alive():
+    # 2026-08-29: mini router kaldirildi; artik hicbir rol ozel keep_alive
+    # kullanmiyor (hermes3:8b paylasimli, sicak kaliyor).
+    for role in ("router", "orchestrator", "tool_agent"):
+        assert AgentFactory.create(role)._keep_alive is None
 
 
-def test_call_tools_passes_keep_alive_when_set(monkeypatch):
+def test_call_tools_passes_keep_alive_when_adapter_has_one(monkeypatch):
     captured = {}
 
     def _fake(model, messages, tools, options=None, keep_alive=None):
@@ -122,8 +124,9 @@ def test_call_tools_passes_keep_alive_when_set(monkeypatch):
         return {"message": {"tool_calls": []}}
 
     monkeypatch.setattr(agent_factory_module._CLIENT, "chat", _fake)
-    AgentFactory.create("router").call_tools("x", tools=[])
-    assert captured["keep_alive"] == "0"
+    # Mekanizma korundu: bir adapter'a keep_alive verilirse call_tools iletir.
+    agent_factory_module.OllamaAgentAdapter(keep_alive="2m").call_tools("x", tools=[])
+    assert captured["keep_alive"] == "2m"
 
 
 class _FakeProc:

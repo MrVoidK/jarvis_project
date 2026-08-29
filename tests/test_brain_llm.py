@@ -49,6 +49,23 @@ def test_stream_splits_raw_chunks_into_sentences(monkeypatch):
     assert out == ["Bir cümle.", "İki cümle.", "Üç."]
 
 
+def test_stream_caps_at_max_chat_sentences(monkeypatch):
+    # 2026-08-29: sesli asistan - 3 cumle sonrasi stream birakilir.
+    _patch_agent(
+        monkeypatch,
+        _StubAgent(chunks=["Bir. ", "İki. ", "Üç. ", "Dört. ", "Beş. ", "Altı."]),
+    )
+    out = list(think_and_respond_stream("anlat", _fresh_history()))
+    assert out == ["Bir.", "İki.", "Üç."]
+
+
+def test_stream_caps_at_max_chat_chars(monkeypatch):
+    long_sentence = "kelime " * 60 + "son."  # ~420 char, tek cumle
+    _patch_agent(monkeypatch, _StubAgent(chunks=[long_sentence, " Devam cümlesi."]))
+    out = list(think_and_respond_stream("anlat", _fresh_history()))
+    assert out == [long_sentence.strip()]  # ilk cumle >360 char -> ikinci hic gelmez
+
+
 def test_stream_appends_user_and_assistant_to_history(monkeypatch):
     _patch_agent(monkeypatch, _StubAgent(chunks=["Selam. ", "Nasılsın?"]))
     history = _fresh_history()

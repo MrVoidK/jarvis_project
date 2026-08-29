@@ -15,7 +15,6 @@ import logging
 import threading
 from typing import Optional
 
-from src.jarvis.adapters.agent_factory import ROUTER_MODEL_NAME
 from src.jarvis.adapters.tool_schema import validate_arguments
 from src.jarvis.brain.llm import MAX_HISTORY_MESSAGES, SYSTEM_PROMPT
 from src.jarvis.brain.llm import MODEL_NAME as BRAIN_MODEL_NAME
@@ -131,7 +130,7 @@ def _cmd_status(history: list[dict]) -> None:
     tools = all_tools()
     lines = [
         f"[bold]Ears:[/bold] faster-whisper turbo ({ears_device()})",
-        f"[bold]Brain:[/bold] {BRAIN_MODEL_NAME} · Router: {ROUTER_MODEL_NAME} (Ollama)",
+        f"[bold]Brain + Router:[/bold] {BRAIN_MODEL_NAME} (Ollama, paylaşımlı)",
         f"[bold]Mouth:[/bold] XTTS-v2 ({mouth_device()})",
         f"[bold]Debug modu:[/bold] {'AÇIK' if _debug_enabled else 'kapalı'}",
         f"[bold]Hafıza:[/bold] {max(len(history) - 1, 0)}/{MAX_HISTORY_MESSAGES} mesaj",
