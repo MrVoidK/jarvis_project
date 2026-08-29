@@ -306,9 +306,36 @@ Kullanıcı: "algısı hala kıt". `notes/test_notes.md` tam log. Öncelikli fix
 - **F — diakritiksiz kısa TR → yanlış 'en'** ✅ "sistem durumu nedir" → İngilizce
   cevap. `language.py` `_TR_MARKER_WORDS` seti.
 
-**Hâlâ açık (backlog):** TTS ilk-chunk spike'ları (1.5-3.5 sn, GPU çekişmesi);
-"önceki şarkıya geç **ve** notları oku" tek araç (→ 6.10); "Deneme 2" →
-`project_name: proje_2` (router çeviri, kabul).
+**Hâlâ açık (backlog):** "önceki şarkıya geç **ve** notları oku" tek araç
+(→ 6.10); "Deneme 2" → `project_name: proje_2` (router çeviri, kabul).
+
+### 2026-08-29 4. canlı test + STT araştırması
+
+Kullanıcı: "ses algılama sistemi hala berbat". İnternet araştırması yapıldı
+(SYSTRAN issue'ları + prompt-length WER çalışmaları, HF Turkish modelleri).
+
+**Çalışan:** "sesi 84 yap" → gerçekten %84 (pycaw ✅), "shkfkjhdsf" → temiz
+"Anlamadım" (B ✅), "sistem durumu nedir" → Türkçe cevap (F ✅), router 2.
+turdan sonra 179ms (keep_alive ✅).
+**Hâlâ bozuk:** STT ("kıs"→"kız", "İş"→"İşler"), 21s TTS ("açıkla" → run-on
+cümle), `VRAM %98` → TTS ilk-chunk 8.7s.
+
+**Araştırma + uygulanan:**
+- **STT-prompt** ✅ `initial_prompt` + `hotwords` KISALTILDI — whisper'da en iyi
+  ~12-16 token; uzun biasing prompt insertion/halüsinasyon artırıyor. Bizim
+  ~120 tokenlik liste doğruluğu bozuyordu.
+- **B — Whisper CPU/int8** ✅ VRAM %98 → whisper GPU'dan çıkınca ~%81. Bedel:
+  transkripsiyon 0.3 → 0.8-1.5s. `JARVIS_WHISPER_DEVICE=cuda` ile geri.
+- **D — gain normalizasyonu** ✅ `_normalize_gain()` whisper öncesi AGC-lite.
+- **E — fuzzy ilk-kelime** ✅ `_fuzzy_fix_lead_word()` bozuk komut tetikleyicisini
+  (difflib) en yakın hedefe çeker.
+- **B tavanı sıkıldı** ✅ 2 cümle / 240 char + run-on cümle kesme.
+- **Elenen:** `large-v3` tam (VRAM); `selimc/whisper-large-v3-turbo-turkish`
+  (WER 18.9, CT2 yok).
+- **A (sıralı model yükleme)** — B whisper'ı GPU'dan çıkardığı için VRAM ~%81'e
+  düştü; A'nın XTTS yükle/boşalt (~10s reload) maliyeti muhtemelen artık
+  gereksiz. Yeni testte TTS spike sürerse: Ollama `keep_alive=0` (tek 8B
+  rezident) — XTTS juggling'den iyi. **Önce 4. testi tekrarla.**
 
 ## Yeni bulgular (backlog)
 
