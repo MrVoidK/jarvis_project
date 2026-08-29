@@ -80,14 +80,13 @@ def _get_volume_endpoint():
     global _volume_endpoint
     if _volume_endpoint is _VOLUME_ENDPOINT_UNSET:
         try:
-            from ctypes import POINTER, cast
+            # pycaw 20251023: GetSpeakers() bir `AudioDevice` doner ve `.EndpointVolume`
+            # dogrudan calisan bir `POINTER(IAudioEndpointVolume)` verir - eski
+            # `.Activate(IID, CLSCTX_ALL, None)` + `cast` deseni bu surumde YOK
+            # ('AudioDevice' object has no attribute 'Activate' - canli testte gorulen bug).
+            from pycaw.pycaw import AudioUtilities
 
-            from comtypes import CLSCTX_ALL
-            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-
-            speakers = AudioUtilities.GetSpeakers()
-            interface = speakers.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            _volume_endpoint = cast(interface, POINTER(IAudioEndpointVolume))
+            _volume_endpoint = AudioUtilities.GetSpeakers().EndpointVolume
         except Exception as exc:  # noqa: BLE001 - fail-soft (bkz. yukaridaki not)
             logger.warning("Mutlak ses kontrolu kullanilamiyor (pycaw): %s", exc)
             _volume_endpoint = None
