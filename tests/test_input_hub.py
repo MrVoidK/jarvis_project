@@ -60,6 +60,33 @@ def test_wait_for_text_answer_ignores_items_queued_before_the_call(monkeypatch=N
     assert len(pending) == 2  # ikisi de (text dahil) pending'e aktarildi
 
 
+def test_wait_for_text_answer_accepts_yn_typed_just_before_panel():
+    # 2026-08-29 canli test: kullanici sesli "onayinizi bekliyorum" anonsunu
+    # duyup panel cizilmeden `y` yaziyor - eski hali bunu pending'e atip
+    # kaybediyordu, kullanici PANELDEN SONRA tekrar yazmak zorundaydi.
+    hub = _idle_hub()
+    _mark_text_thread_alive(hub)
+    hub._queue.put(InputEvent(source="text", text="y"))
+
+    pending: list[InputEvent] = []
+    answer = hub.wait_for_text_answer(pending, poll_interval=0.05)
+
+    assert answer == "y"
+    assert pending == []
+
+
+def test_wait_for_text_answer_still_defers_unrelated_pre_text():
+    # Panelden once yazilmis ama y/n OLMAYAN metin -> yine pending'e (cevap sayilmaz).
+    hub = _idle_hub()
+    hub._queue.put(InputEvent(source="text", text="bambaska bir sey yazdim"))
+
+    pending: list[InputEvent] = []
+    answer = hub.wait_for_text_answer(pending, poll_interval=0.05)
+
+    assert answer == ""  # metin thread'i olu -> varsayilan RED
+    assert pending == [InputEvent(source="text", text="bambaska bir sey yazdim")]
+
+
 def test_wait_for_text_answer_accepts_genuinely_new_text_event():
     hub = _idle_hub()
     _mark_text_thread_alive(hub)

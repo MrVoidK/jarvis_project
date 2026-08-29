@@ -244,15 +244,31 @@ class InputHub:
         tarafından `False` (RET) olarak yorumlanır - bkz. modül docstring'i
         "(2)".
         """
-        # (1) Bu cagridan ONCE kuyrukta biriken HER SEYI (onay paneli
-        # gosterilmeden once yazilmis olabilecek alakasiz metin dahil)
-        # once pending'e aktar - SADECE bundan sonraki bir "text" olayi
-        # gercek bir cevap sayilir (bkz. modul docstring'i "(1)").
+        # (1) Bu cagridan ONCE kuyrukta biriken olaylari degerlendir:
+        # - "voice"/"scheduled"/"continuous" -> cevap OLAMAZ (sesli onay
+        #   bilincli olarak devre disi), pending'e.
+        # - "text" -> SADECE panelden hemen once (sesli "onayinizi bekliyorum"
+        #   anonsu surerken) yazilmis ACIK bir y/n cevap sayilir. Kullanici
+        #   anonsu duyup panel cizilmeden `y` yaziyor; eski hali bunu pending'e
+        #   atip KAYBEDIYOR, kullanici PANELDEN SONRA tekrar yazmak zorunda
+        #   kaliyordu (canli test sikayeti). Alakasiz bir cumle/paragraf ise
+        #   yine pending'e gider (looks_like_approval_answer False).
+        from src.jarvis.core.risk import looks_like_approval_answer
+
+        pre_text: Optional[InputEvent] = None
         while True:
             try:
-                pending.append(self._queue.get_nowait())
+                queued = self._queue.get_nowait()
             except queue.Empty:
                 break
+            if queued.source == "text":
+                pre_text = queued  # son yazilan text kazanir
+            else:
+                pending.append(queued)
+        if pre_text is not None:
+            if looks_like_approval_answer(pre_text.text):
+                return pre_text.text
+            pending.append(pre_text)
 
         while True:
             try:

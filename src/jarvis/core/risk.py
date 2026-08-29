@@ -15,6 +15,18 @@ from src.jarvis.core.console import console
 logger = logging.getLogger("jarvis.risk")
 
 _AFFIRMATIVE = {"y", "yes", "e", "evet"}
+_NEGATIVE = {"n", "no", "h", "hayir", "hayır", "hayýr"}
+
+
+def looks_like_approval_answer(text: str) -> bool:
+    """Metin AÇIKÇA bir evet/hayır cevabı mı ('y', 'evet', 'n', 'hayır'...)?
+
+    `input_hub.wait_for_text_answer()` bunu, onay paneli çizilmeden hemen önce
+    (sesli 'onayınızı bekliyorum' anonsu sürerken) yazılmış bir `y`/`n`'yi
+    cevap olarak saymak için kullanır - alakasız bir cümle/paragraf ise SAYMAZ.
+    """
+    norm = text.strip().lower()
+    return norm in _AFFIRMATIVE or norm in _NEGATIVE
 
 
 class RiskLevel(Enum):
