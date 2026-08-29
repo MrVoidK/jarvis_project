@@ -274,6 +274,11 @@ belirti — kök neden (dosya:satır) — durum`)_
   (`delegate_code` yolu) `claude -p`'yi başlatırken API-key scrub yapmıyor;
   `spawn_detached`'in `_API_KEY_ENV_VARS` deseni oraya da uygulanmalı
   (tutarlılık — "Jarvis'in başlattığı claude ASLA API key kullanmaz"). — ⬜
+- 2026-08-29 (Faz 6.9) — `traces.duration_ms` `orchestrator` rolü için
+  time-to-first-token, toplam LLM süresi DEĞİL (streaming tüketimi `run_jarvis`'te
+  araya `speak()` girdiğinden wall-clock yanıltıcı olurdu). Toplam LLM süresi
+  isteniyorsa `think_and_respond_stream` loop'unu `next(stream)` çağrılarını ayrı
+  süreleyecek şekilde restructure etmek gerek (risk/reward düşük, ertelendi). — ⬜
 - 2026-08-29 (6.7 canlı test) — `create_project` onay mesajı TTS'i 11.23s sürdü
   (normal ~4s). `sentence_transformers` embed (`remember`, tur sonu) + `claude`
   subprocess spawn'ı ile aynı anda GPU/CPU çekişmesi. Genel çözüm: tur-sonu

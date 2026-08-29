@@ -12,10 +12,11 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from src.jarvis.adapters.agent_factory import AgentFactory
+from src.jarvis.adapters.agent_factory import ROUTER_MODEL_NAME, AgentFactory
 from src.jarvis.adapters.tool_schema import build_ollama_tools, validate_arguments
 from src.jarvis.core.console import status_spinner
 from src.jarvis.core.language import detect_language
+from src.jarvis.core.trace import traced
 from src.jarvis.tools.registry import all_tools, get_tool
 
 logger = logging.getLogger("jarvis.dispatcher")
@@ -287,7 +288,10 @@ class Dispatcher:
         router = AgentFactory.create("router")
         context = [{"role": "system", "content": _ROUTER_SYSTEM_PROMPT}]
 
-        with status_spinner("Yönlendiriliyor..."):
+        # Faz 6.9: router çağrısını izle (çift-çağrı gecikmesinin ilk yarısı).
+        with status_spinner("Yönlendiriliyor..."), traced(
+            "router", model=ROUTER_MODEL_NAME, input_summary=text
+        ):
             response = router.call_tools(text, tools=tools_schema, context=context)
 
         # /debug (core/cli_commands.py) icin: router'in HAM cevabi - varsayilan

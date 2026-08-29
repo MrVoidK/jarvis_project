@@ -1241,19 +1241,31 @@ Alt adımlar:
       OS kontrolü kategorisi. Risk cihaz tipine göre: ışık/priz `MEDIUM`, kilit/
       güvenlik cihazı `HIGH`.
 
-### 6.9 Gözlemlenebilirlik — Tracing (v2 Faz I) ⬜
+### 6.9 Gözlemlenebilirlik — Tracing (v2 Faz I) ✅
 
 Tamamen bağımsız. `hud_bus`'a benzer ama kalıcı.
 
 Alt adımlar:
-- [ ] **`core/trace.py`** — SQLite (`core/trace.db`); her agent/tool çağrısı
-      için timestamp, rol/model adı, kırpılmış/hash'lenmiş girdi özeti (tam
-      metin değil — hassas veri birikimini önlemek için), süre (ms), sonuç
-      (`success`/`error`/`guardrail_blocked`/`approval_denied`), varsa token
-      sayısı.
-- [ ] **`/trace [n]` CLI komutu** — `core/cli_commands.py` (`/status`, `/debug`
-      ailesi); son N kaydı gösterir. Amaç: çift-çağrı gecikmesinin gerçek
-      etkisini ve `delegate_complex` adım sayısını ölçmek.
+- [x] **`core/trace.py`** — `data/jarvis.db:traces` tablosuna yazar (6.5.1'de
+      kurulan şema; ayrı `trace.db` YOK). `record_trace(role, *, model,
+      input_summary, duration_ms, token_count, result)` + `list_traces(limit)` +
+      `traced(...)` context manager (süre ölçer, çıkışta kaydeder, istisnada
+      `result="error"` + propagate, `t.result`/`t.token_count` override).
+      **Fail-soft mutlak** (`pending_tasks.py`/`memory.py` deseni) — bir iz
+      kaydının tutulamaması ana döngüyü etkilemez. `input_summary` `_summarize()`
+      ile ~100 char'a kırpılır (tam metin ASLA).
+- [x] **Wiring** — `dispatcher.py` router çağrısı (`role=router`),
+      `brain/llm.py` orchestrator (`role=orchestrator`, `duration_ms` =
+      time-to-first-token — streaming tüketimi araya `speak()` girdiğinden
+      toplam değil), `app.py:_run_tool_pipeline` (`role=tool:<name>`;
+      `guardrail_blocked`/`approval_denied`/`error` sonuçları),
+      `_run_delegate_complex` her planlama adımı (`role=tool_agent`).
+- [x] **`/trace [n]` CLI komutu** — `core/cli_commands.py`; son N kaydı tablo
+      (`#`, saat, rol, model, ms, tok, sonuç, özet). Varsayılan 15.
+- Testler: `tests/test_trace.py` (+9), `tests/test_cli_commands.py` (+2).
+  `pytest tests/` 287 pass / 25 skip.
+- **Kabul edilen sınır:** `orchestrator` `duration_ms` = TTFT, toplam LLM süresi
+  değil (loop restructure riski/reward — `docs/optimizasyon-plani.md`'ye not).
 
 ### 6.10 Akıllı Aksiyon Katmanı — Genel Orkestrasyon Döngüsü ⬜
 

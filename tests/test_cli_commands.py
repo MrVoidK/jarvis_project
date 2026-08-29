@@ -358,3 +358,32 @@ def test_deny_all_denies_every_pending(monkeypatch):
 
 def test_deny_command_in_commands_help():
     assert any(key.startswith("/deny") for key in _COMMANDS)
+
+
+def test_trace_command_lists_recent_traces(monkeypatch, capsys):
+    """G/6.9: `/trace [n]` `list_traces(limit=n)` çağırıp tablo basar."""
+    from src.jarvis.core import trace as trace_module
+
+    seen: dict = {}
+    _rows = [
+        {"id": 2, "ts": "2026-08-29T13:00:05", "role": "router", "model": "qwen2.5:3b",
+         "input_summary": "saat kaç", "duration_ms": 800, "token_count": None, "result": "success"},
+        {"id": 1, "ts": "2026-08-29T13:00:01", "role": "orchestrator", "model": "hermes3:8b",
+         "input_summary": "merhaba", "duration_ms": 1200, "token_count": None, "result": "success"},
+    ]
+
+    def _fake_list(limit=15, **k):
+        seen["limit"] = limit
+        return _rows
+
+    monkeypatch.setattr(trace_module, "list_traces", _fake_list)
+
+    handle_cli_command("/trace 5", history=[{"role": "system", "content": "x"}])
+
+    out = capsys.readouterr().out
+    assert seen["limit"] == 5
+    assert "router" in out and "orchestrator" in out
+
+
+def test_trace_command_in_commands_help():
+    assert any(key.startswith("/trace") for key in _COMMANDS)

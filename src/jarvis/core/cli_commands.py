@@ -39,6 +39,7 @@ _COMMANDS: dict[str, str] = {
     "/debug": "Ayrıntılı (DEBUG) log seviyesini açar/kapatır.",
     "/clear": "Sohbet geçmişini sıfırlar ve ekranı temizler.",
     "/test <araç_adı> [key=value ...]": "Router'ı atlayıp doğrudan bir aracı çalıştırır.",
+    "/trace [n]": "Son n çağrı izini (router/orchestrator/tool) gösterir — süre + sonuç (varsayılan 15).",
     "/deny <id> | all": "Bekleyen bir onay kaydını (scheduled/continuous) listeden düşürür (çalıştırmaz).",
     "/exit": "Jarvis'i güvenli şekilde kapatır (Ctrl+C ile aynı, ayrıca sesli 'sistemi kapat' ile de tetiklenir).",
 }
@@ -81,6 +82,8 @@ def handle_cli_command(
             pending=pending,
             speaking_event=speaking_event,
         )
+    elif command == "/trace":
+        _cmd_trace(argument)
     elif command == "/deny":
         _cmd_deny(argument)
     elif command == "/exit":
@@ -172,6 +175,39 @@ def _relative_age(iso_ts: str) -> str:
     if secs < 86400:
         return f"{secs // 3600} saat önce"
     return f"{secs // 86400} gün önce"
+
+
+def _cmd_trace(argument: str) -> None:
+    """`/trace [n]` - son n çağrı izini (Faz 6.9 `core/trace.py:traces`) tablo
+    olarak gösterir. Amaç: çift-çağrı gecikmesini (router + orchestrator) ve
+    `delegate_complex` adım sayısını ölçmek."""
+    from src.jarvis.core import trace as trace_module
+
+    arg = argument.strip()
+    n = int(arg) if arg.isdigit() else 15
+    rows = trace_module.list_traces(limit=n)
+    if not rows:
+        print_system("Henüz iz kaydı yok (bu oturumda bir tur işleyin).", level="info")
+        return
+
+    table_rows = [
+        (
+            f"#{row['id']}",
+            str(row.get("ts", ""))[11:19],  # sadece HH:MM:SS
+            row["role"],
+            row.get("model") or "-",
+            f"{row['duration_ms']}" if row.get("duration_ms") is not None else "-",
+            str(row.get("token_count") or "-"),
+            row["result"],
+            (row.get("input_summary") or "")[:48],
+        )
+        for row in rows
+    ]
+    print_table(
+        f"Son {len(rows)} çağrı izi (en yeni üstte)",
+        ["#", "saat", "rol", "model", "ms", "tok", "sonuç", "özet"],
+        table_rows,
+    )
 
 
 def _cmd_deny(argument: str) -> None:

@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Callable, Iterator, Optional
 
-from src.jarvis.adapters.agent_factory import AgentFactory
+from src.jarvis.adapters.agent_factory import ORCHESTRATOR_MODEL_NAME, AgentFactory
 from src.jarvis.adapters.tool_schema import build_ollama_tools, validate_arguments
 from src.jarvis.brain.llm import SYSTEM_PROMPT, think_and_respond_stream
 from src.jarvis.core import api, hud_bus
@@ -36,6 +36,7 @@ from src.jarvis.core.language import detect_language
 from src.jarvis.core.memory import remember
 from src.jarvis.core.pending_tasks import record_pending
 from src.jarvis.core.risk import evaluate_approval_answer, request_approval, requires_approval
+from src.jarvis.core.trace import record_trace, traced
 from src.jarvis.mouth.tts import release_mic_mute, speak
 from src.jarvis.tools.base import Tool
 from src.jarvis.tools.registry import all_tools, get_tool
@@ -299,10 +300,13 @@ def _run_tool_pipeline(
     # ayni guardrail'den geciriyoruz - kullaniciya onay bile sorulmadan bilinen
     # yikici kaliplar (rm -rf, format, DROP TABLE...) reddedilsin diye
     # (defense-in-depth: yanlislikla "Y"ye basma ihtimali bu kaliplar icin dogmuyor).
+    _trace_role = f"tool:{tool.name}"
+    _trace_summary = str(risky_values) if risky_values else tool.name
     for value in risky_values.values():
         safety = _OUTPUT_GUARDRAIL.run(value)
         if not safety.allowed:
             logger.warning("Tool girdisi guardrail'e takildi (%s): %s", tool.name, safety.reason)
+            record_trace(_trace_role, input_summary=_trace_summary, result="guardrail_blocked")
             return _localized(_UNSAFE_COMMAND_MESSAGES, lang)
 
     # (2) Orta ve uzeri risk -> zorunlu insan onayi (bkz. _prompt_for_approval).
@@ -341,6 +345,7 @@ def _run_tool_pipeline(
             speaking_event=speaking_event,
         )
         if not approved:
+            record_trace(_trace_role, input_summary=_trace_summary, result="approval_denied")
             return _localized(_APPROVAL_DENIED_MESSAGES, lang)
 
     # (3) Calistir - tek bir kotu tool cagrisi run_jarvis()'in dongusunu cokertmemeli
@@ -353,21 +358,26 @@ def _run_tool_pipeline(
     # iptali daha guclu, bkz. adapters/mcp_client_adapter.py).
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"tool-{tool.name}")
     future = executor.submit(tool.execute, intent.parameters)
-    try:
-        result = future.result(timeout=_TOOL_EXEC_TIMEOUT_SECONDS)
-    except FuturesTimeout:
-        # FuturesTimeout, Exception'in alt sinifi - bu blok asagidaki genel
-        # 'except Exception'dan ONCE gelmeli.
-        logger.error(
-            "Tool zaman asimina ugradi (%s, %.0fs)", tool.name, _TOOL_EXEC_TIMEOUT_SECONDS
-        )
-        executor.shutdown(wait=False, cancel_futures=True)
-        return _localized(_TOOL_TIMEOUT_MESSAGES, lang)
-    except Exception as exc:
-        logger.error("Tool calistirilamadi (%s): %s", tool.name, exc)
-        executor.shutdown(wait=False, cancel_futures=True)
-        return _localized(_TOOL_FAILED_MESSAGES, lang)
-    executor.shutdown(wait=False)
+    # Faz 6.9: tool calistirma suresi + sonucu izle (delegate_complex adim
+    # sayisi / hangi arac ne kadar suruyor). `traced` cikista record_trace cagirir.
+    with traced(_trace_role, input_summary=_trace_summary) as _t:
+        try:
+            result = future.result(timeout=_TOOL_EXEC_TIMEOUT_SECONDS)
+        except FuturesTimeout:
+            # FuturesTimeout, Exception'in alt sinifi - bu blok asagidaki genel
+            # 'except Exception'dan ONCE gelmeli.
+            _t.result = "error"
+            logger.error(
+                "Tool zaman asimina ugradi (%s, %.0fs)", tool.name, _TOOL_EXEC_TIMEOUT_SECONDS
+            )
+            executor.shutdown(wait=False, cancel_futures=True)
+            return _localized(_TOOL_TIMEOUT_MESSAGES, lang)
+        except Exception as exc:
+            _t.result = "error"
+            logger.error("Tool calistirilamadi (%s): %s", tool.name, exc)
+            executor.shutdown(wait=False, cancel_futures=True)
+            return _localized(_TOOL_FAILED_MESSAGES, lang)
+        executor.shutdown(wait=False)
 
     # (4) MCP entegrasyonu (Faz 4.5, bkz. docs/ARCHITECTURE.md SS9.5) DONUS
     # degerini de guardrail'e sokuyor - eskiden SADECE girdi parametreleri
@@ -383,6 +393,7 @@ def _run_tool_pipeline(
         logger.warning(
             "Tool ciktisi guardrail'e takildi (%s): %s", tool.name, output_safety.reason
         )
+        record_trace(_trace_role, input_summary=_trace_summary, result="guardrail_blocked")
         return _localized(_UNSAFE_COMMAND_MESSAGES, lang)
 
     return result
@@ -418,7 +429,11 @@ def _run_delegate_complex(
     last_result = ""
 
     for step in range(_MAX_DELEGATE_STEPS):
-        resp = agent.call_tools(prompt, tools=schema, context=messages)
+        # Faz 6.9: tool_agent'in her planlama adimini izle (adim sayisi +
+        # adim-basi gecikme). Adimin sectigi aracin CALISMASI ayrica
+        # _run_tool_pipeline'da `tool:<name>` olarak izleniyor.
+        with traced("tool_agent", model=ORCHESTRATOR_MODEL_NAME, input_summary=prompt):
+            resp = agent.call_tools(prompt, tools=schema, context=messages)
         messages.append({"role": "user", "content": prompt})
         if not resp.tool_calls or resp.tool_calls[0].name == _NO_TOOL_FUNCTION_NAME:
             summary = (resp.content or "").strip()
