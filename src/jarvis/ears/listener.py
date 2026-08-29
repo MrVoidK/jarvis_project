@@ -16,6 +16,7 @@ if os.name == "nt":
         os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
 # --- Windows CUDA DLL Fix Sonu ---
 import logging
+import re
 import threading
 import time
 from collections import deque
@@ -513,6 +514,46 @@ def _is_probable_hallucination(text: str) -> bool:
     return norm in _HALLUCINATION_PHRASES or norm == _INITIAL_PROMPT.strip().lower()
 
 
+# E (2026-08-29 canli test): whisper `turbo` + Turkce, Jarvis'in komut
+# dagarcigindaki bazi kelimeleri tutarli sekilde bozuyor. `hotwords` yeterli
+# gelmedi - post-STT hedefli duzeltme. Hepsi KOMUT BAGLAMINA gore korumali
+# (ornegin "servis" sadece cumle basinda -> "Jarvis"; Turkce "servis" kelimesi
+# cumle icinde korunur). Yeni bozulma gorulürse buraya eklenir.
+_STT_CORRECTIONS = [
+    (re.compile(r"^\s*servis\b", re.IGNORECASE), "Jarvis"),
+    (re.compile(r"(?<=[.!?]\s)servis\b", re.IGNORECASE), "Jarvis"),
+    # "sesli <komut>" -> "sesi <komut>" ("sesli" tek basina / cumle ici korunur;
+    # sadece bir volume ifadesi izliyorsa duzeltilir). "kız"/"kaz" = misheard "kıs".
+    (
+        re.compile(
+            r"\bsesli\b(?=\s+(?:aç|ac|kıs|kis|k[ıi]z|kaz|kapat|artır|artir|azalt|"
+            r"yükselt|yukselt|düşür|dusur|yap|çok|cok|biraz|az)\b)",
+            re.IGNORECASE,
+        ),
+        "sesi",
+    ),
+    # "sesi/sesini kız" (veya "kaz") -> "... kıs"
+    (re.compile(r"(?<=\bsesi\s)(?:k[ıi]z|kaz)\b", re.IGNORECASE), "kıs"),
+    (re.compile(r"(?<=\bsesini\s)(?:k[ıi]z|kaz)\b", re.IGNORECASE), "kıs"),
+    # "stradik(i)" -> "sıradaki"
+    (re.compile(r"\bstradi[kğ]i?\b", re.IGNORECASE), "sıradaki"),
+    # "çarkı..." -> "şarkı..." (çarkıyı -> şarkıyı)
+    (re.compile(r"\bçarkı", re.IGNORECASE), "şarkı"),
+    # "azıcık" -> "az" (amount kelimesi)
+    (re.compile(r"\bazıcık\b", re.IGNORECASE), "az"),
+]
+
+
+def _apply_stt_corrections(text: str) -> str:
+    """Bilinen whisper bozulmalarini komut baglamina gore duzeltir (bkz. _STT_CORRECTIONS)."""
+    fixed = text
+    for pattern, repl in _STT_CORRECTIONS:
+        fixed = pattern.sub(repl, fixed)
+    if fixed != text:
+        logger.info("STT duzeltme: %r -> %r", text, fixed)
+    return fixed
+
+
 def _transcribe(audio: np.ndarray) -> Optional[str]:
     """Runs faster-whisper on already-recorded audio, logging transcription latency.
 
@@ -578,6 +619,8 @@ def _transcribe(audio: np.ndarray) -> Optional[str]:
     if text and _is_probable_hallucination(text):
         logger.info("Muhtemel halusinasyon transkripti atlandi: %r", text)
         return None
+    if text:
+        text = _apply_stt_corrections(text)  # E: bilinen komut-kelimesi bozulmalari
     return text
 
 

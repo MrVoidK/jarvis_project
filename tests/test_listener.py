@@ -184,6 +184,33 @@ def test_transcribe_keeps_confident_segment(monkeypatch):
     assert (listener._transcribe(_one_second_of_silence()) or "").strip() == "saat kac"
 
 
+def test_apply_stt_corrections_command_context():
+    # E (2026-08-29): bilinen whisper bozulmalari komut baglaminda duzeltilir.
+    assert listener._apply_stt_corrections("Servis sesli kız") == "Jarvis sesi kıs"
+    assert listener._apply_stt_corrections("Servis, sesli çok aç") == "Jarvis, sesi çok aç"
+    assert listener._apply_stt_corrections("stradik şarkıya geç") == "sıradaki şarkıya geç"
+    assert listener._apply_stt_corrections("çarkıyı devam ettir") == "şarkıyı devam ettir"
+    assert listener._apply_stt_corrections("sesi azıcık kıs") == "sesi az kıs"
+
+
+def test_apply_stt_corrections_preserves_normal_words():
+    # "servis" cumle ici, "sesli" tek basina -> DOKUNMA
+    assert listener._apply_stt_corrections("müzik servisi güzel") == "müzik servisi güzel"
+    assert listener._apply_stt_corrections("bu sesli bir dosya") == "bu sesli bir dosya"
+
+
+def test_transcribe_applies_stt_corrections(monkeypatch):
+    monkeypatch.setattr(
+        listener.model,
+        "transcribe",
+        lambda *_a, **_k: (
+            iter([_FakeSegment("Servis sesli kız", no_speech_prob=0.05, avg_logprob=-0.2)]),
+            _FakeInfo(),
+        ),
+    )
+    assert listener._transcribe(_one_second_of_silence()) == "Jarvis sesi kıs"
+
+
 def test_transcribe_passes_hotwords(monkeypatch):
     """P3: `_transcribe` komut kelime dağarcığını `hotwords` olarak geçirir."""
     captured: dict = {}
