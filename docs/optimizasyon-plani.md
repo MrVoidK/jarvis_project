@@ -144,24 +144,28 @@ onaylı yol; 6.10 ile birlikte tekrar bakılır (backlog).
 **Test:** `test_media_tool.py` +5 (N-press + amount), `test_tools.py` +1
 (run_command konsola), +1 (read_notes cap). Full suite 238 pass / 23 skip.
 
-**Commit:** `<D>`
+**Commit:** `6d0a30a`
 
 ---
 
-## Cluster E — Dil tespiti ⬜
+## Cluster E — Dil tespiti ✅
 
 **Belirti:** "Please specify your request" → `dil=es`; kısa kliplerde `fr`/`de`.
 
 **Kök neden:** `core/language.py:detect_language` langdetect'e 2–3 kelimede
 güveniyor.
 
-**Yapılacaklar:**
-- [ ] E1: `<4 kelime` → TR-karakter sezgisi (tr/en); `>=4 kelime` → langdetect
-  ama tr/en dışı sonucu aynı sezgiyle tr/en'e indir.
+**Yapıldı:**
+- [x] E1: `detect_language` sonucu artık HER ZAMAN tr/en. `<4 kelime` → langdetect
+  atlanır, `_TR_CHARS` sezgisi (çğıöşü…). `>=4 kelime` → langdetect ama tr/en
+  dışı sonuç aynı sezgiyle tr/en'e indirilir. `_tr_or_en()` helper.
 
-**Test:** yeni `test_language.py`.
+**Kabul edilen sınır:** ASCII'ye düşmüş kısa Türkçe ("sesi ac") → en; gerçek
+Almanca → en fonetiği (Jarvis kapsamı dışı).
 
-**Commit:** —
+**Test:** yeni `test_language.py` +7. Full suite 245 pass / 23 skip.
+
+**Commit:** `<E>`
 
 ---
 
