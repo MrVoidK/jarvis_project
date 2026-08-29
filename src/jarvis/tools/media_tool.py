@@ -55,6 +55,16 @@ KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP = 0x0002
 INPUT_KEYBOARD = 1
 
+# D3 (2026-08-29): tek VK_VOLUME_* keypress Windows'ta ~%2 - kullanici "sesi ac"
+# dedigimde "hicbir sey olmuyor / hep ayni" diye bildirdi. Varsayilan olarak
+# birkac kademe basiyoruz; opsiyonel `amount` ("biraz"/"cok"/sayi) ile ayarlanir.
+VOLUME_STEP_PRESSES = 4          # varsayilan (~%8)
+VOLUME_STEP_PRESSES_SMALL = 2   # "biraz" / "a bit"
+VOLUME_STEP_PRESSES_LARGE = 8   # "cok" / "a lot"
+VOLUME_STEP_MAX = 15            # sayisal `amount` bu degere kadar clamp'lenir
+_VOLUME_SMALL_WORDS = {"biraz", "az", "hafif", "a bit", "a little", "slightly"}
+_VOLUME_LARGE_WORDS = {"cok", "çok", "fazla", "epey", "a lot", "lots", "way up", "much"}
+
 
 _ULONG_PTR = ctypes.c_uint64 if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_uint32
 
@@ -105,11 +115,15 @@ class _Input(ctypes.Structure):
     _fields_ = [("type", ctypes.c_ulong), ("union", _InputUnion)]
 
 
-def _send_vk(vk_code: int) -> None:
-    """Verilen sanal tus kodu icin bir key-down + key-up olayi gonderir.
+def _send_vk(vk_code: int, times: int = 1) -> None:
+    """Verilen sanal tus kodu icin `times` kez key-down + key-up olayi gonderir.
 
     Medya tuslari "extended key" sayildigi icin KEYEVENTF_EXTENDEDKEY bayragi
     gerekiyor - bu bayrak olmadan bazi sistemlerde tus yok sayilabiliyor.
+
+    `times` > 1 SADECE ses seviyesi araclari icin (D3) - VK_VOLUME_* tek
+    keypress ~%2 oldugundan bir "kademe" birkac keypress. play/pause/next/prev
+    icin varsayilan 1 (tekrarli gondermek anlamsiz).
 
     SendInput'un DONUS DEGERI (basariyla islenen olay sayisi) BURADA
     kontrol ediliyor - eskiden kontrol edilmiyordu, bu yuzden struct-boyutu
@@ -129,17 +143,19 @@ def _send_vk(vk_code: int) -> None:
             ki=_KeyBdInput(vk_code, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0, extra)
         ),
     )
-    sent_down = ctypes.windll.user32.SendInput(1, ctypes.pointer(key_down), ctypes.sizeof(_Input))
-    sent_up = ctypes.windll.user32.SendInput(1, ctypes.pointer(key_up), ctypes.sizeof(_Input))
-    if sent_down == 0 or sent_up == 0:
-        logger.warning(
-            "SendInput basarisiz oldu (vk=0x%X, down=%d, up=%d) - "
-            "tus fiilen gonderilmedi (Windows GetLastError: %d).",
-            vk_code,
-            sent_down,
-            sent_up,
-            ctypes.GetLastError(),
-        )
+    for _ in range(max(1, times)):
+        sent_down = ctypes.windll.user32.SendInput(1, ctypes.pointer(key_down), ctypes.sizeof(_Input))
+        sent_up = ctypes.windll.user32.SendInput(1, ctypes.pointer(key_up), ctypes.sizeof(_Input))
+        if sent_down == 0 or sent_up == 0:
+            logger.warning(
+                "SendInput basarisiz oldu (vk=0x%X, down=%d, up=%d) - "
+                "tus fiilen gonderilmedi (Windows GetLastError: %d).",
+                vk_code,
+                sent_down,
+                sent_up,
+                ctypes.GetLastError(),
+            )
+            return
 
 
 _PLAY_PAUSE_MESSAGES = {
@@ -154,6 +170,24 @@ _VOLUME_DOWN_MESSAGES = {"tr": "Sesi biraz kıstım.", "en": "I've turned the vo
 
 def _localized(messages: dict[str, str], lang: str) -> str:
     return messages.get(lang, messages["en"])
+
+
+def _resolve_volume_steps(params: dict) -> int:
+    """`amount` parametresinden kademe (keypress) sayisi cikarir (D3).
+
+    'biraz'/'a bit' -> 2, 'cok'/'a lot' -> 8, bir sayi -> 1..VOLUME_STEP_MAX
+    clamp, aksi halde (yok/taninmayan) -> VOLUME_STEP_PRESSES varsayilani.
+    """
+    amount = str(params.get("amount") or "").strip().lower()
+    if not amount:
+        return VOLUME_STEP_PRESSES
+    if amount.isdigit():
+        return max(1, min(VOLUME_STEP_MAX, int(amount)))
+    if amount in _VOLUME_SMALL_WORDS:
+        return VOLUME_STEP_PRESSES_SMALL
+    if amount in _VOLUME_LARGE_WORDS:
+        return VOLUME_STEP_PRESSES_LARGE
+    return VOLUME_STEP_PRESSES
 
 
 class MediaPlayPauseTool(Tool):
@@ -227,15 +261,21 @@ class MediaVolumeUpTool(Tool):
     description = (
         "Sistem ses seviyesini artirir. Kullanici 'sesi ac', 'sesi artir', "
         "'sesi yukselt', 'volume up', 'louder', 'turn it up' gibi bir sey "
-        "soyledigi HER SEFERINDE bu araci kullan."
+        "soyledigi HER SEFERINDE bu araci kullan. Kullanici 'biraz' veya 'cok' "
+        "derse bunu `amount` olarak gecir."
     )
     risk_level = RiskLevel.LOW
-    parameters_schema: dict = {}
+    parameters_schema: dict = {
+        "amount": {
+            "type": "string",
+            "description": "Istege bagli: 'biraz', 'cok' veya bir kademe sayisi.",
+        }
+    }
     required_parameters: list[str] = []
 
     def execute(self, params: dict) -> str:
         lang = params.get("lang", "en")
-        _send_vk(VK_VOLUME_UP)
+        _send_vk(VK_VOLUME_UP, times=_resolve_volume_steps(params))
         logger.info("Medya ses-artir tusu gonderildi.")
         return _localized(_VOLUME_UP_MESSAGES, lang)
 
@@ -247,15 +287,21 @@ class MediaVolumeDownTool(Tool):
     description = (
         "Sistem ses seviyesini azaltir. Kullanici 'sesi kis', 'sesi azalt', "
         "'sesi dusur', 'volume down', 'quieter', 'turn it down' gibi bir "
-        "sey soyledigi HER SEFERINDE bu araci kullan."
+        "sey soyledigi HER SEFERINDE bu araci kullan. Kullanici 'biraz' veya "
+        "'cok' derse bunu `amount` olarak gecir."
     )
     risk_level = RiskLevel.LOW
-    parameters_schema: dict = {}
+    parameters_schema: dict = {
+        "amount": {
+            "type": "string",
+            "description": "Istege bagli: 'biraz', 'cok' veya bir kademe sayisi.",
+        }
+    }
     required_parameters: list[str] = []
 
     def execute(self, params: dict) -> str:
         lang = params.get("lang", "en")
-        _send_vk(VK_VOLUME_DOWN)
+        _send_vk(VK_VOLUME_DOWN, times=_resolve_volume_steps(params))
         logger.info("Medya ses-azalt tusu gonderildi.")
         return _localized(_VOLUME_DOWN_MESSAGES, lang)
 

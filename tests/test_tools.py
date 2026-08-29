@@ -77,6 +77,23 @@ def test_create_and_read_note(monkeypatch, tmp_path):
     assert "faturayi ode" in result
 
 
+def test_read_notes_caps_spoken_length(monkeypatch, tmp_path):
+    """D1 (2026-08-29): cok uzun notlar tamamen sesli okunmasin - sesli donus
+    kirpilir + "devami Obsidian'da"; tam metin konsola."""
+    _patch_vault(monkeypatch, tmp_path)
+    printed: list[str] = []
+    monkeypatch.setattr(notes_module, "print_system", lambda msg, **k: printed.append(msg), raising=False)
+
+    create = notes_module.CreateNoteTool()
+    long_note = "bu cok uzun bir not " * 60  # ~1200 karakter
+    create.execute({"lang": "tr", "content": long_note})
+
+    result = notes_module.ReadNotesTool().execute({"lang": "tr"})
+
+    assert len(result) < 500
+    assert "obsidian" in result.lower()
+
+
 def test_create_note_rejects_empty_content(monkeypatch, tmp_path):
     vault = _patch_vault(monkeypatch, tmp_path)
 
@@ -114,9 +131,20 @@ def test_list_files_reports_empty_and_populated(monkeypatch, tmp_path):
 # --- terminal (run_command) ---
 
 
-def test_run_command_executes_and_returns_output():
+def test_run_command_output_goes_to_console_not_tts(monkeypatch):
+    """D1 (2026-08-29): ham komut ciktisi SESLI okunmaz (canli testte `dir`
+    ciktisi 27 sn TTS oldu). Donus KISA bir onay; tam cikti `print_system` ile
+    konsola/HUD'a."""
+    from src.jarvis.tools import terminal_tool as terminal_module
+
+    printed: list[str] = []
+    monkeypatch.setattr(terminal_module, "print_system", lambda msg, **k: printed.append(msg))
+
     result = RunCommandTool().execute({"lang": "en", "command": "echo jarvis_test_ok"})
-    assert "jarvis_test_ok" in result
+
+    assert "jarvis_test_ok" not in result  # sesli donus ham cikti icermez
+    assert "terminal" in result.lower()
+    assert any("jarvis_test_ok" in p for p in printed)  # tam cikti konsola gitti
 
 
 def test_run_command_rejects_empty_command():
@@ -124,11 +152,18 @@ def test_run_command_rejects_empty_command():
     assert "didn't get a command" in result.lower()
 
 
-def test_run_command_strips_trailing_punctuation():
+def test_run_command_strips_trailing_punctuation(monkeypatch):
     """Regresyon: docs/TODO.md madde 1 - "Run command ls." icin STT'nin ekledigi
     sondaki nokta command'a karisip Windows'ta 'ls.' calistirilmaya calisiliyordu."""
+    from src.jarvis.tools import terminal_tool as terminal_module
+
+    printed: list[str] = []
+    monkeypatch.setattr(terminal_module, "print_system", lambda msg, **k: printed.append(msg))
+
     result = RunCommandTool().execute({"lang": "en", "command": "echo jarvis_test_ok."})
-    assert "jarvis_test_ok" in result
+
+    assert any("jarvis_test_ok" in p for p in printed)
+    assert "not recognized" not in " ".join(printed).lower()
     assert "not recognized" not in result.lower()
 
 

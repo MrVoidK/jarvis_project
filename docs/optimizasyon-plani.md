@@ -113,30 +113,38 @@ kullanımda çok kısa gerçek komutlar ("dur") düşerse gevşetilir.
 gerçek Ollama: 20 pass, 2 xfail (bilinen 3B sınırı: "hatırla"→note, çok-adım
 flaky). Full default suite 234 pass / 23 skip.
 
-**Commit:** `<C>`
+**Commit:** `ab07056`
 
 ---
 
-## Cluster D — TTS içeriği + ses seviyesi kademesi ⬜
+## Cluster D — TTS içeriği + ses seviyesi kademesi ✅
 
 **Belirti:** `Jarvis: Command output: ... Directory of C:\...` → 27.68 s TTS.
 Ses aç/kıs tek keypress (~%2), belirsiz.
 
 **Kök neden:**
-- D1 — `RunCommandTool` ham çıktıyı döndürüyor (`~terminal_tool.py:159`); 200
-  char'a kırpılsa bile içerik (tarih/`<DIR>`) XTTS için patolojik.
+- D1 — `RunCommandTool` ham çıktıyı döndürüyor; 200 char'a kırpılsa bile içerik
+  (tarih/`<DIR>`) XTTS için patolojik.
 - D3 — `media_tool.py` volume tek `_send_vk`, magnitude yok.
 
-**Yapılacaklar:**
-- [ ] D1: `RunCommandTool` → kısa sesli onay; tam çıktı `print_system` ile
-  konsola. `ReadNotesTool` sesli kısım ~400 char + "devamı Obsidian'da".
-- [ ] D3: `_send_vk(vk, times=1)`; `VOLUME_STEP_PRESSES=4`; opsiyonel `amount`
-  ("biraz"/2, def/4, "çok"/8, int/clamp 1-15).
+**Yapıldı:**
+- [x] D1: `RunCommandTool` → kısa sesli onay (`_OK_MESSAGES` / `_FAILED_TEMPLATES`
+  artık çıktı içermiyor); tam çıktı `print_system("Komut çıktısı:\n…")` ile
+  konsola/HUD'a, `OUTPUT_CHAR_LIMIT 200→2000`. `ReadNotesTool` sesli kısım
+  `READ_NOTES_SPOKEN_CHAR_LIMIT=400` + "… (devamı Obsidian'da)"; tam metin
+  konsola.
+- [x] D3: `_send_vk(vk, times=1)` döngü; `VOLUME_STEP_PRESSES=4` varsayılan;
+  `_resolve_volume_steps(params)` — `amount` "biraz"→2, "çok"→8, sayı→clamp
+  1..15, yok→4. `media_volume_up/down` şemasına `amount` (opsiyonel) eklendi.
 
-**Test:** `test_media_tool.py` (N-press + amount); `test_tools.py` (run_command
-kısa sesli form).
+**Kabul edilen sınır:** `delegate_complex` zincirinde `run_command` sonucu artık
+kısa onay → tool_agent bir sonraki adım için ham çıktıyı göremez. Nadir + HIGH
+onaylı yol; 6.10 ile birlikte tekrar bakılır (backlog).
 
-**Commit:** —
+**Test:** `test_media_tool.py` +5 (N-press + amount), `test_tools.py` +1
+(run_command konsola), +1 (read_notes cap). Full suite 238 pass / 23 skip.
+
+**Commit:** `<D>`
 
 ---
 
@@ -209,6 +217,10 @@ belirti — kök neden (dosya:satır) — durum`)_
   set/`release_mic_mute` sarması eklenir. — ⬜
 - 2026-08-29 — Mutlak ses kontrolü ("sesi %50 yap") `pycaw`/Core Audio gerektirir;
   CLAUDE.md "gereksiz bağımlılık" ilkesi — şimdilik kapsam dışı. — ⬜
+- 2026-08-29 (D1 sonrası) — `delegate_complex` zincirinde `run_command` çıktısı
+  artık tool_agent'a kısa onay olarak dönüyor (ham çıktı yok); çok-adımlı
+  "komutu çalıştır sonra sonucuna göre..." senaryosu zayıfladı. 6.10 kapsamlı
+  orkestrasyonla birlikte `spoken_form()` hook'u değerlendirilir. — ⬜
 
 ---
 

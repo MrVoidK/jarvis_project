@@ -23,6 +23,7 @@ import logging
 import os
 from datetime import datetime
 
+from src.jarvis.core.console import print_system
 from src.jarvis.core.risk import RiskLevel
 from src.jarvis.core.security_config import get_obsidian_vault, is_path_safe
 from src.jarvis.tools.base import Tool
@@ -33,6 +34,9 @@ NOTES_SUBDIR = "Jarvis Notes"
 LOG_FILENAME = "Jarvis Log.md"
 
 READ_NOTES_LIMIT = 5  # TTS'e okunacagi icin tum dosya degil, son N not
+READ_NOTES_SPOKEN_CHAR_LIMIT = 400  # D1 (2026-08-29): 5 uzun not = uzun TTS.
+                                     # Sesli donus bu sinirda kirpilir + "devami
+                                     # Obsidian'da"; tam metin print_system ile.
 
 
 def _notes_dir() -> str:
@@ -51,6 +55,10 @@ _EMPTY_CONTENT_MESSAGES = {
 _NO_NOTES_MESSAGES = {
     "tr": "Kayitli notunuz yok.",
     "en": "You don't have any saved notes.",
+}
+_NOTES_TRUNCATED_SUFFIX = {
+    "tr": "… (devamı Obsidian'da)",
+    "en": "… (the rest is in Obsidian)",
 }
 _UNSAFE_PATH_MESSAGES = {
     "tr": "Not dizini güvenlik kontrolünden geçemedi, işlem iptal edildi.",
@@ -129,4 +137,12 @@ class ReadNotesTool(Tool):
         # Zaman damgasi TTS'te gurultu yaratiyor (her notun basinda tarih okunmasi),
         # sadece not metinlerini birlestiriyoruz - tarih dosyada duruyor.
         contents = [line.split("] ", 1)[-1] for line in recent]
-        return ". ".join(contents)
+        joined = ". ".join(contents)
+
+        # D1 (2026-08-29): cok uzun notlar tamamen sesli okunmasin - tam metni
+        # konsola/HUD'a bas, sesli donusu kelime siniriyla kirp.
+        if len(joined) > READ_NOTES_SPOKEN_CHAR_LIMIT:
+            print_system(f"Son {len(recent)} not:\n{joined}", level="info")
+            clipped = joined[:READ_NOTES_SPOKEN_CHAR_LIMIT].rsplit(" ", 1)[0]
+            return f"{clipped}{_localized(_NOTES_TRUNCATED_SUFFIX, lang)}"
+        return joined

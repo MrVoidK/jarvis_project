@@ -51,7 +51,11 @@ logger = logging.getLogger("jarvis.tools.terminal")
 
 COMMAND_TIMEOUT_S = 15
 KILL_TIMEOUT_S = 5  # zaman asimi sonrasi surec agacini oldurmek icin verilen sure
-OUTPUT_CHAR_LIMIT = 200  # cikti TTS'e okunacak - uzun ciktilar kirpiliyor
+# D1 (2026-08-29): ham komut ciktisi ARTIK SESLI OKUNMUYOR (canli testte `dir`
+# ciktisi 27 sn TTS oldu - 200 char'a kirpilsa bile icerik (tarih/`<DIR>`/nokta)
+# XTTS icin patolojik). Tam cikti `print_system` ile konsola/HUD'a gider (TTS
+# maliyeti olmadigi icin limit genisletildi), sesli donus KISA bir onaydir.
+OUTPUT_CHAR_LIMIT = 2000
 
 _EMPTY_MESSAGES = {
     "tr": "Calistirilacak bir komut alamadim.",
@@ -66,10 +70,13 @@ _TIMEOUT_MESSAGES = {
     "en": "The command timed out and was stopped.",
 }
 _FAILED_TEMPLATES = {
-    "tr": "Komut {code} hata koduyla bitti: {output}",
-    "en": "The command exited with code {code}: {output}",
+    "tr": "Komut {code} hata koduyla bitti, ayrıntı terminalde.",
+    "en": "The command exited with code {code} - details are in the terminal.",
 }
-_OK_TEMPLATES = {"tr": "Komut ciktisi: {output}", "en": "Command output: {output}"}
+_OK_MESSAGES = {
+    "tr": "Komut çalıştı, çıktıyı terminale yazdım.",
+    "en": "The command ran - the output is in the terminal.",
+}
 
 
 def _localized(messages: dict[str, str], lang: str) -> str:
@@ -150,13 +157,16 @@ class RunCommandTool(Tool):
         if len(output) > OUTPUT_CHAR_LIMIT:
             output = output[:OUTPUT_CHAR_LIMIT] + "..."
 
+        # D1: tam cikti konsola/HUD'a (SESLI DEGIL). Sesli donus asagida kisa
+        # bir onaydir - `dir` gibi bir cikti hoparlorden okunmaz.
+        if output:
+            print_system(f"Komut çıktısı:\n{output}", level="info")
+
         if returncode != 0:
-            return _localized(_FAILED_TEMPLATES, lang).format(
-                code=returncode, output=output or "-"
-            )
+            return _localized(_FAILED_TEMPLATES, lang).format(code=returncode)
         if not output:
             return _localized(_NO_OUTPUT_MESSAGES, lang)
-        return _localized(_OK_TEMPLATES, lang).format(output=output)
+        return _localized(_OK_MESSAGES, lang)
 
 
 _UNKNOWN_APP_TEMPLATES = {

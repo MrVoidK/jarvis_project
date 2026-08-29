@@ -44,8 +44,10 @@ def test_send_vk_uses_correct_cbsize_and_logs_on_failure(monkeypatch, caplog):
 
 
 def _capture_vk(monkeypatch):
+    """`_send_vk(vk, times=1)` -> her cagride vk kodunu `times` kez kaydeder
+    (D3: ses seviyesi araclari artik kademe sayisi geciyor)."""
     calls: list[int] = []
-    monkeypatch.setattr(media_module, "_send_vk", calls.append)
+    monkeypatch.setattr(media_module, "_send_vk", lambda vk, times=1: calls.extend([vk] * times))
     return calls
 
 
@@ -77,16 +79,36 @@ def test_previous_track_sends_correct_vk(monkeypatch):
     assert "previous" in result.lower()
 
 
-def test_volume_up_sends_correct_vk(monkeypatch):
+def test_volume_up_sends_default_step_presses(monkeypatch):
+    # D3 (2026-08-29): tek keypress (~%2) belirsiz geliyordu - varsayilan
+    # VOLUME_STEP_PRESSES kadar bas.
     calls = _capture_vk(monkeypatch)
     media_module.MediaVolumeUpTool().execute({"lang": "en"})
-    assert calls == [media_module.VK_VOLUME_UP]
+    assert calls == [media_module.VK_VOLUME_UP] * media_module.VOLUME_STEP_PRESSES
 
 
-def test_volume_down_sends_correct_vk(monkeypatch):
+def test_volume_down_sends_default_step_presses(monkeypatch):
     calls = _capture_vk(monkeypatch)
     media_module.MediaVolumeDownTool().execute({"lang": "en"})
-    assert calls == [media_module.VK_VOLUME_DOWN]
+    assert calls == [media_module.VK_VOLUME_DOWN] * media_module.VOLUME_STEP_PRESSES
+
+
+def test_volume_amount_biraz_sends_fewer_presses(monkeypatch):
+    calls = _capture_vk(monkeypatch)
+    media_module.MediaVolumeUpTool().execute({"lang": "tr", "amount": "biraz"})
+    assert calls == [media_module.VK_VOLUME_UP] * 2
+
+
+def test_volume_amount_cok_sends_more_presses(monkeypatch):
+    calls = _capture_vk(monkeypatch)
+    media_module.MediaVolumeUpTool().execute({"lang": "tr", "amount": "çok"})
+    assert calls == [media_module.VK_VOLUME_UP] * 8
+
+
+def test_volume_amount_integer_is_clamped(monkeypatch):
+    calls = _capture_vk(monkeypatch)
+    media_module.MediaVolumeDownTool().execute({"lang": "en", "amount": "999"})
+    assert calls == [media_module.VK_VOLUME_DOWN] * 15  # clamp 1..15
 
 
 def test_search_music_opens_spotify_search_uri_when_track_not_found(monkeypatch):
