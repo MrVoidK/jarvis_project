@@ -44,7 +44,6 @@ from src.jarvis.tools.media_tool import (
     SetVolumeTool,
 )
 from src.jarvis.tools.notes_tool import (
-    AppendNoteTool,
     CreateNoteTool,
     ListNotesTool,
     MergeNotesTool,
@@ -63,7 +62,6 @@ TOOL_REGISTRY: dict[str, Tool] = {
         CreateNoteTool(),
         ReadNotesTool(),
         ListNotesTool(),
-        AppendNoteTool(),
         OpenNoteTool(),
         MergeNotesTool(),
         ListFilesTool(),

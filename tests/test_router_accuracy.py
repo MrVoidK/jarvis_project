@@ -56,6 +56,14 @@ _CASES = [
     # proje başlatma (Faz 6.7)
     ("yeni bir proje oluştur blog", "create_project"),
     ("create a project called scraper", "create_project"),
+    # ses seviyesi: mutlak vs göreceli (P1)
+    ("sesi 84 yap", "set_volume"),
+    ("set volume to 30", "set_volume"),
+    ("sesi çok aç", "media_volume_up"),
+    # not sistemi v2 (P2)
+    ("notlarımı listele", "list_notes"),
+    ("alışveriş listesi başlığıyla not al süt ekmek", "create_note"),
+    ("alışveriş listesine yumurta ekle", "create_note"),
 ]
 
 
@@ -79,6 +87,7 @@ _KNOWN_3B_MISSES = {
     "adım Ömer bunu hatırla",  # -> create_note (hatırla=not sanıyor); Brain zaten hafıza tutar
     "sistem durumuna bak sonra bir not al",  # -> ilk adımı kapıyor, delegate_complex tetiklemiyor
     "sıradaki şarkıya geç",  # -> ara sıra chat; TR diakritik + 3B, flaky (few-shot'ta var)
+    "alışveriş listesine yumurta ekle",  # -> ara sıra open_note; "ekle" fiili not araçları arasında flaky
 }
 
 

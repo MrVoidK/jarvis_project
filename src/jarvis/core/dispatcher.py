@@ -171,32 +171,23 @@ _ROUTER_SYSTEM_PROMPT = (
     "request as `task`. Do not just pick the first step.\n"
     f"6. Heavy software work (writing/refactoring/debugging code, deep repo "
     f"analysis) -> `{_DELEGATE_CODE_FUNCTION_NAME}`.\n\n"
-    "EXAMPLES:\n"
-    f'- "Merhaba" / "how are you" / "tesekkurler" -> {_NO_TOOL_FUNCTION_NAME}\n'
-    f'- "Jarvis, wake up" / "adim Tony" -> {_NO_TOOL_FUNCTION_NAME}\n'
+    "EXAMPLES (left = user, right = function; pick the function only):\n"
+    f'- "Merhaba" / "how are you" / "tesekkurler" / "adim Tony" -> {_NO_TOOL_FUNCTION_NAME}\n'
     f'- "onayini bekliyorum, terminale bak" -> {_NO_TOOL_FUNCTION_NAME} '
     "(mentions a terminal, dictates nothing)\n"
-    '- "sesi ac" / "sesi yukselt" / "louder" -> media_volume_up '
-    '(| "sesi biraz ac" -> media_volume_up amount=biraz | "sesi cok ac" -> amount=cok)\n'
-    '- "sesi kis" / "sesi dusur" / "quieter" -> media_volume_down\n'
-    '- "sesi 84 yap" / "sesi %50 yap" / "set volume to 30" -> set_volume level=84\n'
-    '- "siradaki sarki" / "siradaki sarkiya gec" / "next track" / "skip" -> media_next_track\n'
-    '- "onceki sarki" / "geri git" / "previous track" -> media_previous_track\n'
-    '- "muzigi durdur" / "duraklat" / "pause" / "sarkiyi devam ettir" -> media_play_pause '
-    "(NOT run_command - nothing dictated)\n"
-    '- "Iron Man cal" / "play Bohemian Rhapsody" -> search_music (query = the song)\n'
-    '- "not al: sut al" -> create_note   |   "alisveris listesi basligiyla not al: sut, ekmek" '
-    '-> create_note title="alisveris listesi" content="sut, ekmek"\n'
-    '- "notlarimi oku" -> read_notes   |   "alisveris listesi notunu oku" -> read_notes title="alisveris listesi"\n'
-    '- "notlarimi listele" / "hangi notlarim var" -> list_notes\n'
-    '- "alisveris listesine yumurta ekle" -> append_to_note title="alisveris listesi" content="yumurta"\n'
-    '- "alisveris listesi notunu ac" / "open my X note" -> open_note title="alisveris listesi"\n'
-    '- "A ve B notlarini C\'de birlestir" -> merge_notes sources="A, B" target="C"\n'
+    '- "sesi ac" / "biraz ac" / "cok ac" / "louder" -> media_volume_up\n'
+    '- "sesi kis" / "biraz kis" / "quieter" -> media_volume_down\n'
+    '- "sesi 84 yap" / "sesi %50 yap" / "set volume to 30" -> set_volume\n'
+    '- "siradaki sarki" / "next" / "skip" -> media_next_track   ;   "onceki sarki" -> media_previous_track\n'
+    '- "muzigi durdur" / "duraklat" / "sarkiyi devam ettir" -> media_play_pause\n'
+    '- "Iron Man cal" / "play Bohemian Rhapsody" -> search_music\n'
+    '- "not al ..." / "X basligiyla not al ..." / "X notuna ... ekle" -> create_note\n'
+    '- "notlarimi oku" / "X notunu oku" -> read_notes   ;   "notlarimi listele" -> list_notes\n'
+    '- "X notunu ac" -> open_note   ;   "X ve Y notlarini birlestir" -> merge_notes\n'
     '- "sistem durumu" / "CPU kullanimi" -> get_system_info\n'
     '- "run dir" / "calistir: git status" -> run_command\n'
-    '- "yeni bir proje olustur: blog" / "create a project called api" -> create_project (project_name = the name)\n'
-    f'- "sistem durumuna bak, sonra bir not al" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}\n'
-    f'- "hava durumunu arastir ve not dus" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}\n'
+    '- "yeni proje olustur: blog" / "create a project called api" -> create_project\n'
+    f'- "durumu kontrol et sonra not al" / "hava durumunu arastir ve not dus" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}\n'
     f'- "dispatcher.py\'yi refactor et" -> {_DELEGATE_CODE_FUNCTION_NAME}\n'
 )
 

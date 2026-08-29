@@ -132,15 +132,17 @@ def test_create_titled_note_makes_separate_file(monkeypatch, tmp_path):
     assert "Alışveriş Listesi" in result
 
 
-def test_create_titled_note_twice_appends_section(monkeypatch, tmp_path):
+def test_create_titled_note_twice_appends_item(monkeypatch, tmp_path):
+    # Ayri "append_to_note" araci yok (3B router'da not araclari karisiyordu) -
+    # var olan basliga tekrar create_note -> yeni bir madde ekler.
     vault = _patch_vault(monkeypatch, tmp_path)
     tool = notes_module.CreateNoteTool()
-    tool.execute({"lang": "tr", "title": "günlük", "content": "ilk"})
-    tool.execute({"lang": "tr", "title": "günlük", "content": "ikinci"})
+    tool.execute({"lang": "tr", "title": "liste", "content": "süt"})
+    tool.execute({"lang": "tr", "title": "liste", "content": "yumurta"})
 
-    text = (_notes_dir(vault) / "günlük.md").read_text(encoding="utf-8")
-    assert "ilk" in text and "ikinci" in text
-    assert text.count("##") >= 1  # ikinci giris ## <ts> bolumu olarak eklendi
+    text = (_notes_dir(vault) / "liste.md").read_text(encoding="utf-8")
+    assert "süt" in text and "yumurta" in text
+    assert text.count("- [") >= 2  # iki madde
 
 
 def test_list_notes_excludes_log_and_lists_titles(monkeypatch, tmp_path):
@@ -164,17 +166,15 @@ def test_read_notes_by_title(monkeypatch, tmp_path):
     assert "bulamad" in miss.lower()
 
 
-def test_append_to_note_adds_and_creates(monkeypatch, tmp_path):
+def test_create_note_appends_to_existing_title(monkeypatch, tmp_path):
     vault = _patch_vault(monkeypatch, tmp_path)
-    notes_module.CreateNoteTool().execute({"lang": "tr", "title": "liste", "content": "süt"})
+    c = notes_module.CreateNoteTool()
+    c.execute({"lang": "tr", "title": "liste", "content": "süt"})
+    result = c.execute({"lang": "tr", "title": "liste", "content": "yumurta"})
 
-    notes_module.AppendNoteTool().execute({"lang": "tr", "title": "liste", "content": "yumurta"})
     text = (_notes_dir(vault) / "liste.md").read_text(encoding="utf-8")
     assert "süt" in text and "yumurta" in text
-
-    # yoksa olusturur
-    notes_module.AppendNoteTool().execute({"lang": "tr", "title": "yeni", "content": "ilk madde"})
-    assert (_notes_dir(vault) / "yeni.md").is_file()
+    assert "ekledim" in result.lower()  # "'liste' notuna ekledim"
 
 
 def test_open_note_uses_obsidian_uri(monkeypatch, tmp_path):

@@ -267,6 +267,13 @@ sistemi.
   ateşle-unut. Ana döngü bir sonraki olayı beklemeden alıyor; TTS ile çekişme
   (11s spike) çözülür. `remember` zaten fail-soft + `memory.py` `_lock`'uyla
   seri. Commit `<P4>`.
+- **P5 — Router regresyon düzeltmesi** ✅ P1/P2'nin eklediği araçlar + verbose
+  few-shot'lar qwen2.5:3b routing'ini bozdu (batarya 20/27, `notlarımı oku`
+  dahil regresyon). Düzeltme: `append_to_note` KALDIRILDI (`create_note` var
+  olan başlığa zaten madde ekler — 3B'de daha az araç = daha iyi routing);
+  `_ROUTER_SYSTEM_PROMPT` EXAMPLES bloğu 20→15 satır, `title=`/`amount=` inline
+  param gürültüsü atıldı; `create_note` description'ı "ekleme" için netleşti.
+  Sonuç: batarya **26/27 pass + 3 xpass** (P1 öncesinden bile iyi). Commit `<P5>`.
 
 ## Yeni bulgular (backlog)
 

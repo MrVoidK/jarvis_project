@@ -161,10 +161,12 @@ class CreateNoteTool(Tool):
 
     name = "create_note"
     description = (
-        "Kullanıcının söylediği notu Obsidian vault'una kalıcı olarak kaydeder. "
-        "Kullanıcı bir BAŞLIK belirtirse (örn. 'alışveriş listesi başlığıyla not "
-        "al: süt, ekmek') onu `title` olarak, geri kalanı `content` olarak geçir; "
-        "başlık yoksa sadece `content` ver (günlük not defterine eklenir)."
+        "Not alır VEYA var olan bir nota/listeye madde ekler. Kullanıcı 'not al: "
+        "...', 'X başlığıyla not al: ...', 'alışveriş listesine yumurta ekle', 'X "
+        "notuna Y yaz' dediğinde bu aracı kullan. Başlık verilirse `title`, geri "
+        "kalanı `content`; o başlıkta not zaten varsa ÜSTÜNE yeni madde eklenir. "
+        "Başlık yoksa günlük not defterine eklenir. (Bir notu OKUMAK için "
+        "read_notes, AÇMAK için open_note.)"
     )
     risk_level = RiskLevel.MEDIUM
     parameters_schema: dict = {
@@ -195,12 +197,14 @@ class CreateNoteTool(Tool):
         if target is None:
             return _localized(_BAD_TITLE_MESSAGES, lang)
         if target.exists():
+            # Var olan basliga -> yeni bir madde ekle (ayri bir "append_to_note"
+            # araci yok; 3B router'da not araclari birbirine karisiyordu).
             with open(target, "a", encoding="utf-8") as note_file:
-                note_file.write(f"\n\n## {timestamp}\n\n{content}\n")
+                note_file.write(f"- [{timestamp}] {content}\n")
             logger.info("Mevcut nota eklendi: %s", target.name)
             return _localized(_APPENDED_MESSAGES, lang).format(title=title)
         with open(target, "w", encoding="utf-8") as note_file:
-            note_file.write(f"# {title}\n\n_{timestamp}_\n\n{content}\n")
+            note_file.write(f"# {title}\n\n- [{timestamp}] {content}\n")
         logger.info("Yeni başlıklı not: %s", target.name)
         return _localized(_CREATED_TITLED_MESSAGES, lang).format(title=title)
 
@@ -278,47 +282,6 @@ class ListNotesTool(Tool):
         if not names:
             return _localized(_NO_NOTES_MESSAGES, lang)
         return _localized(_LIST_MESSAGES, lang).format(names=", ".join(names))
-
-
-class AppendNoteTool(Tool):
-    """Mevcut bir başlıklı nota içerik ekler (yoksa oluşturur)."""
-
-    name = "append_to_note"
-    description = (
-        "Var olan bir başlıklı nota yeni bir madde/satır ekler. Kullanıcı "
-        "'alışveriş listesine yumurta ekle', 'add X to my Y note' dediğinde "
-        "kullan. `title` = notun başlığı, `content` = eklenecek metin."
-    )
-    risk_level = RiskLevel.MEDIUM
-    parameters_schema: dict = {
-        "title": {"type": "string", "description": "Eklenecek notun başlığı."},
-        "content": {"type": "string", "description": "Nota eklenecek metin."},
-    }
-    required_parameters: list[str] = ["title", "content"]
-
-    def execute(self, params: dict, stop_event=None) -> str:
-        lang = params.get("lang", "en")
-        title = (params.get("title") or "").strip()
-        content = (params.get("content") or "").strip()
-        if not content:
-            return _localized(_EMPTY_CONTENT_MESSAGES, lang)
-
-        notes_dir = _ensure_notes_dir(lang)
-        if notes_dir is None:
-            return _localized(_UNSAFE_PATH_MESSAGES, lang)
-        target = _resolve_note_path(title)
-        if target is None:
-            return _localized(_BAD_TITLE_MESSAGES, lang)
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        if target.exists():
-            with open(target, "a", encoding="utf-8") as note_file:
-                note_file.write(f"- [{timestamp}] {content}\n")
-        else:
-            with open(target, "w", encoding="utf-8") as note_file:
-                note_file.write(f"# {title}\n\n- [{timestamp}] {content}\n")
-        logger.info("Nota eklendi: %s", target.name)
-        return _localized(_APPENDED_MESSAGES, lang).format(title=title)
 
 
 class OpenNoteTool(Tool):
