@@ -18,8 +18,10 @@ ince bir `main.py` giriş noktası var.
   pencere sadece gerçek bir yanıt üretildiğinde sıfırdan yenilenir,
   gürültü kaynaklı boş turlar kalan süreyi tüketir — IDLE'a dönüşü
   süresiz ertelemez) → `faster-whisper` (`turbo` = large-v3-turbo,
-  `multilingual=True` + TR/EN karışık `initial_prompt`, CUDA/float16 +
-  otomatik CPU/int8 fallback, `vad_filter=True`) ile transkripsiyon.
+  `multilingual=True` + kısa TR `initial_prompt` + `hotwords`, **CPU/int8**
+  (2026-08-29: VRAM bütçesi — `JARVIS_WHISPER_DEVICE=cuda` ile CUDA/float16),
+  `vad_filter=True`, whisper-öncesi gain normalizasyonu + STT komut-kelimesi
+  düzeltmesi (`_apply_stt_corrections`) ile transkripsiyon.
 - **Brain** (`src/jarvis/brain/llm.py`) — transkripti, döngü boyunca
   kalıcı tutulan bir `history` listesiyle (son `MAX_HISTORY_MESSAGES`
   mesaj, eskiler otomatik kırpılır) `ollama.chat(..., stream=True)`

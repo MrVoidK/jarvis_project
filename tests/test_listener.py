@@ -184,6 +184,36 @@ def test_transcribe_keeps_confident_segment(monkeypatch):
     assert (listener._transcribe(_one_second_of_silence()) or "").strip() == "saat kac"
 
 
+def test_whisper_defaults_to_cpu():
+    # B: VRAM butcesi - whisper artik CPU/int8 (JARVIS_WHISPER_DEVICE=cuda ile geri).
+    assert listener._WHISPER_DEVICE == "cpu"
+    assert listener.get_active_device() == "cpu"
+
+
+def test_normalize_gain_boosts_quiet_leaves_loud_and_silence():
+    import numpy as np
+
+    quiet = (np.ones(1000, dtype=np.float32) * 0.05)
+    out = listener._normalize_gain(quiet)
+    assert float(np.max(np.abs(out))) > 0.3  # yukseltildi
+
+    loud = (np.ones(1000, dtype=np.float32) * 0.9)
+    assert listener._normalize_gain(loud) is loud  # dokunulmadi
+
+    silence = np.zeros(1000, dtype=np.float32)
+    assert listener._normalize_gain(silence) is silence
+
+
+def test_fuzzy_fix_lead_word():
+    # E-fuzzy: bozuk ilk komut kelimesi yakin hedefe cekilir (regex haritasinin
+    # kapsamadigi varyantlar - "servis" zaten _STT_CORRECTIONS regex'inde).
+    assert listener._fuzzy_fix_lead_word("sesin 84 yap").split()[0].lower() in ("sesi", "sesini")
+    assert listener._fuzzy_fix_lead_word("Notlari oku").split()[0].lower() in ("notları", "notlar")
+    # alakasiz ilk kelime -> DOKUNMA
+    assert listener._fuzzy_fix_lead_word("bilgisayar nedir") == "bilgisayar nedir"
+    assert listener._fuzzy_fix_lead_word("merhaba nasılsın") == "merhaba nasılsın"
+
+
 def test_apply_stt_corrections_command_context():
     # E (2026-08-29): bilinen whisper bozulmalari komut baglaminda duzeltilir.
     assert listener._apply_stt_corrections("Servis sesli kız") == "Jarvis sesi kıs"

@@ -141,8 +141,19 @@ class ListenState(Enum):
     FOLLOWUP = auto()  # an utterance just ended; briefly re-listening without the wake word
 
 
+# B (2026-08-29 3. canli test + arastirma): Whisper artik CPU/int8'de.
+# Gerekce: canli testte VRAM %98'e dayaniyordu (whisper + XTTS + hermes3 +
+# qwen), TTS ilk-chunk 8.7 sn'ye sicriyor, transkripsiyon gecikmesi 2-3 sn
+# dalgalaniyordu (GPU thrash). Whisper CPU'ya alininca ~1.5 GB VRAM boşalir,
+# XTTS/Ollama tikanmaz. Bedel: turbo/int8 CPU transkripsiyonu kisa kliplerde
+# ~0.3 sn yerine ~0.8-1.5 sn - GPU thrash'i giderdigi icin NET kazanc.
+# `JARVIS_WHISPER_DEVICE=cuda` ortam degiskeniyle CUDA'ya geri donulebilir.
+_WHISPER_DEVICE = os.environ.get("JARVIS_WHISPER_DEVICE", "cpu").strip().lower()
+
+
 def _load_model_with_fallback(model_size: str = "turbo") -> tuple[WhisperModel, str]:
-    """Loads faster-whisper on CUDA/float16, falling back to CPU/int8 if unavailable.
+    """Loads faster-whisper. Varsayilan CPU/int8 (VRAM butcesi, bkz. _WHISPER_DEVICE);
+    `JARVIS_WHISPER_DEVICE=cuda` ile CUDA/float16 denenir, hata olursa yine CPU'ya duser.
 
     ctranslate2 can construct a CUDA model object successfully even when the
     CUDA/cuBLAS runtime is actually broken (e.g. missing DLLs) - the failure
@@ -150,6 +161,10 @@ def _load_model_with_fallback(model_size: str = "turbo") -> tuple[WhisperModel, 
     transcription forces that failure here instead of on the user's first
     utterance.
     """
+    if _WHISPER_DEVICE != "cuda":
+        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        return model, "cpu"
+
     warmup_audio = np.zeros(SAMPLE_RATE, dtype=np.float32)  # 1s of silence
     try:
         model = WhisperModel(model_size, device="cuda", compute_type="float16")
@@ -541,14 +556,62 @@ _STT_CORRECTIONS = [
 ]
 
 
+# E-fuzzy: ilk kelime (komut tetikleyicisi) whisper tarafindan bozulmus olabilir
+# ("Jarvis"->"servis"/"sizin", "sesi"->"sesli"/"sesin", "notlari"->"notlar"i" vb).
+# SADECE ilk kelime, SADECE cok yakin (difflib ratio >= esik) eslesmede duzeltilir -
+# tam-cumle fuzzy eslestirme yerine cerrahi bir dokunus (yanlis-pozitif riski dusuk).
+_LEAD_WORD_TARGETS = ("jarvis", "sesi", "sesini", "şarkı", "şarkıyı", "notları",
+                      "sıradaki", "önceki", "müziğin", "müzik")
+_LEAD_WORD_MIN_RATIO = 0.78
+
+
+def _fuzzy_fix_lead_word(text: str) -> str:
+    from difflib import SequenceMatcher
+
+    parts = text.split(maxsplit=1)
+    if not parts:
+        return text
+    first = parts[0].strip(".,!?;:")
+    low = first.lower()
+    if not first or low in _LEAD_WORD_TARGETS or len(low) < 3:
+        return text
+    best, best_ratio = None, 0.0
+    for target in _LEAD_WORD_TARGETS:
+        r = SequenceMatcher(None, low, target).ratio()
+        if r > best_ratio:
+            best, best_ratio = target, r
+    if best is not None and best_ratio >= _LEAD_WORD_MIN_RATIO:
+        rest = f" {parts[1]}" if len(parts) > 1 else ""
+        return f"{best.capitalize() if first[0].isupper() else best}{rest}"
+    return text
+
+
 def _apply_stt_corrections(text: str) -> str:
     """Bilinen whisper bozulmalarini komut baglamina gore duzeltir (bkz. _STT_CORRECTIONS)."""
-    fixed = text
+    fixed = _fuzzy_fix_lead_word(text)
     for pattern, repl in _STT_CORRECTIONS:
         fixed = pattern.sub(repl, fixed)
     if fixed != text:
         logger.info("STT duzeltme: %r -> %r", text, fixed)
     return fixed
+
+
+# D (2026-08-29): whisper oncesi hafif kazanc normalizasyonu (AGC-lite).
+# "Jarvis"->"Sizin", "İş"->"İşler" tipi hatalar kismen dusuk kayit seviyesinden
+# (uzak/sessiz mikrofon). Tepe ~0.95'e cekilir - ama zaten yeterince yuksekse
+# ya da neredeyse sessizse DOKUNULMAZ (gurultuyu yukseltmemek icin max_gain kapali).
+_GAIN_TARGET_PEAK = 0.95
+_GAIN_MAX = 8.0
+
+
+def _normalize_gain(audio: np.ndarray) -> np.ndarray:
+    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+    if peak < 1e-3:  # neredeyse sessizlik - dokunma
+        return audio
+    gain = min(_GAIN_TARGET_PEAK / peak, _GAIN_MAX)
+    if gain <= 1.15:  # zaten yeterince yuksek - %15'in altinda kazanc yapma
+        return audio
+    return np.clip(audio * gain, -1.0, 1.0).astype(np.float32)
 
 
 def _transcribe(audio: np.ndarray) -> Optional[str]:
@@ -569,6 +632,7 @@ def _transcribe(audio: np.ndarray) -> Optional[str]:
         )
         return None
 
+    audio = _normalize_gain(audio)  # D: whisper oncesi kazanc normalizasyonu
     start = time.perf_counter()
     try:
         segments, _info = model.transcribe(
