@@ -49,6 +49,38 @@ class _FakeStream:
         return np.zeros((frames, 1), dtype=np.int16), False
 
 
+class _SeqVad:
+    """webrtcvad.Vad yerine: önceden verilen `is_speech` dizisini sırayla döner,
+    dizi bitince `False`."""
+
+    _seq: list = []
+
+    def __init__(self, *_args):
+        self._i = 0
+
+    def is_speech(self, _buf, _rate) -> bool:
+        value = self._seq[self._i] if self._i < len(self._seq) else False
+        self._i += 1
+        return value
+
+
+class _FakeSegment:
+    def __init__(self, text, no_speech_prob=0.0, avg_logprob=0.0):
+        self.text = text
+        self.no_speech_prob = no_speech_prob
+        self.avg_logprob = avg_logprob
+
+
+class _FakeInfo:
+    duration = 1.0
+    language = "en"
+    language_probability = 0.9
+
+
+def _one_second_of_silence() -> np.ndarray:
+    return np.zeros(int(listener.SAMPLE_RATE * 1.0), dtype=np.float32)
+
+
 def test_vad_record_aborts_when_muted_after_trigger(monkeypatch):
     """A1: kayıt bir kez tetiklendikten (triggered=True) sonra bile, Jarvis
     konuşmaya başlarsa (mute_event set) kayıt YANKI sayılıp iptal edilmeli
@@ -83,3 +115,84 @@ def test_vad_record_treats_mute_as_silence_before_trigger(monkeypatch):
         mute_event=mute,
     )
     assert result is None
+
+
+def test_vad_record_rejects_short_blip(monkeypatch):
+    """B3: yalnızca 1-2 frame 'konuşma' sayılan kısacık bir blip (gürültü)
+    MIN_SPEECH_FRAMES eşiğinin altında kalır → None (transkripsiyona hiç
+    gitmez). Canli testte ~870ms'lik bos kayitlarin kok nedeni buydu."""
+    monkeypatch.setattr(_SeqVad, "_seq", [True, True] + [False] * 40)
+    monkeypatch.setattr(listener.webrtcvad, "Vad", _SeqVad)
+
+    result = listener._vad_record(
+        _FakeStream(), max_wait_ms=600, stop_event=threading.Event()
+    )
+    assert result is None
+
+
+def test_vad_record_accepts_enough_voiced_frames(monkeypatch):
+    """B3 karşı-testi: MIN_SPEECH_FRAMES kadar gerçek sesli frame varsa kayıt
+    kabul edilir (ndarray döner)."""
+    monkeypatch.setattr(_SeqVad, "_seq", [True] * 6 + [False] * 40)
+    monkeypatch.setattr(listener.webrtcvad, "Vad", _SeqVad)
+
+    result = listener._vad_record(
+        _FakeStream(), max_wait_ms=600, stop_event=threading.Event()
+    )
+    assert result is not None
+
+
+def test_transcribe_skips_audio_shorter_than_floor(monkeypatch):
+    """B3: eşiğin (MIN_TRANSCRIBE_SECONDS) altındaki bir klip için model.transcribe
+    HİÇ çağrılmaz."""
+    calls = {"n": 0}
+
+    def _fake_transcribe(*_a, **_k):
+        calls["n"] += 1
+        return iter(()), _FakeInfo()
+
+    monkeypatch.setattr(listener.model, "transcribe", _fake_transcribe)
+    short = np.zeros(int(listener.SAMPLE_RATE * 0.2), dtype=np.float32)  # 200ms
+
+    assert listener._transcribe(short) is None
+    assert calls["n"] == 0
+
+
+def test_transcribe_drops_low_confidence_segment(monkeypatch):
+    """B2: yüksek no_speech_prob + düşük avg_logprob segment atılır."""
+    monkeypatch.setattr(
+        listener.model,
+        "transcribe",
+        lambda *_a, **_k: (
+            iter([_FakeSegment(" hayalet metin", no_speech_prob=0.92, avg_logprob=-1.6)]),
+            _FakeInfo(),
+        ),
+    )
+    assert (listener._transcribe(_one_second_of_silence()) or "") == ""
+
+
+def test_transcribe_keeps_confident_segment(monkeypatch):
+    """B2 karşı-testi: güvenli segment (düşük no_speech_prob) korunur."""
+    monkeypatch.setattr(
+        listener.model,
+        "transcribe",
+        lambda *_a, **_k: (
+            iter([_FakeSegment(" saat kac", no_speech_prob=0.04, avg_logprob=-0.25)]),
+            _FakeInfo(),
+        ),
+    )
+    assert (listener._transcribe(_one_second_of_silence()) or "").strip() == "saat kac"
+
+
+def test_transcribe_drops_initial_prompt_regurgitation(monkeypatch):
+    """B1/B2: whisper sessizlikte `initial_prompt`'u aynen geri kusarsa
+    (`User: Hello, system online.` canli test) atılır."""
+    monkeypatch.setattr(
+        listener.model,
+        "transcribe",
+        lambda *_a, **_k: (
+            iter([_FakeSegment("Hello, system online.", no_speech_prob=0.2, avg_logprob=-0.4)]),
+            _FakeInfo(),
+        ),
+    )
+    assert listener._transcribe(_one_second_of_silence()) is None

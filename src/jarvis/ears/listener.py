@@ -41,7 +41,22 @@ SILENCE_HANGOVER_MS = 700
 MAX_WAIT_MS = 10000  # how long to wait for speech to start before giving up
 MAX_UTTERANCE_MS = 20000  # how long a triggered utterance may run before force-stopping
 PREROLL_FRAMES = 3  # ~90ms of audio kept before trigger, so onset isn't clipped
-VAD_AGGRESSIVENESS = 2  # 0 (permissive) - 3 (aggressive filtering of non-speech)
+VAD_AGGRESSIVENESS = 3  # 0 (permissive) - 3 (aggressive filtering of non-speech).
+                         # 2026-08-29 (Cluster B): 2 -> 3. webrtcvad seviye 2, kisa
+                         # gurultu darbelerine (klavye, tikirti, nefes) sik
+                         # tetikleniyor ve faster-whisper'in kendi vad_filter'i
+                         # sonra klibin %100'unu siliyordu (bos/halusinasyon
+                         # turlar). Seviye 3 + MIN_SPEECH_FRAMES tabani bunlari
+                         # kaynakta eler; yumusak baslangiclari PREROLL_FRAMES
+                         # (~90ms) + whisper'in vad_filter'i telafi eder.
+MIN_SPEECH_FRAMES = 3  # bir kaydin gecerli sayilmasi icin gereken GERCEK sesli
+                        # (is_speech=True) frame sayisi - ~90ms. Yalnizca 1-2
+                        # frame "konusma" sanilan kisacik bir blip (gurultu)
+                        # transkripsiyona hic gitmez. "dur"/"ac"/"evet" gibi en
+                        # kisa gercek komutlar bile bunu rahatca asar.
+MIN_TRANSCRIBE_SECONDS = 0.35  # bu sureden kisa bir klip icin model.transcribe
+                                # HIC cagrilmaz - net kazanc: bos turlarda
+                                # gereksiz GPU cagrisi + halusinasyon riski yok.
 FOLLOWUP_WINDOW_MS = 12000  # Jarvis konustuktan sonra wake-word gerekmeden devam
                              # konusmasi icin beklenen sure. MAX_WAIT_MS'ten (10s)
                              # biraz daha genis tutuldu cunku kullanici Jarvis'in
@@ -233,6 +248,9 @@ def _vad_record(
     silence_run = 0
     wait_frames = 0
     speech_frame_count = 0
+    voiced_frames = 0  # yalnizca is_speech=True olan frame'ler (preroll/hangover
+                       # haric) - B3 (2026-08-29): kaydi kabul etmek icin bunun
+                       # MIN_SPEECH_FRAMES'i asmasi gerekiyor.
 
     logger.info("Dinleniyor (konusmaya baslayabilirsiniz)...")
 
@@ -280,6 +298,7 @@ def _vad_record(
             silence_run = 0
             speech_frames.append(frame)
             speech_frame_count += 1
+            voiced_frames += 1
         elif triggered:
             silence_run += 1
             speech_frames.append(frame)
@@ -292,6 +311,18 @@ def _vad_record(
 
     if not speech_frames:
         logger.info("Konusma algilanmadi (timeout).")
+        return None
+
+    if voiced_frames < MIN_SPEECH_FRAMES:
+        # B3 (2026-08-29): 1-2 frame "konusma" sanilan kisacik bir blip
+        # (klavye/tikirti/nefes) - transkripsiyona hic gitme. Canli testte
+        # onlarca "VAD filter removed 00:00.870 of audio" (bos tur) + arada
+        # `initial_prompt` regurjitasyonu bunun sonucuydu.
+        logger.info(
+            "Kayit yeterince konusma icermiyor (%d < %d sesli frame) - atlandi.",
+            voiced_frames,
+            MIN_SPEECH_FRAMES,
+        )
         return None
 
     logger.info("Kayit tamamlandi, transkribe ediliyor...")
@@ -434,8 +465,56 @@ def _wait_for_wakeword(
             return chunk
 
 
+# faster-whisper'in TR/EN kod-degisimli (code-switching) dogrulugu icin verilen
+# baglam ipucu. KORUNUYOR (2026-08-29 Cluster B karari) - iki dilli dogruluga
+# katkisi var; ama whisper sessizlik/gurultude bu metni AYNEN geri kusabiliyor
+# (canli testte `User: Hello, system online.`). Regurjitasyon `condition_on_previous_text=False`
+# + asagidaki `_PROMPT_ECHO` blocklist'i ile kesiliyor.
+_INITIAL_PROMPT = "Merhaba Jarvis. Hello, system online. Nasılsın? Execute command."
+
+# `initial_prompt`'un birebir geri donen cumle parcalari + faster-whisper'in
+# bos/gurultulu seste sik urettigi bilinen halusinasyonlar (hepsi lowercase,
+# strip'li karsilastirilir).
+_HALLUCINATION_PHRASES = {
+    "merhaba jarvis.",
+    "hello, system online.",
+    "nasılsın?",
+    "execute command.",
+    "thank you.",
+    "thank you very much.",
+    "thanks for watching!",
+    "altyazı m.k.",
+    "amara.org",
+    "abone ol",
+}
+
+
+def _is_probable_hallucination(text: str) -> bool:
+    """Tum transkript (lowercase/strip) bilinen bir halusinasyon kalibiysa
+    (initial_prompt echo'su dahil) True - segment-bazi guven gate'inden
+    kacan tam-metin regurjitasyonlarini yakalar."""
+    norm = text.strip().lower()
+    return norm in _HALLUCINATION_PHRASES or norm == _INITIAL_PROMPT.strip().lower()
+
+
 def _transcribe(audio: np.ndarray) -> Optional[str]:
-    """Runs faster-whisper on already-recorded audio, logging transcription latency."""
+    """Runs faster-whisper on already-recorded audio, logging transcription latency.
+
+    Bos/gurultulu turlar icin cok katmanli gate (2026-08-29 Cluster B):
+    (1) MIN_TRANSCRIBE_SECONDS altindaki klip -> model HIC cagrilmaz;
+    (2) `no_speech_threshold`/`log_prob_threshold`/`compression_ratio_threshold`
+        + segment-bazi `no_speech_prob`/`avg_logprob` esikleri -> guvensiz
+        segmentler atilir;
+    (3) tam-metin halusinasyon blocklist'i (`_is_probable_hallucination`).
+    """
+    if len(audio) < int(SAMPLE_RATE * MIN_TRANSCRIBE_SECONDS):
+        logger.info(
+            "Kayit cok kisa (%.2fs < %.2fs) - transkripsiyon atlandi.",
+            len(audio) / SAMPLE_RATE,
+            MIN_TRANSCRIBE_SECONDS,
+        )
+        return None
+
     start = time.perf_counter()
     try:
         segments, _info = model.transcribe(
@@ -446,11 +525,32 @@ def _transcribe(audio: np.ndarray) -> Optional[str]:
             # instead of once for the whole clip, so a sentence that switches
             # between Turkish and English mid-way is still handled correctly.
             multilingual=True,
-            initial_prompt="Merhaba Jarvis. Hello, system online. Nasılsın? Execute command.",
+            initial_prompt=_INITIAL_PROMPT,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
+            # B1: onceki (halusinasyon olabilecek) metni bir sonraki decode'a
+            # besleme - bir kez baslayan regurjitasyonu kendi kendine buyutuyordu.
+            condition_on_previous_text=False,
+            # B2: whisper'in kendi sessizlik/guven esikleri (varsayilanlara
+            # sessizce guvenmek yerine acikca yaziyoruz).
+            no_speech_threshold=0.6,
+            log_prob_threshold=-1.0,
+            compression_ratio_threshold=2.4,
         )
-        text = "".join(segment.text for segment in segments).strip()
+        kept: list[str] = []
+        for segment in segments:
+            no_speech = float(getattr(segment, "no_speech_prob", 0.0) or 0.0)
+            avg_logprob = float(getattr(segment, "avg_logprob", 0.0) or 0.0)
+            if no_speech > 0.6 and avg_logprob < -0.5:
+                logger.info(
+                    "Segment atlandi (no_speech=%.2f, avg_logprob=%.2f): %r",
+                    no_speech,
+                    avg_logprob,
+                    segment.text.strip(),
+                )
+                continue
+            kept.append(segment.text)
+        text = "".join(kept).strip()
     except Exception as exc:
         # A single bad turn (e.g. a transient CUDA/ctranslate2 error) must not
         # kill listen_loop()'s otherwise-infinite generator.
@@ -458,6 +558,9 @@ def _transcribe(audio: np.ndarray) -> Optional[str]:
         return None
 
     logger.info("Transkripsiyon gecikmesi: %.2fs", time.perf_counter() - start)
+    if text and _is_probable_hallucination(text):
+        logger.info("Muhtemel halusinasyon transkripti atlandi: %r", text)
+        return None
     return text
 
 

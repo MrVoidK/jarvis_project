@@ -52,34 +52,39 @@ boşalmıyor, `/status` 27 s sonra işlendi.
 (mute-abort + invariant). Full suite 225 pass / 1 skip.
 Manuel (bekliyor): sessiz oda / kulaklık kontrol / kendi sesi izolasyonu.
 
-**Commit:** `<A>`
+**Commit:** `59faa9e`
 
 ---
 
-## Cluster B — Whisper boş/gürültü halüsinasyonu ⬜
+## Cluster B — Whisper boş/gürültü halüsinasyonu ✅
 
 **Belirti:** `VAD filter removed 00:00.870 of audio` (klibin %100'ü) → yine de
 `User: Hello, system online.` (birebir `initial_prompt`'tan).
 
 **Kök neden:**
-- B1 — `initial_prompt` (`~listener.py:437`) near-silence'ta aynen geri kusuluyor.
+- B1 — `initial_prompt` near-silence'ta aynen geri kusuluyor.
 - B2 — `webrtcvad` (aggr. 2) küçük blip'e tetikleniyor; `_transcribe` `info`/
   `no_speech_prob`/`avg_logprob`/süre gate'i yapmıyor.
 - B3 — `Detected language 'en' probability 0.52` sabit null-detection imzası.
 
-**Yapılacaklar:**
-- [ ] B1: `condition_on_previous_text=False`; `initial_prompt` içeriği korunur.
-- [ ] B2: `no_speech_threshold=0.6`, `log_prob_threshold=-1.0`,
+**Yapıldı:**
+- [x] B1: `condition_on_previous_text=False`; `_INITIAL_PROMPT` sabitleştirildi,
+  içeriği korundu.
+- [x] B2: `no_speech_threshold=0.6`, `log_prob_threshold=-1.0`,
   `compression_ratio_threshold=2.4`; segment-bazı `no_speech_prob>0.6 &
-  avg_logprob<-0.5` at; halüsinasyon blocklist'i.
-- [ ] B3: `_vad_record` `voiced_frames` sayacı + `MIN_SPEECH_FRAMES=3`;
-  `_transcribe` `<350ms` audio → model çağrılmadan `None`;
+  avg_logprob<-0.5` → at; `_is_probable_hallucination()` tam-metin blocklist'i
+  (`_HALLUCINATION_PHRASES`).
+- [x] B3: `_vad_record` `voiced_frames` sayacı + `MIN_SPEECH_FRAMES=3`;
+  `_transcribe` `<MIN_TRANSCRIBE_SECONDS (0.35s)` → model çağrılmadan `None`;
   `VAD_AGGRESSIVENESS 2→3`.
 
-**Test:** yeni `test_listener.py` (`_transcribe` gate + `_vad_record` blip);
-manuel: sessiz oda.
+**Test:** `test_listener.py` +6 (transcribe gate + blip + invariant). Full suite
+231 pass / 1 skip. Manuel (bekliyor): sessiz oda (sıfır transkripsiyon çağrısı).
 
-**Commit:** —
+**Not:** `VAD_AGGRESSIVENESS=3` + `MIN_SPEECH_FRAMES=3` ayarlanabilir — gerçek
+kullanımda çok kısa gerçek komutlar ("dur") düşerse gevşetilir.
+
+**Commit:** `<B>`
 
 ---
 
