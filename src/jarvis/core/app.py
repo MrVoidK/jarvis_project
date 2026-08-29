@@ -36,7 +36,7 @@ from src.jarvis.core.language import detect_language
 from src.jarvis.core.memory import remember
 from src.jarvis.core.pending_tasks import record_pending
 from src.jarvis.core.risk import evaluate_approval_answer, request_approval, requires_approval
-from src.jarvis.mouth.tts import speak
+from src.jarvis.mouth.tts import release_mic_mute, speak
 from src.jarvis.tools.base import Tool
 from src.jarvis.tools.registry import all_tools, get_tool
 
@@ -197,6 +197,10 @@ def _prompt_for_approval(
         language=lang,
         stop_event=stop_event,
         speaking_event=speaking_event,
+        # Turn-bazli mute'un sahibi run_jarvis (Cluster A2) - bu anons turun
+        # ortasinda, mikrofon zaten susturulmusken calisir; kendi set/clear'ini
+        # yapsaydi cooldown sonrasi mikrofonu turun geri kalani icin acardi.
+        manage_mute=False,
     )
     print_approval_panel(panel_name, panel_risk, panel_params)
     if input_hub is not None:
@@ -487,6 +491,7 @@ def _run_delegate_code(
         language=lang,
         stop_event=stop_event,
         speaking_event=speaking_event,
+        manage_mute=False,  # turn-bazli mute'un sahibi run_jarvis (Cluster A2)
     )
     agent = AgentFactory.create("deep_reasoning")
     # TTS dostu kalsin diye kisitlama ekleniyor - `claude -p` varsayilan olarak
@@ -654,15 +659,20 @@ def run_jarvis() -> None:
     sinyal kontrol noktalarına dönene kadar beklenir; sadece bu çağrılar
     ARASINDAKI bekleme sürelerini anında kısaltır.
 
-    MİKROFON KENDİ KENDİNİ TETİKLEME DÜZELTMESİ: `speaking_event` (aşağıda
-    oluşturulur) hem `speak()`e hem `InputHub`'a geçirilir - `speak()` sesi
-    çalarken bunu set eder, `InputHub`'ın mikrofon thread'i (`ears/listener.py:
-    listen_loop()`) set'ken yeni bir wake-word/VAD tetiklemesi ARAMAZ. Bu
-    olmadan (hibrit girdiden önceki senkron döngüde örtük olarak var olan bir
-    korumaydı - `speak()` çalışırken `listen_loop()` generator'ı zaten askıda
-    kalıyordu) düşük riskli bir araç (örn. `get_system_info`, onay gerektirmez)
-    kendi sesli çıktısını mikrofondan duyup kendini sonsuza kadar yeniden
-    tetikleyebiliyordu (projede akustik yankı bastırma/AEC yok).
+    MİKROFON KENDİ KENDİNİ TETİKLEME DÜZELTMESİ (Cluster A2, 2026-08-29 -
+    turn-bazlı mute): `speaking_event` hem `speak()`e hem `InputHub`'a geçirilir.
+    Bu döngü, bir kullanıcı turunu işlemeye başlamadan ÖNCE event'i set eder,
+    turun tüm cümleleri `speak(..., manage_mute=False)` ile söylenir (yani
+    `speak()` event'e dokunmaz), tur bittiğinde `finally`de tek sefer
+    `release_mic_mute()` (cooldown + clear) + `hub.discard_pending_voice()`
+    çağrılır. `InputHub`'ın mikrofon thread'i (`ears/listener.py:listen_loop()`)
+    set'ken yeni bir tetikleme ARAMAZ **ve** devam eden bir kaydı da iptal eder
+    (A1). Eski hali (her `speak()` kendi set/clear'ini yapardı) çok-cümleli
+    yanıtlarda cümleler arası + cooldown boyunca mikrofonu açıyor, Jarvis kendi
+    TTS'ini yeni bir kullanıcı turu sanıp kendine cevap veriyordu (projede AEC
+    yok). KABUL EDİLEN SINIR: kullanıcı Jarvis "düşünürken"/konuşurken araya
+    giremez (barge-in MVP dışı, docs/ROADMAP.md Faz 1.3). `/test` gibi tur-dışı
+    yollarda çağrılan `speak()` hâlâ `manage_mute=True` (kendi mute'unu yönetir).
     """
     # Boot ekrani (ASCII art + gercek Ears/Mouth/Brain yukleme spinner'lari) artik
     # main.py'de, bu fonksiyon cagrilmadan ONCE calisiyor (bkz. main.py) - o noktada
@@ -749,35 +759,60 @@ def run_jarvis() -> None:
             # gereksiz titreme yaratirdi).
             spoken_parts: list[str] = []
             turn_lang = "en"
-            with status_spinner("Jarvis düşünüyor...") as spinner:
-                first_sentence = True
+            # Cluster A2 (2026-08-29): mikrofon susturmasi artik TURN-BAZLI.
+            # Eskiden her speak() cagrisi kendi set/clear'ini yapiyordu -
+            # cok-cumleli bir yanitta cumleler arasi + MIC_MUTE_COOLDOWN_S
+            # boyunca mikrofon ACILIYOR ve Jarvis'in bir sonraki cumlesini/oda
+            # yankisini yakalayip kendine cevap veriyordu (akustik feedback,
+            # canli testin kok nedeni). Simdi mute tur boyunca BURADA tutuluyor,
+            # speak()'ler manage_mute=False ile cagriliyor, tur sonunda TEK
+            # sefer release_mic_mute() + kuyruk yanki temizligi (A3) yapiliyor.
+            # KABUL EDILEN SINIR: kullanici Jarvis "dusunurken" (router/brain)
+            # araya giremez - barge-in zaten MVP disi (docs/ROADMAP.md Faz 1.3).
+            speaking_event.set()
+            try:
+                with status_spinner("Jarvis düşünüyor...") as spinner:
+                    first_sentence = True
 
-                def _stop_spinner_once() -> None:
-                    # nonlocal + idempotent: hem tool-calistiran yolun
-                    # on_tool_start callback'inden (onay panelinden ONCE,
-                    # bkz. _execute_tool docstring'i "on_start"), hem de
-                    # asagidaki normal ilk-cumle yolundan cagrilabilir -
-                    # ikisi de calissa spinner sadece BIR KEZ durur.
-                    nonlocal first_sentence
-                    if first_sentence:
-                        spinner.stop()
-                        first_sentence = False
+                    def _stop_spinner_once() -> None:
+                        # nonlocal + idempotent: hem tool-calistiran yolun
+                        # on_tool_start callback'inden (onay panelinden ONCE,
+                        # bkz. _execute_tool docstring'i "on_start"), hem de
+                        # asagidaki normal ilk-cumle yolundan cagrilabilir -
+                        # ikisi de calissa spinner sadece BIR KEZ durur.
+                        nonlocal first_sentence
+                        if first_sentence:
+                            spinner.stop()
+                            first_sentence = False
 
-                for sentence, lang in _handle_turn(
-                    event.text,
-                    history,
-                    stop_event=stop_event,
-                    input_hub=hub,
-                    pending=pending,
-                    on_tool_start=_stop_spinner_once,
-                    speaking_event=speaking_event,
-                    source=event.source,
-                ):
-                    _stop_spinner_once()
-                    print_agent("Jarvis", sentence)
-                    speak(sentence, language=lang, stop_event=stop_event, speaking_event=speaking_event)
-                    spoken_parts.append(sentence)
-                    turn_lang = lang or turn_lang
+                    for sentence, lang in _handle_turn(
+                        event.text,
+                        history,
+                        stop_event=stop_event,
+                        input_hub=hub,
+                        pending=pending,
+                        on_tool_start=_stop_spinner_once,
+                        speaking_event=speaking_event,
+                        source=event.source,
+                    ):
+                        _stop_spinner_once()
+                        print_agent("Jarvis", sentence)
+                        speak(
+                            sentence,
+                            language=lang,
+                            stop_event=stop_event,
+                            speaking_event=speaking_event,
+                            manage_mute=False,
+                        )
+                        spoken_parts.append(sentence)
+                        turn_lang = lang or turn_lang
+            finally:
+                # Tur bitti (basarili/hatali/erken): mute'u cooldown ile kaldir,
+                # sonra bu yanit sirasinda birikmis yanki ses olaylarini kuyruktan
+                # at - yoksa pes pese "Jarvis kendi cumlesine cevap veriyor" +
+                # "cevaplar 20-30 sn gecikmeli" (canli test).
+                release_mic_mute(speaking_event, stop_event)
+                hub.discard_pending_voice()
 
             # Tur tamamlandi: kullaniciya soylenen tam yaniti kalici hafizaya
             # yaz (oturumlar-arasi, Faz 6.5). `remember()` her istisnayi kendi

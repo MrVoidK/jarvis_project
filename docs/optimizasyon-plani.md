@@ -19,35 +19,40 @@ Plan referansı: `~/.claude/plans/melodic-bouncing-forest.md` (onaylı).
 
 ---
 
-## Cluster A — Akustik feedback + kuyruk birikmesi ⬜
+## Cluster A — Akustik feedback + kuyruk birikmesi ✅
 
 **Belirti:** `User: How can I help?` / `User: I've turned the volume down a bit.`
 gibi Jarvis'in kendi cümleleri transkript olarak geri geliyor; kuyruk hiç
 boşalmıyor, `/status` 27 s sonra işlendi.
 
 **Kök neden:**
-- A1 — `ears/listener.py:_vad_record` mute kontrolü SADECE `not triggered` iken
-  (`~listener.py:251`); kayıt bir kez `triggered=True` olunca Jarvis'in
-  konuşmasını sonuna kadar kaydediyor.
-- A2 — `core/app.py:run_jarvis` her cümleyi ayrı `speak()`'liyor (`~app.py:778`);
-  cümleler arası + `MIC_MUTE_COOLDOWN_S` boyunca `speaking_event` CLEAR.
+- A1 — `ears/listener.py:_vad_record` mute kontrolü SADECE `not triggered` iken;
+  kayıt bir kez `triggered=True` olunca Jarvis'in konuşmasını sonuna kadar
+  kaydediyor.
+- A2 — `core/app.py:run_jarvis` her cümleyi ayrı `speak()`'liyor; cümleler arası
+  + `MIC_MUTE_COOLDOWN_S` boyunca `speaking_event` CLEAR.
 - A3 — `core/input_hub.py` `queue.Queue()` sınırsız/FIFO, "konuşurken yakalanan
-  girdiyi at" politikası yok (`~input_hub.py:143`).
+  girdiyi at" politikası yok.
 - A4 — `_transcribe` (mic thread) ↔ `speak()` (ana thread) eşzamanlı → GPU
   çekişmesi, `Transkripsiyon gecikmesi: 3.65s`.
 
-**Yapılacaklar:**
-- [ ] A1: `_vad_record` — `mute_event` set ise `triggered` olsa bile `return None`.
-- [ ] A2: `speak(..., manage_mute=False)` param + `tts.release_mic_mute()` helper;
-  `run_jarvis` turu boyunca `speaking_event`'i sahiplenir; `_prompt_for_approval`
-  ve `_run_delegate_code` `speak()` çağrıları `manage_mute=False`.
-- [ ] A3: `InputHub.discard_pending_voice()`; `run_jarvis` `finally`'de çağrılır.
-- [ ] A4: A1+A2 dolaylı çözer — ayrı kod yok.
+**Yapıldı:**
+- [x] A1: `_vad_record` — `mute_event` set ise `triggered` olsa bile `return None`
+  ("yankı sayılıp kayit iptal"). `mute_event` docstring'i güncellendi.
+- [x] A2: `speak(..., manage_mute=False)` param + `tts.release_mic_mute()` helper;
+  `run_jarvis` tur döngüsünü `speaking_event.set()` / `finally: release_mic_mute
+  + discard_pending_voice` ile sardı; `_prompt_for_approval` ve
+  `_run_delegate_code` notice `speak()` çağrıları `manage_mute=False`.
+- [x] A3: `InputHub.discard_pending_voice() -> int`; `run_jarvis` `finally`'de.
+- [x] A4: A1+A2 dolaylı çözdü (mute'ta `_vad_record` hızla `None`, transkripsiyon
+  hiç çağrılmaz). `/test` yolunda approval anonsu mic-mute'suz — dev-tool, kabul
+  (bkz. backlog).
 
-**Test:** `test_input_hub.py` (discard), yeni `test_listener.py` (mute-abort);
-manuel: sessiz oda / kulaklık kontrol / kendi sesi izolasyonu.
+**Test:** `test_input_hub.py` +2 (discard), yeni `test_listener.py` +2
+(mute-abort + invariant). Full suite 225 pass / 1 skip.
+Manuel (bekliyor): sessiz oda / kulaklık kontrol / kendi sesi izolasyonu.
 
-**Commit:** —
+**Commit:** `<A>`
 
 ---
 
@@ -186,6 +191,11 @@ belirti — kök neden (dosya:satır) — durum`)_
 - 2026-08-29 — `pending` (approval sırasında biriken voice olayları) `run_jarvis`
   içinde `discard_pending_voice`'tan etkilenmiyor; feedback approval penceresine
   sızarsa işlenir. Düşük olasılık, A3 sonrası tekrar değerlendir. — ⬜
+- 2026-08-29 — `/test <araç>` (dev komutu) HIGH/MEDIUM bir araç için approval
+  anonsunu (`speak` `manage_mute=False`) mic-mute'suz çalıştırır; anons hoparlörde
+  yankılanırsa kuyruğa `voice` olarak girer, approval sonrası bir spurious tur
+  işlenir. Zararsız (sesli onay devre dışı), dev-tool. İstenirse `_cmd_test`'e
+  set/`release_mic_mute` sarması eklenir. — ⬜
 - 2026-08-29 — Mutlak ses kontrolü ("sesi %50 yap") `pycaw`/Core Audio gerektirir;
   CLAUDE.md "gereksiz bağımlılık" ilkesi — şimdilik kapsam dışı. — ⬜
 

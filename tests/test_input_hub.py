@@ -211,3 +211,27 @@ def test_submit_external_text_still_wraps_to_text_source():
     hub.submit_external_text("merhaba")
     evt = hub.next_event(poll_interval=0.05)
     assert evt.source == "text" and evt.text == "merhaba"
+
+
+def test_discard_pending_voice_drops_voice_keeps_the_rest():
+    # A3 (2026-08-29 optimizasyon turu): bir tur bittikten sonra kuyrukta
+    # biriken "voice" olaylari neredeyse kesin akustik yanki/feedback -
+    # atilmali; "text"/"scheduled"/"continuous" korunmali, sira bozulmamali.
+    hub = _idle_hub()
+    hub._queue.put(InputEvent(source="voice", text="jarvisin kendi sesi 1"))
+    hub._queue.put(InputEvent(source="text", text="/status"))
+    hub._queue.put(InputEvent(source="voice", text="jarvisin kendi sesi 2"))
+    hub._queue.put(InputEvent(source="scheduled", text="zamanlanmis"))
+
+    discarded = hub.discard_pending_voice()
+
+    assert discarded == 2
+    assert hub.next_event(poll_interval=0.05) == InputEvent(source="text", text="/status")
+    assert hub.next_event(poll_interval=0.05) == InputEvent(source="scheduled", text="zamanlanmis")
+    assert hub._queue.empty()
+
+
+def test_discard_pending_voice_on_empty_queue_is_a_noop():
+    hub = _idle_hub()
+    assert hub.discard_pending_voice() == 0
+    assert hub._queue.empty()

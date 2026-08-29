@@ -207,16 +207,18 @@ def _vad_record(
     roughly one frame period rather than waiting for the full recording/
     timeout to finish naturally.
 
-    `mute_event`, if given (bkz. `mouth/tts.py:speak()`'in ayni event'i
-    "speaking_event" olarak set/clear ettigi yer), Jarvis suanda konusurken
-    set olur. Frame HALA okunur (buffer overflow'u onlemek icin) ama
-    HENUZ `triggered=False` iken (yani bir konusma BASLANGICI araniyorken)
-    is_speech kontrolu hic yapilmadan sessizlik sayilir - boylece Jarvis'in
-    kendi sesinin hoparlorden mikrofona sizip yeni bir "kullanici konusuyor"
-    tetiklemesi onlenir. Zaten `triggered` olmus (gercek bir kullanici
-    konusmasi devam ediyor) bir kaydi KESMEZ - bu, mute_event'in speak()
-    tarafindan SADECE bir turn TAMAMEN bittikten sonra set edilmesi
-    sayesinde zaten cakismaz.
+    `mute_event`, if given, Jarvis suanda konusurken set olur (turn-bazli -
+    `core/app.py:run_jarvis()` tur boyunca sahiplenir, `mouth/tts.py:speak()`
+    artik `manage_mute=False` ile cagrilir). Frame HALA okunur (buffer
+    overflow'u onlemek icin) ama:
+    - `triggered=False` (konusma BASLANGICI araniyor) iken: is_speech hic
+      sorulmadan sessizlik sayilir - Jarvis'in kendi sesinin yeni bir
+      "kullanici konusuyor" tetiklemesi onlenir.
+    - `triggered=True` (kayit devam ediyor) iken bile: kayit iptal edilip
+      None donulur (A1, 2026-08-29). Turn-bazli mute sayesinde Jarvis bir
+      kullanicinin gercek konusmasinin ortasinda konusmaya baslamaz, bu
+      yuzden mute'lu bir kayit = yanki; sonuna kadar kaydetmek (eski hali)
+      cok-cumleli yanitlarda akustik feedback dongusune yol aciyordu.
     """
     vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
     hangover_frames = SILENCE_HANGOVER_MS // FRAME_MS
@@ -248,10 +250,20 @@ def _vad_record(
             logger.warning("Giris tamponu tasti (overflow) - ses kaybi olabilir.")
         frame = frame.reshape(-1)
 
-        if not triggered and mute_event is not None and mute_event.is_set():
-            # Jarvis konusuyor, henuz bir konusma BASLANGICI da yakalanmamis -
-            # bu frame'i VAD'a hic sormadan sessizlik say (bkz. yukaridaki
-            # mute_event docstring notu).
+        if mute_event is not None and mute_event.is_set():
+            if triggered:
+                # A1 (2026-08-29 optimizasyon turu): kayit ZATEN tetiklenmis
+                # olsa bile Jarvis bu sirada konusmaya baslamissa (turn-bazli
+                # mute, bkz. core/app.py:run_jarvis) yakalanan ses neredeyse
+                # kesin hoparlorden sizan kendi TTS'idir - kaydi iptal et
+                # (yanki bir kullanici turu olarak transkribe edilmesin).
+                # Eski hali (sadece `not triggered` iken sessizlik saymak)
+                # cok-cumleli yanitlarda cumleler arasi boslukta tetiklenip
+                # devam eden kaydi durduramiyordu (canli test kok nedeni).
+                logger.info("Jarvis konusurken ses algilandi - yanki sayilip kayit iptal edildi.")
+                return None
+            # Konusma baslangici araniyorken: bu frame'i VAD'a hic sormadan
+            # sessizlik say (bkz. yukaridaki mute_event docstring notu).
             wait_frames += 1
             preroll.append(frame)
             continue

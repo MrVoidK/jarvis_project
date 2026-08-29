@@ -211,11 +211,31 @@ def _produce_tts_chunks(
         chunk_queue.put(_TTS_STREAM_DONE)
 
 
+def release_mic_mute(
+    speaking_event: Optional[threading.Event],
+    stop_event: Optional[threading.Event] = None,
+) -> None:
+    """Turn-bazli mikrofon susturmasini (bkz. `core/app.py:run_jarvis()`,
+    `manage_mute=False` ile cagrilan `speak()`'ler) tur SONUNDA kaldirir.
+
+    `speak()`'in eskiden her cagrida yaptigi `MIC_MUTE_COOLDOWN_S` beklemesi
+    (oda yankisi/reverb kuyrugunun sonmesi icin) buraya tasindi - artik
+    cok-cumleli bir yanitin ORTASINDA degil, yalnizca tur bittiginde bir kez
+    calisir. Kapatma sirasinda (`stop_event` set) beklemeden temizler
+    (process zaten kapaniyor). `speaking_event is None` ise no-op."""
+    if speaking_event is None:
+        return
+    if stop_event is None or not stop_event.is_set():
+        time.sleep(MIC_MUTE_COOLDOWN_S)
+    speaking_event.clear()
+
+
 def speak(
     text: str,
     language: Optional[str] = None,
     stop_event: Optional[threading.Event] = None,
     speaking_event: Optional[threading.Event] = None,
+    manage_mute: bool = True,
 ) -> None:
     """Metni XTTS-v2 ile klonlanmis sesle senteler ve dogrudan hoparlore akitir.
 
@@ -238,14 +258,20 @@ def speak(
     chunk'ta kontrol edilip set edilirse mevcut cumle yarida kesilip erken cikilir -
     kapatma sirasinda kalan tum kuyruklanmis sesin sonuna kadar beklenmez.
 
-    `speaking_event` verilirse (hibrit girdi modu, bkz. core/input_hub.py ve
-    ears/listener.py'nin AYNI event'i "mute_event" olarak tukettigi yer):
-    oynatma baslamadan HEMEN ONCE set edilir, oynatma bittikten `MIC_MUTE_COOLDOWN_S`
-    sonra (oda yankisinin/reverb kuyrugunun sonmesi icin) clear edilir - `try/finally`
-    ile HER kosulda (basarili/hatali/erken-durdurulmus) temizlenmesi garanti edilir.
-    Amac: mikrofon thread'inin Jarvis'in KENDI sesini yeni bir kullanici turu sanip
-    ayni araci (orn. get_system_info) tekrar tetiklemesini onlemek - bkz. bu
-    parametrenin eklenme gerekcesi icin core/app.py:run_jarvis() docstring'i.
+    `speaking_event` + `manage_mute` (hibrit girdi modu, bkz. core/input_hub.py
+    ve ears/listener.py'nin AYNI event'i "mute_event" olarak tukettigi yer):
+    Jarvis konusurken mikrofon thread'i yeni bir tetikleme ARAMAZ, boylece
+    Jarvis kendi TTS'ini yeni bir kullanici turu sanmaz.
+    - `manage_mute=True` (varsayilan, tekil/bagimsiz cagrilar icin): `speak()`
+      oynatmadan HEMEN ONCE `speaking_event`'i set eder, `try/finally` ile
+      oynatma bittikten `MIC_MUTE_COOLDOWN_S` sonra clear eder.
+    - `manage_mute=False` (2026-08-29, Cluster A2): `speak()` `speaking_event`'e
+      HIC DOKUNMAZ. `core/app.py:run_jarvis()` mute'u TUR BOYUNCA sahiplenir
+      (cok-cumleli yanitta cumleler arasi + cooldown boyunca mikrofonun
+      acilmasi -> Jarvis'in bir sonraki cumlesini/oda yankisini yakalamasi ->
+      akustik feedback dongusu -> canli testin kok nedeni). Tur sonunda
+      `release_mic_mute()` bir kez calisir. HUD "speaking"/"idle" state yayini
+      `manage_mute`'tan BAGIMSIZ, her zaman yapilir.
     """
     if not text:
         return
@@ -262,11 +288,11 @@ def speak(
     start = time.perf_counter()
     first_chunk_logged = False
 
-    if speaking_event is not None:
+    if speaking_event is not None and manage_mute:
         speaking_event.set()
     # JARVIS HUD (web-ui): NeuralCore'un "speaking" gorsel durumu icin - bkz.
-    # core/hud_bus.py. speaking_event ile AYNI anda yayinlanir, yeni bir
-    # event/kilit gerekmiyor (bkz. speaking_event'in docstring notu).
+    # core/hud_bus.py. `manage_mute`'tan BAGIMSIZ her zaman yayinlanir (turn-bazli
+    # mute'ta bile Jarvis fiilen konusuyor).
     hud_bus.publish_state("speaking")
     try:
         with _PLAYBACK_LOCK:
@@ -358,16 +384,18 @@ def speak(
                     "Toplam sentez+oynatma suresi: %.2fs (dil=%s)", time.perf_counter() - start, lang
                 )
     finally:
-        if speaking_event is not None:
+        if speaking_event is not None and manage_mute:
             # Kapatma (stop_event) sirasinda bu bekleme YAPILMIYOR - kapatma zaten
             # aninda cikmak istiyor, mikrofonu susturmaya devam etmenin bir anlami yok
-            # (process/mic thread'i zaten kapanacak).
+            # (process/mic thread'i zaten kapanacak). `manage_mute=False` iken mute'un
+            # sahibi run_jarvis (tur sonunda `release_mic_mute()` cagirir), burada
+            # dokunulmaz.
             if stop_event is None or not stop_event.is_set():
                 time.sleep(MIC_MUTE_COOLDOWN_S)
             speaking_event.clear()
-        # `speaking_event`den BAGIMSIZ olarak her zaman yayinlanir (yukaridaki
-        # "speaking" yayiniyla simetrik) - speaking_event verilmese bile
-        # (ör. hibrit-disi bir cagiran) hud_bus'in son bilinen durumu dogru kalsin.
+        # `speaking_event`/`manage_mute`'tan BAGIMSIZ olarak her zaman yayinlanir
+        # (yukaridaki "speaking" yayiniyla simetrik) - hud_bus'in son bilinen
+        # durumu dogru kalsin.
         hud_bus.publish_state("idle")
 
 

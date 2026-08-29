@@ -179,6 +179,41 @@ class InputHub:
         """
         self.submit_event(InputEvent(source="text", text=text))
 
+    def discard_pending_voice(self) -> int:
+        """Bir tur bittikten SONRA kuyrukta biriken `source == "voice"` olaylarini
+        atar; `"text"`/`"scheduled"`/`"continuous"` olaylari sirasi bozulmadan
+        korunur. Atilan sayiyi doner.
+
+        NEDEN (2026-08-29 optimizasyon turu, Cluster A3): Jarvis konusurken/hemen
+        sonrasindaki cooldown penceresinde mikrofonun yakaladigi ses neredeyse
+        kesin hoparlorden sizan kendi TTS'idir (projede akustik yanki bastirma
+        yok). `core/app.py:run_jarvis()` her turun SONUNDA (mute kaldirildiktan
+        sonra) bunu cagirir - boylece bir yanit sirasinda birikmis yanki turlari
+        kuyrukta kalip pes pese islenmez (canli testte gorulen "cevaplar 20-30 sn
+        gecikmeli" + "Jarvis kendi cumlesine cevap veriyor" kok nedeni).
+
+        `self._queue` bir `queue.Queue` (stdlib kendi kilidiyle korur); bu metod
+        tuketici (ana) thread'den cagrilir, uretici thread'ler `put()` ile
+        eszamanli calisabilir - bu yuzden "bosalt, filtrele, geri koy" arasinda
+        ARAYA yeni bir uretici olayi girebilir (kabul edilen: o olay bir sonraki
+        `discard`/`next_event`'te ele alinir, kaybolmaz)."""
+        kept: list[InputEvent] = []
+        discarded = 0
+        while True:
+            try:
+                event = self._queue.get_nowait()
+            except queue.Empty:
+                break
+            if event.source == "voice":
+                discarded += 1
+            else:
+                kept.append(event)
+        for event in kept:
+            self._queue.put(event)
+        if discarded:
+            logger.info("Tur sonrasi %d yanki/feedback ses olayi kuyruktan atildi.", discarded)
+        return discarded
+
     def next_event(self, poll_interval: float = 0.5) -> InputEvent:
         """Bir sonraki girdi olayını bekler - kaynağı fark etmeksizin.
 
