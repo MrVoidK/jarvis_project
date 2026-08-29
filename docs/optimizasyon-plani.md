@@ -165,25 +165,27 @@ Almanca → en fonetiği (Jarvis kapsamı dışı).
 
 **Test:** yeni `test_language.py` +7. Full suite 245 pass / 23 skip.
 
-**Commit:** `<E>`
+**Commit:** `a308790`
 
 ---
 
-## Cluster F — Çoklu adım planlama (hafif) ⬜
+## Cluster F — Çoklu adım planlama (hafif) ✅
 
 **Belirti:** delegate_complex logda hiç tetiklenmedi; "çoklu plan yapamıyor".
 
 **Kök neden:** router 3B nadiren `delegate_complex` seçiyor; `_MAX_DELEGATE_STEPS=3`;
 `_TOOL_AGENT_SYSTEM_PROMPT` zayıf.
 
-**Yapılacaklar (hafif — 6.10 kapsamlı versiyonu ayrı):**
-- [ ] `_MAX_DELEGATE_STEPS 3→5` (`~app.py:102`).
-- [ ] `_TOOL_AGENT_SYSTEM_PROMPT` netleştir (tek araç/adım, tekrar etme, özet).
-- [ ] `_ROUTER_SYSTEM_PROMPT` delegate_complex few-shot artır (C1 ile birlikte).
+**Yapıldı (hafif — 6.10 kapsamlı versiyonu ayrı):**
+- [x] `_MAX_DELEGATE_STEPS 3→5` (`app.py`).
+- [x] `_TOOL_AGENT_SYSTEM_PROMPT` netleştirildi (tek araç/adım, "başarılı çağrıyı
+  tekrarlama", önceki sonucu argümana taşı, bitince tek cümle özet).
+- [x] `_ROUTER_SYSTEM_PROMPT` delegate_complex few-shot Cluster C'de artırıldı.
 
-**Test:** `test_app_risk_gate.py` (4-adım senaryo, step cap).
+**Test:** yeni `test_delegate_complex.py` +3 (tamamlama + step cap + sabit).
+Full suite 248 pass / 23 skip.
 
-**Commit:** —
+**Commit:** `<F>`
 
 ---
 

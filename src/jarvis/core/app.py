@@ -97,14 +97,20 @@ _DELEGATE_FAILED_MESSAGES = {
 
 # Faz 6.3: delegate_complex -> tool_agent (hermes3:8b) ile SINIRLI cok adimli
 # dongu. Her adim mevcut _execute_tool'dan geciyor (onay + guardrail + timeout +
-# HUD) - yeni guvenlik yuzeyi yok. ~3 adim: tam otonom plan->arac->degerlendir
-# dongusu DEGIL (o Faz 4, bkz. docs/jarvis-mimari-v2-multiagent-entegrasyon.md SS10).
-_MAX_DELEGATE_STEPS = 3
+# HUD) - yeni guvenlik yuzeyi yok. Tam otonom plan->arac->degerlendir dongusu
+# DEGIL (o Faz 4/6.10, bkz. docs/jarvis-mimari-v2-multiagent-entegrasyon.md SS10).
+# 2026-08-29 (Cluster F-hafif): 3 -> 5 (3 adim gercek bir "arastir + not al +
+# ozetle" zincirine yetmiyordu; global tavan, set-bazi dusurme 6.10'da).
+_MAX_DELEGATE_STEPS = 5
 _TOOL_AGENT_SYSTEM_PROMPT = (
-    "You are JARVIS's task executor. Break the user's task into tool steps. Call "
-    "ONE tool at a time; you'll get its result, then decide the next step. When the "
-    f"task is fully done, call `{_NO_TOOL_FUNCTION_NAME}` and reply with a single "
-    "short spoken sentence summarising what you did (no markdown, no lists)."
+    "You are JARVIS's task executor. Work through the user's task ONE tool call "
+    "at a time: call a tool, read its result, then decide the next step based on "
+    "that result. Rules:\n"
+    "- Exactly one tool per step. Never repeat a call that already succeeded.\n"
+    "- Use a previous step's result to fill the next step's arguments when needed.\n"
+    f"- When the task is fully done (or no tool can advance it), call "
+    f"`{_NO_TOOL_FUNCTION_NAME}` and reply with ONE short spoken sentence "
+    "summarising what you did - no markdown, no lists, no code."
 )
 
 # Bir tool cagrisi bu sureyi asarsa iptal edilir ve kullaniciya zaman-asimi
