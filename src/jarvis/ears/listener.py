@@ -467,32 +467,29 @@ def _wait_for_wakeword(
             return chunk
 
 
-# faster-whisper'in TR/EN kod-degisimli (code-switching) dogrulugu icin verilen
-# baglam ipucu. KORUNUYOR (2026-08-29 Cluster B karari) - iki dilli dogruluga
-# katkisi var; ama whisper sessizlik/gurultude bu metni AYNEN geri kusabiliyor
-# (canli testte `User: Hello, system online.`). Regurjitasyon `condition_on_previous_text=False`
-# + asagidaki `_PROMPT_ECHO` blocklist'i ile kesiliyor.
-_INITIAL_PROMPT = "Merhaba Jarvis. Hello, system online. Nasılsın? Execute command."
+# faster-whisper `initial_prompt` - baglam ipucu. 2026-08-29 (3. canli test +
+# arastirma): whisper `initial_prompt`'ta EN IYI SONUC ~12-16 TOKEN'da; daha
+# uzun prompt insertion/halusinasyon hatasi artiriyor (SYSTRAN issue'lari +
+# prompt-length WER calismalari). Eski uzun EN/TR karisik cumle + ~100 tokenlik
+# `_HOTWORDS` listesi bu yuzden KISALTILDI - artik SADECE en cok karisan
+# komut kaliplari, kisa ve Turkce (canli test: "sesi kis"->"sesli kiz",
+# "Jarvis"->"servis", "siradaki"->"stradik").
+_INITIAL_PROMPT = "Jarvis, sesi aç. Jarvis, sesi kıs. Sıradaki şarkı. Notları oku."
 
-# P3 (2026-08-29 "pre-6.10 cilalama"): faster-whisper `hotwords` - decode'u
-# Jarvis'in komut kelime dagarcigina yaklastirir. Canli testte "sesi kis" ->
-# "Sesli kiz", "siradaki" -> "Stradik" gibi karismalar goruldu; bu liste o
-# domeni bicimlendirir (initial_prompt'tan daha guclu, terime-ozgu bias).
-# Yeni komut/arac eklendikce bu listeye de kelime eklenmeli.
-_HOTWORDS = (
-    "Jarvis sıradaki önceki şarkı parça çal durdur duraklat geç ses sesi "
-    "seviye aç kıs azalt artır yükselt düşür yüzde not notlar liste listele "
-    "ekle birleştir oluştur başlık proje sistem durum komut çalıştır uygulama "
-    "Obsidian Spotify "
-    "next previous track play pause stop skip volume level up down louder "
-    "quieter percent note notes list append merge create title project system "
-    "status run command launch app"
-)
+# `hotwords` de kisa tutuldu - en kritik, en sik bozulan ~12 kelime (uzun
+# hotwords listesi arastirmaya gore decode'u bozuyordu, kisaltildi).
+_HOTWORDS = "Jarvis sesi aç kıs sıradaki önceki şarkı çal durdur not proje sistem"
 
 # `initial_prompt`'un birebir geri donen cumle parcalari + faster-whisper'in
 # bos/gurultulu seste sik urettigi bilinen halusinasyonlar (hepsi lowercase,
 # strip'li karsilastirilir).
 _HALLUCINATION_PHRASES = {
+    # _INITIAL_PROMPT parcalari (regurjitasyon)
+    "jarvis, sesi aç.",
+    "jarvis, sesi kıs.",
+    "sıradaki şarkı.",
+    "notları oku.",
+    # eski prompt kaliplari + whisper'in bilinen bos-ses halusinasyonlari
     "merhaba jarvis.",
     "hello, system online.",
     "nasılsın?",

@@ -223,7 +223,9 @@ def test_transcribe_passes_hotwords(monkeypatch):
     listener._transcribe(_one_second_of_silence())
 
     assert captured.get("hotwords") == listener._HOTWORDS
-    assert "sıradaki" in listener._HOTWORDS and "volume" in listener._HOTWORDS
+    assert "sıradaki" in listener._HOTWORDS and "sesi" in listener._HOTWORDS
+    # arastirma: kisa tutulmali (~12-16 token) - uzun hotwords decode'u bozuyor
+    assert len(listener._HOTWORDS.split()) <= 16
 
 
 def test_transcribe_drops_initial_prompt_regurgitation(monkeypatch):
