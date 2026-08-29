@@ -184,10 +184,10 @@ def test_transcribe_keeps_confident_segment(monkeypatch):
     assert (listener._transcribe(_one_second_of_silence()) or "").strip() == "saat kac"
 
 
-def test_whisper_defaults_to_cpu():
-    # B: VRAM butcesi - whisper artik CPU/int8 (JARVIS_WHISPER_DEVICE=cuda ile geri).
-    assert listener._WHISPER_DEVICE == "cpu"
-    assert listener.get_active_device() == "cpu"
+def test_whisper_defaults_to_cuda():
+    # 2026-08-29: CPU/int8 denendi (~10 sn/klip) ve geri alindi - varsayilan cuda.
+    # `JARVIS_WHISPER_DEVICE=cpu` ile GPU'suz makinelerde zorlanabilir.
+    assert listener._WHISPER_DEVICE == "cuda"
 
 
 def test_normalize_gain_boosts_quiet_leaves_loud_and_silence():

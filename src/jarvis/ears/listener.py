@@ -141,14 +141,12 @@ class ListenState(Enum):
     FOLLOWUP = auto()  # an utterance just ended; briefly re-listening without the wake word
 
 
-# B (2026-08-29 3. canli test + arastirma): Whisper artik CPU/int8'de.
-# Gerekce: canli testte VRAM %98'e dayaniyordu (whisper + XTTS + hermes3 +
-# qwen), TTS ilk-chunk 8.7 sn'ye sicriyor, transkripsiyon gecikmesi 2-3 sn
-# dalgalaniyordu (GPU thrash). Whisper CPU'ya alininca ~1.5 GB VRAM boşalir,
-# XTTS/Ollama tikanmaz. Bedel: turbo/int8 CPU transkripsiyonu kisa kliplerde
-# ~0.3 sn yerine ~0.8-1.5 sn - GPU thrash'i giderdigi icin NET kazanc.
-# `JARVIS_WHISPER_DEVICE=cuda` ortam degiskeniyle CUDA'ya geri donulebilir.
-_WHISPER_DEVICE = os.environ.get("JARVIS_WHISPER_DEVICE", "cpu").strip().lower()
+# Whisper cihazi. 2026-08-29: CPU/int8 DENENDI ve GERI ALINDI - bu makinede
+# turbo/int8 CPU transkripsiyonu 2 sn'lik bir klip icin ~10 SANIYE suruyordu
+# (GPU'da ~0.3 sn); kullanilamaz. VRAM baskisi (%98) baska turlu ele alinacak
+# (kisa yanit tavani + gerekirse Ollama keep_alive=0 / sirali yukleme).
+# `JARVIS_WHISPER_DEVICE=cpu` ile yine de zorlanabilir (yavas makineler / GPU'suz).
+_WHISPER_DEVICE = os.environ.get("JARVIS_WHISPER_DEVICE", "cuda").strip().lower()
 
 
 def _load_model_with_fallback(model_size: str = "turbo") -> tuple[WhisperModel, str]:
@@ -161,7 +159,7 @@ def _load_model_with_fallback(model_size: str = "turbo") -> tuple[WhisperModel, 
     transcription forces that failure here instead of on the user's first
     utterance.
     """
-    if _WHISPER_DEVICE != "cuda":
+    if _WHISPER_DEVICE == "cpu":
         model = WhisperModel(model_size, device="cpu", compute_type="int8")
         return model, "cpu"
 
@@ -512,6 +510,15 @@ _HALLUCINATION_PHRASES = {
     "thank you.",
     "thank you very much.",
     "thanks for watching!",
+    # Turkce YouTube-altyazi egitim verisi halusinasyonlari (canli testte
+    # "jarvis onceki sarki" -> "izlediginiz icin tesekkur ederim")
+    "izlediğiniz için teşekkür ederim.",
+    "izlediğiniz için teşekkürler.",
+    "i̇zlediğiniz için teşekkür ederim.",
+    "abone olmayı unutmayın.",
+    "bir sonraki videoda görüşmek üzere.",
+    "kanalıma abone olun.",
+    "iyi seyirler.",
     "altyazı m.k.",
     "amara.org",
     "abone ol",

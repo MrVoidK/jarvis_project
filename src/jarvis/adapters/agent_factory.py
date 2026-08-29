@@ -15,6 +15,7 @@ Iki somut Agent adapteri:
 """
 
 import logging
+import os
 import subprocess
 from typing import Literal, Optional
 
@@ -40,14 +41,14 @@ ROLE_MODEL_MAP: dict[str, str] = {
     "router": ROUTER_MODEL_NAME,
 }
 
-# Router (qwen2.5:3b, ~2.2 GB). Eski `keep_alive="0"` HER TURDA yeniden yukletip
-# 2.3-4.5 sn gecikme ekliyordu (canli test /trace). "30s": aktif konusma
-# boyunca (turlar genelde <30 sn arayla) qwen SICAK kalir -> routing ~0.5 sn;
-# kullanici 30 sn+ duraklayinca VRAM'den duser, sonraki turda bir kez yeniden
-# yuklenir. VRAM riski minimal (dar bosta pencere) + `_OLLAMA_TIMEOUT_S`
-# read-timeout'u swap sirasinda takilmayi zaten net bir hataya ceviriyor
-# (eski "0" hack'inin cozdugu donma artik bu katmanla da kapali).
-_ROUTER_KEEP_ALIVE = "30s"
+# Router (qwen2.5:3b, ~2.2 GB) keep_alive. TAKAS:
+#  - "0"  -> qwen her turda VRAM'den cikar (routing ~2.5 sn reload), ama XTTS/
+#           hermes'e ~2.2 GB yer acar (VRAM %98'e dayaniyordu - TTS spike riski).
+#  - "30s"/"2m" -> aktif konusmada qwen SICAK (routing ~0.5 sn), ama VRAM daha dolu.
+# Varsayilan "30s"; TTS ilk-chunk spike'lari donerse `JARVIS_ROUTER_KEEP_ALIVE=0`
+# ile canli ayarlanabilir (kod degisikligi yok). `_OLLAMA_TIMEOUT_S` read-timeout'u
+# swap sirasinda takilmayi zaten net bir hataya ceviriyor.
+_ROUTER_KEEP_ALIVE = os.environ.get("JARVIS_ROUTER_KEEP_ALIVE", "30s").strip()
 
 # Ollama HTTP cagrilarinin read-timeout'u. ollama paketinin varsayilan client'i
 # TIMEOUT'SUZ - Ollama ( or. VRAM baskisi altinda model yuklerken) takilirsa
