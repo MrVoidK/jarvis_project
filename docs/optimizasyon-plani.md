@@ -270,6 +270,10 @@ belirti — kök neden (dosya:satır) — durum`)_
 - ⬜ STT hataları ("Sesli kız", "Stradik şarkıya geç", "Jarvis sitesi kıs") —
   whisper `turbo` TR kısa cümle doğruluğu; ayrı iş (custom prompt / dictionary
   boost / `hotwords`).
+- 2026-08-29 (Faz 6.7 sonrası) — `adapters/agent_factory.py:ClaudeCodeAdapter`
+  (`delegate_code` yolu) `claude -p`'yi başlatırken API-key scrub yapmıyor;
+  `spawn_detached`'in `_API_KEY_ENV_VARS` deseni oraya da uygulanmalı
+  (tutarlılık — "Jarvis'in başlattığı claude ASLA API key kullanmaz"). — ⬜
 
 ---
 

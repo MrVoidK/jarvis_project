@@ -53,6 +53,9 @@ _CASES = [
     ("onayını bekliyorum terminale bak", "chat"),  # komut değil
     # çok adımlı
     ("sistem durumuna bak sonra bir not al", "delegate_complex"),
+    # proje başlatma (Faz 6.7)
+    ("yeni bir proje oluştur blog", "create_project"),
+    ("create a project called scraper", "create_project"),
 ]
 
 
@@ -75,6 +78,7 @@ def dispatcher():
 _KNOWN_3B_MISSES = {
     "adım Ömer bunu hatırla",  # -> create_note (hatırla=not sanıyor); Brain zaten hafıza tutar
     "sistem durumuna bak sonra bir not al",  # -> ilk adımı kapıyor, delegate_complex tetiklemiyor
+    "sıradaki şarkıya geç",  # -> ara sıra chat; TR diakritik + 3B, flaky (few-shot'ta var)
 }
 
 

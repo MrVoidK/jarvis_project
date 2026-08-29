@@ -1,0 +1,20 @@
+# {{PROJECT_NAME}}
+
+JARVIS tarafından oluşturuldu. Bu proje için mimari kararları, komutları ve
+kısıtları buraya yaz — Claude Code her oturumda bu dosyayı okur.
+
+## Amaç
+
+<!-- Bu proje ne yapıyor? Tek paragraf. -->
+
+## Komutlar
+
+<!-- Kurulum / çalıştırma / test / lint komutları -->
+
+## Kod Stili ve Kurallar
+
+<!-- Dil, formatlama, sıradışı kararların yanına "neden" yorumu, vb. -->
+
+## Notlar
+
+<!-- Bağlam, bilinen sınırlamalar, TODO'lar -->

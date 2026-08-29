@@ -185,6 +185,7 @@ _ROUTER_SYSTEM_PROMPT = (
     '- "notlarimi oku" -> read_notes   |   "not al: sut al" -> create_note\n'
     '- "sistem durumu" / "CPU kullanimi" -> get_system_info\n'
     '- "run dir" / "calistir: git status" -> run_command\n'
+    '- "yeni bir proje olustur: blog" / "create a project called api" -> create_project (project_name = the name)\n'
     f'- "sistem durumuna bak, sonra bir not al" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}\n'
     f'- "hava durumunu arastir ve not dus" -> {_DELEGATE_COMPLEX_FUNCTION_NAME}\n'
     f'- "dispatcher.py\'yi refactor et" -> {_DELEGATE_CODE_FUNCTION_NAME}\n'

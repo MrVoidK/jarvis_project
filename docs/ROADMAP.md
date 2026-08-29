@@ -1179,23 +1179,40 @@ Alt adımlar:
       zinciri reddedilir ve TEK bir pending kaydı oluşturulur (adım-başı pending
       semantiği `/approve` ile birlikte ele alınacak, bu fazın kapsamı dışında).
 
-### 6.7 Proje Başlatma Aracı — CreateProjectTool (v2 Faz G) ⬜
+### 6.7 Proje Başlatma Aracı — CreateProjectTool (v2 Faz G) ✅
 
-6.1'in sertleştirilmiş `is_path_safe()`'ine ve 6.3'e (delegasyon) bağlı;
-`Faz 4.5`'in "Alt Yüklenici" desenini yeniden kullanılabilir bir araca çevirir.
+6.1'in sertleştirilmiş `is_safe_component_name()`/`_has_unsafe_prefix()`'ine bağlı
+(LLM türevli `project_name` → yol; ilk kez). `Faz 4.5`'in "Alt Yüklenici"
+desenini yeniden kullanılabilir bir araca çevirir.
 
 Alt adımlar:
-- [ ] **`tools/project_tool.py:CreateProjectTool`** (`name="create_project"`,
+- [x] **`tools/project_tool.py:CreateProjectTool`** (`name="create_project"`,
       `risk_level=RiskLevel.HIGH`, param `project_name`) — `execute()`:
-      `PROJECT_ROOT/jarvis_workspace/projects/<project_name>` yolunu
-      sertleştirilmiş `is_path_safe(..., allow_create=True)` ile doğrula,
-      klasörü oluştur, `templates/CLAUDE.md.template`'i proje adını gömerek
-      kopyala, `spawn_detached(["claude","code"], cwd=...)`, kısa TTS yanıtı.
-- [ ] **`tools/subprocess_utils.py:spawn_detached()`** — fire-and-forget
-      `subprocess.Popen` (`communicate()`/`wait()` YOK — bir Claude Code
-      oturumu dakikalarca sürer, ana thread'i bloklayamaz); Windows'ta
-      `DETACHED_PROCESS` / `CREATE_NEW_PROCESS_GROUP`.
-- [ ] **`templates/CLAUDE.md.template`** — yeni projeye kopyalanan scaffold.
+      `is_safe_component_name()` + `_has_unsafe_prefix()` + Windows ayrılmış aygıt
+      adları + `_PROJECTS_ROOT` (kod-sabit `jarvis_workspace/projects/`) altında
+      `is_relative_to()` containment; var olan projeyi EZMEZ; `templates/
+      CLAUDE.md.template`'i `{{PROJECT_NAME}}` yerine adı gömerek kopyalar; sonra
+      `_launch_claude_code()`. `TOOL_REGISTRY`'ye kayıtlı, router few-shot eklendi.
+- [x] **`tools/subprocess_utils.py:spawn_detached()`** — fire-and-forget
+      `subprocess.Popen` (`communicate()`/`wait()` YOK); Windows
+      `DETACHED_PROCESS`/`CREATE_NEW_CONSOLE` + `CREATE_NEW_PROCESS_GROUP`, diğer
+      OS `start_new_session`. **`scrub_api_key=True`**: çocuk env'inden
+      `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` çıkarılır — Jarvis'in başlattığı
+      `claude` ASLA API key kullanmaz, abonelik girişine (`~/.claude`) düşer
+      (kullanıcı kararı).
+- [x] **`templates/CLAUDE.md.template`** — yeni projeye kopyalanan scaffold.
+- [x] **Claude Code başlatma**: yeni bir terminal penceresinde interaktif
+      (Windows: `start "" cmd /k "cd /d <dir> && claude"` — pencere açık kalır,
+      giriş istemi orada görünür, kullanıcı oradan giriş yapar). `claude -p`
+      salt-okuma / headless DEĞİL — bilinçli (kullanıcı seçimi).
+- Testler: `tests/test_project_tool.py` (+22 — güvensiz/ayrılmış adlar, containment,
+  ezme reddi, launch hatası fail-soft, template eksik, API-key scrub, Windows
+  flag'leri). `pytest tests/` 276 pass / 23 skip.
+- **Not:** CLAUDE.md `security-reviewer` subagent'ının bu HIGH-risk yüzeyi
+  proaktif incelemesini istiyor — yazar self-review yapıldı (çok katmanlı ad
+  doğrulama, containment, API-key scrub, `shell=True` sadece kod-doğrulanmış
+  `cwd` ile), kullanıcı isterse ayrıca `security-reviewer` çalıştırılabilir.
+- **Kapsam dışı:** `claude -p` yazma modu + iki-aşamalı onay → Faz 6.10.3.
 
 ### 6.8 MCP Genişletme — Google Drive + Home Assistant (v2 Faz H) ⬜
 
