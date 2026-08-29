@@ -38,7 +38,11 @@ logger = logging.getLogger("jarvis.ears")
 SAMPLE_RATE = 16000
 FRAME_MS = 30
 FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000  # 480 samples @ 16kHz/30ms
-SILENCE_HANGOVER_MS = 700
+SILENCE_HANGOVER_MS = 550  # 2026-08-29: 700 -> 550. Konusma bitiminden sonra
+                            # bu kadar sessizlik gorununce kayit kapanir; dusurmek
+                            # "sustum -> Jarvis cevap veriyor" gecikmesini ~150ms
+                            # kisaltir. faster-whisper'in kendi vad_filter'i +
+                            # PREROLL zaten kenarlardaki kaymayi telafi ediyor.
 MAX_WAIT_MS = 10000  # how long to wait for speech to start before giving up
 MAX_UTTERANCE_MS = 20000  # how long a triggered utterance may run before force-stopping
 PREROLL_FRAMES = 3  # ~90ms of audio kept before trigger, so onset isn't clipped
