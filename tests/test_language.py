@@ -14,11 +14,20 @@ def test_short_turkish_by_diacritic():
     assert detect_language("günaydın") == "tr"
 
 
-def test_short_without_diacritic_defaults_to_en():
+def test_short_english_without_tr_signal_is_en():
     assert detect_language("volume up") == "en"
     assert detect_language("play music") == "en"
-    # ASCII'ye düşmüş Türkçe kısa komut ayırt edilemez -> en (kabul edilen sınır)
-    assert detect_language("sesi ac") == "en"
+    assert detect_language("set volume to 30") == "en"
+    assert detect_language("what is the capital of France") == "en"
+
+
+def test_short_diacriticless_turkish_caught_by_marker_words():
+    # 2026-08-29 canli test: "sistem durumu nedir" diakritik yok ama net TR;
+    # eski hali 'en' deyip Ingilizce cevap donuyordu. Isaret kelimeleri:
+    assert detect_language("sesi ac") == "tr"
+    assert detect_language("sistem durumu nedir") == "tr"
+    assert detect_language("notlarimi oku") == "tr"
+    assert detect_language("siradaki sarki") == "tr"
 
 
 def test_short_spurious_language_is_clamped():

@@ -21,10 +21,32 @@ SUPPORTED_LANGUAGES = {
 # (langdetect bu tur girdilerde guvenilmez, bkz. detect_language).
 _TR_CHARS = set("çğıöşüÇĞİÖŞÜ")
 
+# Diakritiksiz ama net Turkce olan kisa girdiler icin isaret kelimeleri
+# (canli test: "sistem durumu nedir" -> diakritik yok -> yanlislikla 'en',
+# ingilizce cevap donuyordu). Soru ekleri + Jarvis komut dagarcigi.
+_TR_MARKER_WORDS = frozenset({
+    "nedir", "mi", "mı", "mu", "mü", "misin", "musun", "miyim", "kac", "kaç",
+    "kadar", "bana", "benim", "bir", "bu", "su", "şu", "ne", "kim", "nasil",
+    "nasıl", "neden", "hangi", "lutfen", "lütfen", "ve", "sonra", "ile",
+    "ac", "aç", "kis", "kıs", "kapat", "artir", "azalt", "yukselt", "dusur",
+    "yap", "oku", "okur", "listele", "olustur", "oluştur", "baslik", "başlık",
+    "not", "notu", "notlar", "notlari", "notları", "notumu", "sarki", "şarkı",
+    "sarkiyi", "şarkıyı", "muzik", "müzik", "muzigi", "durdur", "duraklat",
+    "gec", "geç", "onceki", "önceki", "siradaki", "sıradaki", "devam", "ettir",
+    "sistem", "durum", "durumu", "calistir", "çalıştır", "komut", "proje",
+    "birlestir", "birleştir", "ekle", "sesi", "sesini", "seviye", "cok", "çok",
+    "biraz", "azicik", "azıcık",
+})
+
 
 def _tr_or_en(text: str, default: str = "en") -> str:
-    """Turkce'ye ozgu bir harf varsa 'tr', yoksa `default` (genelde 'en')."""
-    return "tr" if any(ch in _TR_CHARS for ch in text) else default
+    """Turkce sinyali (ozgu harf VEYA isaret kelimesi) varsa 'tr', yoksa `default`."""
+    if any(ch in _TR_CHARS for ch in text):
+        return "tr"
+    words = {w.strip(".,!?;:").lower() for w in text.split()}
+    if words & _TR_MARKER_WORDS:
+        return "tr"
+    return default
 
 
 def detect_language(text: str, default: str = "en") -> str:
