@@ -245,35 +245,44 @@ sistemi.
   yok → keypress fallback). `media_volume_up/down` artık % delta (biraz=6,
   varsayılan=12, çok=30) uygular ve yeni seviyeyi söyler. Yeni **`set_volume`**
   aracı (`level` 0-100): "sesi 84 yap" / "set volume to 30". Router few-shot.
-  Commit `<P1>`.
+  Commit `7e62f21`.
 - **P2 — Not sistemi v2** ✅ `notes_tool.py` yeniden yazıldı. Başlıklı notlar
   (ayrı `.md` dosyaları, `# başlık`), `create_note` opsiyonel `title` (yoksa eski
-  günlük log davranışı korundu). Yeni araçlar: `list_notes`, `read_notes` (artık
-  `title` alır), `append_to_note`, `open_note` (`obsidian://open` URI),
-  `merge_notes` (kaynakları `Archive/`'e taşır, SİLME yok). Hepsi
-  `<vault>/Jarvis Notes/` alt ağacında hapis: `_note_filename()` slug (Türkçe
-  harf + tire, yol ayıracı/`.`/`..`/gizli/Windows-ayrılmış elenir) + `is_path_safe`
-  + `is_relative_to` ikinci kat. Tümü MEDIUM (onaylı). Router 6 few-shot.
-  Testler: `test_tools.py` +9. **`security-reviewer` önerilir** (vault yazma
-  yüzeyi genişledi — kullanıcı döndüğünde). Commit `<P2>`.
+  günlük log davranışı korundu; var olan başlığa → madde eklenir). Araçlar:
+  `create_note`, `read_notes` (artık `title` alır), `list_notes`, `open_note`
+  (`obsidian://open` URI), `merge_notes` (kaynakları `Archive/`'e taşır, SİLME
+  yok). (`append_to_note` P5'te kaldırıldı — `create_note` zaten ekliyor, 3B
+  router'da fazladan araç karışıklık yaratıyordu.) Hepsi `<vault>/Jarvis Notes/`
+  alt ağacında hapis: `_note_filename()` slug (Türkçe harf + tire, yol
+  ayıracı/`.`/`..`/gizli/Windows-ayrılmış elenir) + `is_path_safe` +
+  `is_relative_to` ikinci kat. Tümü MEDIUM (onaylı). Testler: `test_tools.py` +9.
+  **`security-reviewer` önerilir** (vault yazma yüzeyi genişledi — kullanıcı
+  döndüğünde). Commit `a70d91b` (+`4660aef` sadeleştirme).
 - **P3 — STT algı (`hotwords`)** ✅ `listener.py:_HOTWORDS` — Jarvis komut kelime
   dağarcığı (TR+EN: sıradaki, ses, kıs, aç, not, birleştir, proje, volume, note,
   merge…) `model.transcribe(hotwords=...)`'a geçiriliyor. "sesi kıs"→"Sesli kız",
   "sıradaki"→"Stradik" tipi karışmaları azaltır (terime-özgü bias, initial_prompt'tan
   güçlü). Yeni araç eklendikçe listeye kelime eklenmeli. Test: `test_listener.py`
-  `hotwords` geçiyor. Commit `<P3>`.
+  `hotwords` geçiyor. Commit `fd66585`.
 - **P4 — Hız: tur-sonu `remember()` arka plana** ✅ `app.py:run_jarvis` — tur
   sonundaki `remember()` (sentence-transformers embed, CPU) artık daemon thread'de
   ateşle-unut. Ana döngü bir sonraki olayı beklemeden alıyor; TTS ile çekişme
   (11s spike) çözülür. `remember` zaten fail-soft + `memory.py` `_lock`'uyla
-  seri. Commit `<P4>`.
+  seri. Commit `fd66585`.
 - **P5 — Router regresyon düzeltmesi** ✅ P1/P2'nin eklediği araçlar + verbose
   few-shot'lar qwen2.5:3b routing'ini bozdu (batarya 20/27, `notlarımı oku`
   dahil regresyon). Düzeltme: `append_to_note` KALDIRILDI (`create_note` var
   olan başlığa zaten madde ekler — 3B'de daha az araç = daha iyi routing);
   `_ROUTER_SYSTEM_PROMPT` EXAMPLES bloğu 20→15 satır, `title=`/`amount=` inline
   param gürültüsü atıldı; `create_note` description'ı "ekleme" için netleşti.
-  Sonuç: batarya **26/27 pass + 3 xpass** (P1 öncesinden bile iyi). Commit `<P5>`.
+  Sonuç: batarya **26/27 pass + 3 xpass** (P1 öncesinden bile iyi). Commit `4660aef`.
+
+**Tur özeti:** `pytest tests/` 300 pass / 31 skip. 17 kayıtlı araç. Kullanıcı
+döndüğünde canlı doğrulama: (a) "sesi 84 yap" → gerçekten %84 (pycaw), (b)
+"başlığıyla not al" → ayrı `.md` dosyası, "notlarımı listele" / "X notunu aç"
+/ "A ve B'yi birleştir", (c) STT "sesi kıs"/"sıradaki" artık karışmıyor mu, (d)
+`create_project` onay mesajı TTS'i artık ~4s (embed arka planda), (e) not araçları
+genişledi → `security-reviewer` bir tur.
 
 ## Yeni bulgular (backlog)
 
