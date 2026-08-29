@@ -92,10 +92,9 @@ def test_respond_stream_does_not_swallow_provider_errors(monkeypatch):
 
 
 def test_factory_maps_roles_to_models():
-    # 2026-08-29: mini router kaldirildi - tum roller hermes3:8b paylasiyor.
     assert AgentFactory.create("orchestrator")._model_name == "hermes3:8b"
     assert AgentFactory.create("tool_agent")._model_name == "hermes3:8b"
-    assert AgentFactory.create("router")._model_name == "hermes3:8b"
+    assert AgentFactory.create("router")._model_name == "qwen2.5:3b"
     assert isinstance(AgentFactory.create("deep_reasoning"), ClaudeCodeAdapter)
 
 
@@ -109,11 +108,11 @@ def test_factory_rejects_unknown_role():
 # --- keep_alive mekanizmasi + ClaudeCodeAdapter ---
 
 
-def test_all_roles_use_default_keep_alive():
-    # 2026-08-29: mini router kaldirildi; artik hicbir rol ozel keep_alive
-    # kullanmiyor (hermes3:8b paylasimli, sicak kaliyor).
-    for role in ("router", "orchestrator", "tool_agent"):
-        assert AgentFactory.create(role)._keep_alive is None
+def test_router_has_bounded_keep_alive_others_default():
+    # Router qwen2.5:3b: aktif konusmada sicak kalsin, boste dussun ("30s").
+    assert AgentFactory.create("router")._keep_alive == "30s"
+    assert AgentFactory.create("orchestrator")._keep_alive is None
+    assert AgentFactory.create("tool_agent")._keep_alive is None
 
 
 def test_call_tools_passes_keep_alive_when_adapter_has_one(monkeypatch):

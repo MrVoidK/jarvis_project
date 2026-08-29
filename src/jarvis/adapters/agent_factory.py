@@ -27,16 +27,11 @@ from src.jarvis.core.paths import PROJECT_ROOT
 logger = logging.getLogger("jarvis.adapters")
 
 ORCHESTRATOR_MODEL_NAME = "hermes3:8b"
-# 2026-08-29: mini router (qwen2.5:3b) KALDIRILDI. Gerekce (canli test):
-# (1) `keep_alive="0"` yuzunden qwen her turda yeniden yuklenip 2.3-4.5 sn
-#     gecikme ekliyordu; (2) 3B model routing'i beceremiyordu ("listeye ekle"
-#     -> merge_notes, "cok ac" -> amount yok, bozuk STT'de saglam yanlis).
-# Artik TUM roller (orchestrator/tool_agent/router) hermes3:8b paylasiyor;
-# hermes SICAK kaldigi icin (keep_alive varsayilan 5 dk) router turu ~1-2 sn.
-# qwen gidince VRAM ~2.2 GB rahatladi (hermes5 + Whisper1.5 + XTTS2.5 ≈ 9 GB,
-# 12 GB'da bol yer) ve qwen<->hermes swap-thrash'i (eski donma bug'i) kokten
-# ortadan kalkti - `keep_alive="0"` hack'ine artik gerek yok.
-ROUTER_MODEL_NAME = ORCHESTRATOR_MODEL_NAME
+# 2026-08-29: "tek model" (hermes3 hem router hem chat) DENENDI ve GERI ALINDI -
+# hermes3:8b routing bataryasi 18/27 (qwen2.5:3b: 26/27); hermes sik sik tool
+# cagirmak yerine sohbete kaciyor. qwen2.5:3b kucuk ama tool-secim isinde
+# belirgin daha iyi. Mini router KALIYOR.
+ROUTER_MODEL_NAME = "qwen2.5:3b"
 
 # deep_reasoning bu haritada YOK - o yerel bir model degil (ClaudeCodeAdapter).
 ROLE_MODEL_MAP: dict[str, str] = {
@@ -44,6 +39,15 @@ ROLE_MODEL_MAP: dict[str, str] = {
     "tool_agent": ORCHESTRATOR_MODEL_NAME,
     "router": ROUTER_MODEL_NAME,
 }
+
+# Router (qwen2.5:3b, ~2.2 GB). Eski `keep_alive="0"` HER TURDA yeniden yukletip
+# 2.3-4.5 sn gecikme ekliyordu (canli test /trace). "30s": aktif konusma
+# boyunca (turlar genelde <30 sn arayla) qwen SICAK kalir -> routing ~0.5 sn;
+# kullanici 30 sn+ duraklayinca VRAM'den duser, sonraki turda bir kez yeniden
+# yuklenir. VRAM riski minimal (dar bosta pencere) + `_OLLAMA_TIMEOUT_S`
+# read-timeout'u swap sirasinda takilmayi zaten net bir hataya ceviriyor
+# (eski "0" hack'inin cozdugu donma artik bu katmanla da kapali).
+_ROUTER_KEEP_ALIVE = "30s"
 
 # Ollama HTTP cagrilarinin read-timeout'u. ollama paketinin varsayilan client'i
 # TIMEOUT'SUZ - Ollama ( or. VRAM baskisi altinda model yuklerken) takilirsa
@@ -321,10 +325,8 @@ class AgentFactory:
     @staticmethod
     def create(role: AgentRole) -> Agent:
         if role in ROLE_MODEL_MAP:
-            # keep_alive=None -> Ollama varsayilani (5 dk). Tum roller ayni
-            # hermes3:8b'yi paylastigi icin model bir kez yuklenip sicak kaliyor;
-            # eski router keep_alive="0" hack'i (qwen swap-thrash'i) artik yok.
-            return OllamaAgentAdapter(model_name=ROLE_MODEL_MAP[role], keep_alive=None)
+            keep_alive = _ROUTER_KEEP_ALIVE if role == "router" else None
+            return OllamaAgentAdapter(model_name=ROLE_MODEL_MAP[role], keep_alive=keep_alive)
         if role == "deep_reasoning":
             return ClaudeCodeAdapter()
         raise ValueError(f"Bilinmeyen ajan rolu: {role!r}")
