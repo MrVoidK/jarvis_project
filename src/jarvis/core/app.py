@@ -836,11 +836,21 @@ def run_jarvis() -> None:
                 hub.discard_pending_voice()
 
             # Tur tamamlandi: kullaniciya soylenen tam yaniti kalici hafizaya
-            # yaz (oturumlar-arasi, Faz 6.5). `remember()` her istisnayi kendi
-            # icinde yutar (fail-soft) - ana dongu asla etkilenmez. Kapatma
-            # turu (SHUTDOWN mesaji) hatirlanmaz.
+            # yaz (oturumlar-arasi, Faz 6.5). P4 (2026-08-29): ARKA PLAN thread'i -
+            # `remember()` sentence-transformers embed'i (CPU, ~0.1-1sn + ilk
+            # cagride model yuklemesi) yapiyordu; senkron cagrildiginda ana
+            # dongu bir sonraki olayi almadan once bunu bekliyor, TTS ile
+            # cakisinca gecikme siciyor (canli testte create_project onay
+            # mesaji 11sn TTS). `remember` zaten fail-soft + `core/memory.py`
+            # kendi `_lock`'uyla es zamanli cagrilari seri hale getiriyor,
+            # bu yuzden ates-ve-unut guvenli. Kapatma turu hatirlanmaz.
             if spoken_parts and not stop_event.is_set():
-                remember(" ".join(spoken_parts), {"source": "assistant_turn", "lang": turn_lang})
+                threading.Thread(
+                    target=remember,
+                    args=(" ".join(spoken_parts), {"source": "assistant_turn", "lang": turn_lang}),
+                    name="jarvis-remember",
+                    daemon=True,
+                ).start()
     except KeyboardInterrupt:
         print_system("Kapatma istendi (Ctrl+C) - güvenli şekilde kapatılıyor...", level="warning")
         stop_event.set()

@@ -473,6 +473,21 @@ def _wait_for_wakeword(
 # + asagidaki `_PROMPT_ECHO` blocklist'i ile kesiliyor.
 _INITIAL_PROMPT = "Merhaba Jarvis. Hello, system online. Nasılsın? Execute command."
 
+# P3 (2026-08-29 "pre-6.10 cilalama"): faster-whisper `hotwords` - decode'u
+# Jarvis'in komut kelime dagarcigina yaklastirir. Canli testte "sesi kis" ->
+# "Sesli kiz", "siradaki" -> "Stradik" gibi karismalar goruldu; bu liste o
+# domeni bicimlendirir (initial_prompt'tan daha guclu, terime-ozgu bias).
+# Yeni komut/arac eklendikce bu listeye de kelime eklenmeli.
+_HOTWORDS = (
+    "Jarvis sıradaki önceki şarkı parça çal durdur duraklat geç ses sesi "
+    "seviye aç kıs azalt artır yükselt düşür yüzde not notlar liste listele "
+    "ekle birleştir oluştur başlık proje sistem durum komut çalıştır uygulama "
+    "Obsidian Spotify "
+    "next previous track play pause stop skip volume level up down louder "
+    "quieter percent note notes list append merge create title project system "
+    "status run command launch app"
+)
+
 # `initial_prompt`'un birebir geri donen cumle parcalari + faster-whisper'in
 # bos/gurultulu seste sik urettigi bilinen halusinasyonlar (hepsi lowercase,
 # strip'li karsilastirilir).
@@ -527,6 +542,7 @@ def _transcribe(audio: np.ndarray) -> Optional[str]:
             # between Turkish and English mid-way is still handled correctly.
             multilingual=True,
             initial_prompt=_INITIAL_PROMPT,
+            hotwords=_HOTWORDS,  # P3: komut kelime dagarcigina bias
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
             # B1: onceki (halusinasyon olabilecek) metni bir sonraki decode'a

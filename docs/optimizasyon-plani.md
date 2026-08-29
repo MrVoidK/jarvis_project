@@ -256,8 +256,17 @@ sistemi.
   + `is_relative_to` ikinci kat. Tümü MEDIUM (onaylı). Router 6 few-shot.
   Testler: `test_tools.py` +9. **`security-reviewer` önerilir** (vault yazma
   yüzeyi genişledi — kullanıcı döndüğünde). Commit `<P2>`.
-- **P3 — STT algı (`hotwords`)** ⬜
-- **P4 — Hız: tur-sonu `remember()` arka plana** ⬜
+- **P3 — STT algı (`hotwords`)** ✅ `listener.py:_HOTWORDS` — Jarvis komut kelime
+  dağarcığı (TR+EN: sıradaki, ses, kıs, aç, not, birleştir, proje, volume, note,
+  merge…) `model.transcribe(hotwords=...)`'a geçiriliyor. "sesi kıs"→"Sesli kız",
+  "sıradaki"→"Stradik" tipi karışmaları azaltır (terime-özgü bias, initial_prompt'tan
+  güçlü). Yeni araç eklendikçe listeye kelime eklenmeli. Test: `test_listener.py`
+  `hotwords` geçiyor. Commit `<P3>`.
+- **P4 — Hız: tur-sonu `remember()` arka plana** ✅ `app.py:run_jarvis` — tur
+  sonundaki `remember()` (sentence-transformers embed, CPU) artık daemon thread'de
+  ateşle-unut. Ana döngü bir sonraki olayı beklemeden alıyor; TTS ile çekişme
+  (11s spike) çözülür. `remember` zaten fail-soft + `memory.py` `_lock`'uyla
+  seri. Commit `<P4>`.
 
 ## Yeni bulgular (backlog)
 

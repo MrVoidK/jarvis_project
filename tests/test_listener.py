@@ -184,6 +184,21 @@ def test_transcribe_keeps_confident_segment(monkeypatch):
     assert (listener._transcribe(_one_second_of_silence()) or "").strip() == "saat kac"
 
 
+def test_transcribe_passes_hotwords(monkeypatch):
+    """P3: `_transcribe` komut kelime dağarcığını `hotwords` olarak geçirir."""
+    captured: dict = {}
+
+    def _fake(audio, **kwargs):
+        captured.update(kwargs)
+        return iter([_FakeSegment(" sıradaki şarkı", no_speech_prob=0.05, avg_logprob=-0.2)]), _FakeInfo()
+
+    monkeypatch.setattr(listener.model, "transcribe", _fake)
+    listener._transcribe(_one_second_of_silence())
+
+    assert captured.get("hotwords") == listener._HOTWORDS
+    assert "sıradaki" in listener._HOTWORDS and "volume" in listener._HOTWORDS
+
+
 def test_transcribe_drops_initial_prompt_regurgitation(monkeypatch):
     """B1/B2: whisper sessizlikte `initial_prompt`'u aynen geri kusarsa
     (`User: Hello, system online.` canli test) atılır."""
