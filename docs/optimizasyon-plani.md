@@ -284,6 +284,32 @@ döndüğünde canlı doğrulama: (a) "sesi 84 yap" → gerçekten %84 (pycaw), 
 `create_project` onay mesajı TTS'i artık ~4s (embed arka planda), (e) not araçları
 genişledi → `security-reviewer` bir tur.
 
+## 2026-08-29 3. canlı test (P1–P5 sonrası) — kritik bulgular + düzeltmeler
+
+Kullanıcı: "algısı hala kıt". `notes/test_notes.md` tam log. Öncelikli fixler:
+
+- **A — pycaw çalışmıyordu** ✅ `pycaw==20251023` API değişmiş (`'AudioDevice'
+  object has no attribute 'Activate'`) → "sesi 84 yap" hep "kullanılamıyor"
+  diyordu. `AudioUtilities.GetSpeakers().EndpointVolume` ile düzeltildi.
+- **B — cevaplar roman + saçma** ✅ Bir yanıt 22 sn TTS, xtts 226-char TR limiti
+  aşılıyordu; "sesi kız" → 3 cümlelik "ben metinsel asistanım" nutku.
+  `system_prompt.txt` sertleştirildi (MAX 2 cümle, bozuk girdide SADECE
+  "Anlamadım") + `brain/llm.py` kod tavanı (3 cümle / 360 char).
+- **C′ — tek model denendi, geri alındı** ✅ hermes3:8b hem router hem chat →
+  routing 18/27'ye düştü. qwen2.5:3b router KALDI ama `keep_alive="0"` → `"30s"`
+  (her turda reload → 2.3-4.5 sn gecikme gitti; batarya 96 sn → 15 sn).
+- **D — terminalden onay veremiyorum** ✅ Panelden önce yazılan `y` kayboluyordu.
+  `input_hub.wait_for_text_answer` artık pre-queued açık y/n cevabını
+  (`risk.looks_like_approval_answer`) kabul ediyor.
+- **E — STT komut-kelimesi bozulması** ✅ "Jarvis"→"servis", "kıs"→"kız".
+  `listener.py:_apply_stt_corrections()` komut-bağlamlı regex haritası.
+- **F — diakritiksiz kısa TR → yanlış 'en'** ✅ "sistem durumu nedir" → İngilizce
+  cevap. `language.py` `_TR_MARKER_WORDS` seti.
+
+**Hâlâ açık (backlog):** TTS ilk-chunk spike'ları (1.5-3.5 sn, GPU çekişmesi);
+"önceki şarkıya geç **ve** notları oku" tek araç (→ 6.10); "Deneme 2" →
+`project_name: proje_2` (router çeviri, kabul).
+
 ## Yeni bulgular (backlog)
 
 _(Yeni bug/optimizasyon sorunları buraya tarihli eklenir. Format: `- [YYYY-MM-DD]
