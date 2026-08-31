@@ -427,7 +427,9 @@ belirti — kök neden (dosya:satır) — durum`)_
 - 2026-08-29 (Faz 6.7 sonrası) — `adapters/agent_factory.py:ClaudeCodeAdapter`
   (`delegate_code` yolu) `claude -p`'yi başlatırken API-key scrub yapmıyor;
   `spawn_detached`'in `_API_KEY_ENV_VARS` deseni oraya da uygulanmalı
-  (tutarlılık — "Jarvis'in başlattığı claude ASLA API key kullanmaz"). — ⬜
+  (tutarlılık — "Jarvis'in başlattığı claude ASLA API key kullanmaz"). —
+  ✅ 2026-09-01: `respond()` artık `os.environ.copy()` − `_API_KEY_ENV_VARS`
+  ile `env=` geçiyor. Test `test_agent_factory.py` +1.
 - 2026-08-29 (Faz 6.9) — `traces.duration_ms` `orchestrator` rolü için
   time-to-first-token, toplam LLM süresi DEĞİL (streaming tüketimi `run_jarvis`'te
   araya `speak()` girdiğinden wall-clock yanıltıcı olurdu). Toplam LLM süresi

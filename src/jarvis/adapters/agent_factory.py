@@ -24,6 +24,7 @@ import ollama
 
 from src.jarvis.agents.base import Agent, AgentToolResponse, ToolCall
 from src.jarvis.core.paths import PROJECT_ROOT
+from src.jarvis.tools.subprocess_utils import _API_KEY_ENV_VARS
 
 logger = logging.getLogger("jarvis.adapters")
 
@@ -272,6 +273,14 @@ class ClaudeCodeAdapter(Agent):
         # context su an kullanilmiyor: delegate_code branch (core/app.py) sadece
         # tek bir `task` metni geciriyor; `claude -p` zaten tek bir prompt string
         # alir (mesaj listesi degil).
+        # `claude -p` ASLA API key ile calismamali - kullanicinin ~/.claude
+        # abonelik oturumuna dusmeli (kullanici karari). `spawn_detached`'in
+        # (tools/subprocess_utils.py) yaptigi env temizligi burada da yapiliyor
+        # (tutarlilik - backlog #1): .env'de/ortamda bir key olsa bile cocuk
+        # onu gormesin.
+        child_env = os.environ.copy()
+        for _key in _API_KEY_ENV_VARS:
+            child_env.pop(_key, None)
         try:
             proc = subprocess.Popen(
                 [self._cli_path, "-p", prompt],
@@ -279,6 +288,7 @@ class ClaudeCodeAdapter(Agent):
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=PROJECT_ROOT,
+                env=child_env,
             )
         except (FileNotFoundError, OSError) as exc:
             logger.error("ClaudeCodeAdapter: claude CLI baslatilamadi: %s", exc)

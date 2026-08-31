@@ -147,8 +147,8 @@ def test_claude_code_adapter_respond_runs_cli(monkeypatch):
 
     seen = {}
 
-    def _fake_popen(args, stdout=None, stderr=None, text=None, cwd=None):
-        seen["args"], seen["cwd"] = args, cwd
+    def _fake_popen(args, stdout=None, stderr=None, text=None, cwd=None, env=None):
+        seen["args"], seen["cwd"], seen["env"] = args, cwd, env
         return _FakeProc(stdout="analiz metni", returncode=0)
 
     monkeypatch.setattr(agent_factory_module.subprocess, "Popen", _fake_popen)
@@ -158,6 +158,33 @@ def test_claude_code_adapter_respond_runs_cli(monkeypatch):
     assert result == "analiz metni"
     assert seen["args"][:2] == ["claude", "-p"]
     assert seen["cwd"] == PROJECT_ROOT
+
+
+def test_claude_code_adapter_respond_scrubs_api_key_from_child_env(monkeypatch):
+    """Backlog #1: `claude -p` alt sureci ASLA API key kullanmamali (kullanici
+    aboneligine dusmeli) - `spawn_detached`'in yaptigi env temizligi burada da
+    yapilmali (tutarlilik). `.env`/ortamda bir key olsa bile cocuk env'inde
+    olmamali; ilgisiz degiskenler korunmali."""
+    from src.jarvis.adapters.agent_factory import ClaudeCodeAdapter
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-be-scrubbed")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "tok-should-be-scrubbed")
+    monkeypatch.setenv("JARVIS_KEEP_THIS", "1")
+
+    seen = {}
+
+    def _fake_popen(args, stdout=None, stderr=None, text=None, cwd=None, env=None):
+        seen["env"] = env
+        return _FakeProc(stdout="ok", returncode=0)
+
+    monkeypatch.setattr(agent_factory_module.subprocess, "Popen", _fake_popen)
+
+    ClaudeCodeAdapter().respond("bir sey analiz et")
+
+    assert seen["env"] is not None, "env acikca gecilmeli (miras alinmamali)"
+    assert "ANTHROPIC_API_KEY" not in seen["env"]
+    assert "ANTHROPIC_AUTH_TOKEN" not in seen["env"]
+    assert seen["env"].get("JARVIS_KEEP_THIS") == "1"
 
 
 def test_claude_code_adapter_respond_handles_missing_cli(monkeypatch):
