@@ -402,8 +402,9 @@ belirti — kök neden (dosya:satır) — durum`)_
 - 2026-08-29 — `/test <araç>` (dev komutu) HIGH/MEDIUM bir araç için approval
   anonsunu (`speak` `manage_mute=False`) mic-mute'suz çalıştırır; anons hoparlörde
   yankılanırsa kuyruğa `voice` olarak girer, approval sonrası bir spurious tur
-  işlenir. Zararsız (sesli onay devre dışı), dev-tool. İstenirse `_cmd_test`'e
-  set/`release_mic_mute` sarması eklenir. — ⬜
+  işlenir. — ✅ 2026-09-01: `_cmd_test` artık `_execute_tool` çağrısını
+  `speaking_event.set()` / `finally: release_mic_mute + discard_pending_voice`
+  ile sarıyor (run_jarvis deseni). Test `test_cli_commands.py` +1.
 - 2026-08-29 — Mutlak ses kontrolü ("sesi %50 yap") `pycaw`/Core Audio gerektirir;
   CLAUDE.md "gereksiz bağımlılık" ilkesi — şimdilik kapsam dışı. — ⬜
 - 2026-08-29 (D1 sonrası) — `delegate_complex` zincirinde `run_command` çıktısı

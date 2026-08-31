@@ -352,9 +352,23 @@ def _cmd_test(
     # burada, cagri aninda (deferred) cozuluyor - modul-seviyesinde
     # (dosyanin ustunde) import edilseydi ikisi de yuklenemezdi. Cagri
     # aninda iki modul de zaten tam yuklu oldugu icin sorunsuz.
-    from src.jarvis.core.app import _execute_tool
+    # `release_mic_mute` de app uzerinden aliniyor (o zaten mouth/tts'ten
+    # re-export ediyor) - ayrica agir bir `mouth.tts` importu tetiklememek icin.
+    from src.jarvis.core.app import _execute_tool, release_mic_mute
 
-    result = _execute_tool(
-        tool, fake_intent, stop_event, input_hub=input_hub, pending=pending, speaking_event=speaking_event
-    )
+    # Backlog #3 (2026-08-29): /test ile HIGH/MEDIUM bir arac calistirildiginda
+    # _execute_tool icindeki onay anonsu (`speak`) canli dongudeki (run_jarvis)
+    # tur-bazli mute sahibi OLMADIGI icin mikrofona sizip approval sonrasi
+    # spurious bir tur isliyordu. run_jarvis'in desenini birebir uygula:
+    # set -> calistir -> finally: release + kuyruk yanki temizligi.
+    if speaking_event is not None:
+        speaking_event.set()
+    try:
+        result = _execute_tool(
+            tool, fake_intent, stop_event, input_hub=input_hub, pending=pending, speaking_event=speaking_event
+        )
+    finally:
+        release_mic_mute(speaking_event, stop_event)
+        if input_hub is not None:
+            input_hub.discard_pending_voice()
     console.print(f"[bold cyan]/test sonucu ({name}):[/bold cyan] {result}")

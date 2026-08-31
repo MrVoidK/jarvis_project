@@ -163,6 +163,7 @@ def test_test_command_executes_known_tool_via_mocked_execute_tool(monkeypatch):
         return "sahte sonuç"
 
     fake_app_module._execute_tool = fake_execute_tool
+    fake_app_module.release_mic_mute = lambda *a, **k: None
     monkeypatch.setitem(sys.modules, "src.jarvis.core.app", fake_app_module)
 
     printed = []
@@ -187,6 +188,7 @@ def test_test_command_forwards_speaking_event_to_execute_tool(monkeypatch):
         return "ok"
 
     fake_app_module._execute_tool = fake_execute_tool
+    fake_app_module.release_mic_mute = lambda *a, **k: None
     monkeypatch.setitem(sys.modules, "src.jarvis.core.app", fake_app_module)
     monkeypatch.setattr(cli_commands.console, "print", lambda msg: None)
 
@@ -194,6 +196,47 @@ def test_test_command_forwards_speaking_event_to_execute_tool(monkeypatch):
     handle_cli_command("/test get_system_info", history=[], speaking_event=sentinel_event)
 
     assert captured_call["speaking_event"] is sentinel_event
+
+
+def test_test_command_mutes_mic_around_execution_and_releases(monkeypatch):
+    """Backlog #3 (2026-08-29): /test ile HIGH/MEDIUM bir arac calistirilirken
+    _execute_tool icindeki onay anonsu (speak) mikrofona sizip approval sonrasi
+    spurious bir tur isliyordu - run_jarvis'in tur-bazli mute deseni burada da
+    uygulanmali: calistirma boyunca speaking_event SET, bitince
+    release_mic_mute() + input_hub.discard_pending_voice()."""
+    fake_app_module = types.ModuleType("src.jarvis.core.app")
+    events: list[tuple] = []
+
+    def fake_execute_tool(tool, intent, stop_event, input_hub=None, pending=None, speaking_event=None):
+        events.append(("exec_set", bool(speaking_event and speaking_event.is_set())))
+        return "ok"
+
+    def fake_release(speaking_event, stop_event=None):
+        events.append(("release", True))
+        if speaking_event is not None:
+            speaking_event.clear()
+
+    fake_app_module._execute_tool = fake_execute_tool
+    fake_app_module.release_mic_mute = fake_release
+    monkeypatch.setitem(sys.modules, "src.jarvis.core.app", fake_app_module)
+    monkeypatch.setattr(cli_commands.console, "print", lambda *a, **k: None)
+
+    class _Hub:
+        def __init__(self) -> None:
+            self.discarded = 0
+
+        def discard_pending_voice(self) -> int:
+            self.discarded += 1
+            return 0
+
+    hub = _Hub()
+    ev = threading.Event()
+    handle_cli_command("/test get_system_info", history=[], input_hub=hub, speaking_event=ev)
+
+    assert ("exec_set", True) in events  # calistirma sirasinda mute SET'ti
+    assert events.index(("exec_set", True)) < events.index(("release", True))
+    assert not ev.is_set()  # bitince temizlendi
+    assert hub.discarded == 1
 
 
 def test_test_command_drops_parameters_not_in_tool_schema(monkeypatch):
@@ -210,6 +253,7 @@ def test_test_command_drops_parameters_not_in_tool_schema(monkeypatch):
         return "ok"
 
     fake_app_module._execute_tool = fake_execute_tool
+    fake_app_module.release_mic_mute = lambda *a, **k: None
     monkeypatch.setitem(sys.modules, "src.jarvis.core.app", fake_app_module)
     monkeypatch.setattr(cli_commands.console, "print", lambda msg: None)
 
