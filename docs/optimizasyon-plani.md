@@ -386,7 +386,7 @@ güncellendi. Full suite **357 pass / 31 skip**.
 artık fast-path'e düşüyor (router'ı test etmiyor ama doğru aracı döndürdüğü
 için pass) — batarya hâlâ `search_music` / `delegate` / chat ayrımını sınıyor.
 
-**Commit:** `<pending>`
+**Commit:** `43bce2e`
 
 ## Yeni bulgular (backlog)
 
