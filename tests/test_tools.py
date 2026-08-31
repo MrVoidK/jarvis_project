@@ -356,12 +356,17 @@ def test_dispatcher_match_rule_extracts_shutdown_language():
 
 
 def test_dispatcher_match_rule_no_longer_handles_former_regex_intents():
-    """Regresyon: Faz 3.3 semantic router gecisiyle _RULES sadece get_time'a
-    indirildi (bkz. core/dispatcher.py). create_note/run_command/read_notes/
-    get_system_info/play_music/pause_music/skip_track artik match_rule() ile
-    DEGIL, Dispatcher.classify()'in semantic router yolu (bkz.
-    tests/test_dispatcher_router.py) ile eslesiyor - match_rule bunlar icin
-    artik None donmeli (Brain'e degil, router'a devredildi)."""
+    """Regresyon: Faz 3.3 semantic router gecisiyle _RULES buyuk olcude
+    daraltildi (bkz. core/dispatcher.py). create_note/run_command/read_notes/
+    get_system_info + ADI verilen sarki istekleri artik match_rule() ile DEGIL,
+    Dispatcher.classify()'in semantic router yolu (bkz. tests/
+    test_dispatcher_router.py) ile eslesiyor - match_rule bunlar icin None
+    donmeli.
+
+    NOT (2026-09-01): net, belirsizlik-tasimayan ses/medya komutlari
+    ("sesi 50 yap", "onceki sarki", "muzigi duraklat") KASITLI olarak yeniden
+    fast-path'e alindi (hiz + %100 isabet) - onlar test_dispatcher_router.py'de
+    ayrica kapsaniyor. Asagidaki liste sadece router'a KALMASI gerekenler."""
     dispatcher = Dispatcher()
 
     for text in [
@@ -373,8 +378,7 @@ def test_dispatcher_match_rule_no_longer_handles_former_regex_intents():
         "sistem durumu nedir",
         "system status",
         "şarkı çal: Bohemian Rhapsody",
-        "pause music",
-        "şarkıyı geç",
+        "şarkıyı geç",  # yon belirsiz ("gec") -> router + parca-yonu guard
     ]:
         assert dispatcher.match_rule(text) is None, f"artik match_rule ile eslesmemeli: {text!r}"
 

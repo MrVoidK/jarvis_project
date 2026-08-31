@@ -70,6 +70,32 @@ _VOLUME_LARGE_WORDS = {
     "a lot", "lots", "way up", "much", "lot",
 }
 
+# 2026-09-01: STT sayilari her zaman rakam olarak vermiyor ("sesi sifir yap",
+# "set volume to half") + "sesi kapat"/"mute" = 0'a esdeger. `_parse_level`
+# once rakam arar, yoksa bu haritada bir kelime arar (substring - "yariya"
+# "yari"yi de kapsasin diye alt kelimeler once gelmemeli, kesin eslesme yok).
+_LEVEL_WORDS: dict[str, int] = {
+    "sıfır": 0, "sifir": 0, "zero": 0,
+    "kapat": 0, "kes": 0, "sustur": 0, "sessize": 0, "mute": 0,
+    "yarım": 50, "yarim": 50, "yarıya": 50, "yariya": 50, "yarı": 50, "yari": 50, "half": 50,
+    "yüz": 100, "yuz": 100, "hundred": 100, "full": 100, "maksimum": 100,
+    "maximum": 100, "tam ses": 100,
+}
+
+
+def _parse_level(raw) -> "int | None":
+    """'84' / '%50' / 'sifir' / 'yariya' / 'zero' -> 0..100; cozulemezse None."""
+    text = str(raw or "").strip().lower()
+    if not text:
+        return None
+    digits = re.sub(r"[^\d]", "", text)
+    if digits:
+        return max(0, min(100, int(digits)))
+    for word, value in _LEVEL_WORDS.items():
+        if word in text:
+            return value
+    return None
+
 _VOLUME_ENDPOINT_UNSET = object()
 _volume_endpoint = _VOLUME_ENDPOINT_UNSET  # lazy: ilk kullanimda pycaw denenir
 
@@ -246,7 +272,10 @@ def _resolve_volume_delta(params: dict) -> int:
         return VOLUME_DELTA_DEFAULT
     digits = re.sub(r"[^\d]", "", amount)
     if digits:
-        return max(1, min(100, int(digits)))
+        # 2026-09-01: 0'i 1'e clamp ETME - router bazen "sesi sifir yap"i
+        # media_volume_down amount:0 olarak yolluyor; 0 doner, cagiran
+        # (_apply_relative_volume) onu "sustur"a cevirir.
+        return max(0, min(100, int(digits)))
     if amount in _VOLUME_SMALL_WORDS:
         return VOLUME_DELTA_SMALL
     if amount in _VOLUME_LARGE_WORDS:
@@ -260,7 +289,12 @@ def _apply_relative_volume(direction: int, params: dict, lang: str) -> str:
     delta = _resolve_volume_delta(params)
     current = _get_volume_percent()
     if current is not None:
-        target = max(0, min(100, current + direction * delta))
+        # delta == 0 sadece kullanici acikca "0" dediginde olur ("sesi sifira
+        # indir") - goreceli kis komutunu mutlak sustur'a cevir.
+        if delta == 0 and direction < 0:
+            target = 0
+        else:
+            target = max(0, min(100, current + direction * delta))
         if _set_volume_percent(target):
             logger.info("Ses seviyesi %d%% -> %d%%.", current, target)
             return _localized(_VOLUME_SET_MESSAGES, lang).format(pct=target)
@@ -400,10 +434,9 @@ class SetVolumeTool(Tool):
 
     def execute(self, params: dict) -> str:
         lang = params.get("lang", "en")
-        digits = re.sub(r"[^\d]", "", str(params.get("level") or ""))
-        if not digits:
+        level = _parse_level(params.get("level"))
+        if level is None:
             return _localized(_VOLUME_BAD_LEVEL_MESSAGES, lang)
-        level = max(0, min(100, int(digits)))
         if _set_volume_percent(level):
             logger.info("Ses seviyesi %d%% olarak ayarlandi.", level)
             return _localized(_VOLUME_SET_MESSAGES, lang).format(pct=level)

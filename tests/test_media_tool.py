@@ -148,6 +148,48 @@ def test_set_volume_bad_level(monkeypatch):
     assert "didn't catch" in result.lower() or "anlayamad" in result.lower()
 
 
+# --- 2026-09-01: kelime olarak soylenen seviye (STT rakami rakam vermez) ---
+
+
+def test_set_volume_parses_turkish_word_zero(monkeypatch):
+    """Canli test: "sesi sifir yap" -> router hicbir arac secmedi / amount:0 ile
+    1% kisti. SetVolumeTool artik "sifir"/"zero" kelimesini 0 olarak cozer."""
+    sets = _fake_pct_control(monkeypatch, current=80)
+    result = media_module.SetVolumeTool().execute({"lang": "tr", "level": "sıfır"})
+    assert sets == [0]
+    assert "0" in result
+
+
+def test_set_volume_parses_english_word_zero(monkeypatch):
+    sets = _fake_pct_control(monkeypatch, current=80)
+    media_module.SetVolumeTool().execute({"lang": "en", "level": "zero"})
+    assert sets == [0]
+
+
+def test_set_volume_parses_half_word(monkeypatch):
+    sets = _fake_pct_control(monkeypatch, current=10)
+    media_module.SetVolumeTool().execute({"lang": "tr", "level": "yarıya"})
+    assert sets == [50]
+
+
+def test_set_volume_mute_words_map_to_zero(monkeypatch):
+    sets = _fake_pct_control(monkeypatch, current=70)
+    media_module.SetVolumeTool().execute({"lang": "tr", "level": "kapat"})
+    assert sets == [0]
+
+
+def test_resolve_volume_delta_allows_zero(monkeypatch):
+    """`media_volume_down amount:0` (router hatasi) artik 1'e clamp edilmiyor -
+    0 doner; _apply_relative_volume onu "sustur"a cevirir (defense-in-depth)."""
+    assert media_module._resolve_volume_delta({"amount": "0"}) == 0
+
+
+def test_volume_down_amount_zero_mutes(monkeypatch):
+    sets = _fake_pct_control(monkeypatch, current=93)
+    media_module.MediaVolumeDownTool().execute({"lang": "tr", "amount": "0"})
+    assert sets == [0]
+
+
 def test_search_music_opens_spotify_search_uri_when_track_not_found(monkeypatch):
     """spotify_search.find_track_id() None donerse (API yapilandirilmamis/basarisiz) -
     eski davranisa (sadece arama ac) sessizce duser."""

@@ -63,7 +63,9 @@ def test_classify_returns_known_tool_selected_by_router(monkeypatch):
         AgentToolResponse(tool_calls=[ToolCall(name="media_next_track", arguments={})]),
     )
 
-    intent = Dispatcher().classify("bir sonraki şarkıya geç")
+    # "şarkıyı değiştir" fast-path'e (bkz. _RULES media kuralları) TAKILMAZ -
+    # yön işareti yok, "değiştir" bir play/track fiili değil - router yoluna düşer.
+    intent = Dispatcher().classify("şarkıyı değiştir")
 
     assert intent.name == "media_next_track"
     assert intent.source == "llm"
@@ -237,7 +239,9 @@ def test_run_command_rejected_when_executable_not_in_transcript(monkeypatch):
         ),
     )
 
-    intent = Dispatcher().classify("Jarvis şarkıyı devam ettir")
+    # "parçayı baştan al" fast-path media kurallarına takılmaz -> router yolu ->
+    # C2 guard'ı devrede (transkriptte "taskmgr" geçmiyor -> reddet).
+    intent = Dispatcher().classify("Jarvis parçayı baştan al")
 
     assert intent.name == DEFAULT_INTENT_NAME
     assert intent.source == "llm"
@@ -262,9 +266,10 @@ def test_router_confidence_reflects_selection_kind(monkeypatch):
     no_tool_needed 0.6."""
     _patch_router(
         monkeypatch,
-        AgentToolResponse(tool_calls=[ToolCall(name="media_play_pause", arguments={})]),
+        AgentToolResponse(tool_calls=[ToolCall(name="media_next_track", arguments={})]),
     )
-    assert Dispatcher().classify("müziği durdur").confidence == pytest.approx(0.8)
+    # "şarkıyı değiştir" fast-path'e takılmaz -> router yolu -> gerçek confidence.
+    assert Dispatcher().classify("şarkıyı değiştir").confidence == pytest.approx(0.8)
 
     _patch_router(
         monkeypatch,
@@ -273,3 +278,149 @@ def test_router_confidence_reflects_selection_kind(monkeypatch):
         ),
     )
     assert Dispatcher().classify("nasılsın bakalım").confidence == pytest.approx(0.6)
+
+
+# --- 2026-09-01: ses/medya fast-path (router LLM'e HİÇ gitmez) ---------------
+
+
+def _forbid_router(monkeypatch):
+    """Fast-path eşleşen bir komut AgentFactory.create'i çağırmamalı."""
+    monkeypatch.setattr(
+        dispatcher_module.AgentFactory,
+        "create",
+        staticmethod(lambda role: (_ for _ in ()).throw(AssertionError("fast-path router'a gitmemeli"))),
+    )
+
+
+@pytest.mark.parametrize(
+    "text,level",
+    [
+        ("Jarvis sesi 34 yap", "34"),
+        ("sesi %50 yap", "50"),
+        ("ses seviyesini 40 yap", "40"),
+        ("sesi 34'e ayarla", "34"),
+        ("sesi 100 yap", "100"),
+        ("sesi sıfır yap", "sıfır"),
+        ("sesi yarıya indir", "yarıya"),
+        ("set volume to 30", "30"),
+        ("make volume zero", "zero"),
+        ("set the volume to half", "half"),
+    ],
+)
+def test_fast_path_set_volume(monkeypatch, text, level):
+    _forbid_router(monkeypatch)
+    intent = Dispatcher().classify(text)
+    assert intent.name == "set_volume"
+    assert intent.source == "rule"
+    assert intent.parameters["level"] == level
+    assert intent.confidence == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("text", ["Jarvis sesi kapat", "sesi kes", "mute"])
+def test_fast_path_mute_routes_to_set_volume(monkeypatch, text):
+    _forbid_router(monkeypatch)
+    intent = Dispatcher().classify(text)
+    assert intent.name == "set_volume"
+    assert intent.source == "rule"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["sesi aç", "sesi biraz aç", "sesi açar mısın", "louder", "turn the volume up", "volume up"],
+)
+def test_fast_path_volume_up(monkeypatch, text):
+    _forbid_router(monkeypatch)
+    intent = Dispatcher().classify(text)
+    assert intent.name == "media_volume_up"
+    assert intent.source == "rule"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["sesi kıs", "sesi kısar mısın", "sesi biraz kıs", "quieter", "turn it down", "volume down"],
+)
+def test_fast_path_volume_down(monkeypatch, text):
+    _forbid_router(monkeypatch)
+    intent = Dispatcher().classify(text)
+    assert intent.name == "media_volume_down"
+    assert intent.source == "rule"
+
+
+def test_fast_path_volume_amount_captured(monkeypatch):
+    _forbid_router(monkeypatch)
+    assert Dispatcher().classify("sesi biraz kıs").parameters.get("amount") == "biraz"
+    assert Dispatcher().classify("sesi çok aç").parameters.get("amount") in ("çok", "cok")
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Jarvis önceki şarkıya geç", "media_previous_track"),
+        ("bir sonraki şarkıya geç", "media_next_track"),
+        ("sıradaki şarkı", "media_next_track"),
+        ("önceki parçaya dön", "media_previous_track"),
+        ("next track", "media_next_track"),
+        ("previous song", "media_previous_track"),
+    ],
+)
+def test_fast_path_track_direction(monkeypatch, text, expected):
+    _forbid_router(monkeypatch)
+    intent = Dispatcher().classify(text)
+    assert intent.name == expected
+    assert intent.source == "rule"
+
+
+@pytest.mark.parametrize(
+    "text", ["şarkıyı durdur", "müziği duraklat", "parçayı devam ettir", "pause the music"]
+)
+def test_fast_path_play_pause(monkeypatch, text):
+    _forbid_router(monkeypatch)
+    intent = Dispatcher().classify(text)
+    assert intent.name == "media_play_pause"
+    assert intent.source == "rule"
+
+
+def test_fast_path_does_not_swallow_song_by_name(monkeypatch):
+    """Bir şarkı ADI içeren istek fast-path'e TAKILMAMALI -> router -> search_music."""
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(
+            tool_calls=[ToolCall(name="search_music", arguments={"query": "Iron Man"})]
+        ),
+    )
+    intent = Dispatcher().classify("Jarvis Iron Man çal")
+    assert intent.name == "search_music"
+    assert intent.source == "llm"
+
+
+# --- 2026-09-01: parça-yönü guard (router YİNE çağrıldığında) ----------------
+
+
+def test_router_track_direction_corrected_to_previous(monkeypatch):
+    """qwen2.5:3b "geç" gibi yönsüz fiilde media_next_track seçti ama
+    transkriptte açık "evvelki" işareti var -> media_previous_track'e düzelt."""
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(tool_calls=[ToolCall(name="media_next_track", arguments={})]),
+    )
+    intent = Dispatcher().classify("bir evvelkine dönsene")
+    assert intent.name == "media_previous_track"
+
+
+def test_router_track_direction_corrected_to_next(monkeypatch):
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(tool_calls=[ToolCall(name="media_previous_track", arguments={})]),
+    )
+    intent = Dispatcher().classify("skip ahead to the next one")
+    assert intent.name == "media_next_track"
+
+
+def test_router_track_direction_left_alone_when_ambiguous(monkeypatch):
+    """Transkriptte net bir yön işareti yoksa router'ın seçimi korunur."""
+    _patch_router(
+        monkeypatch,
+        AgentToolResponse(tool_calls=[ToolCall(name="media_next_track", arguments={})]),
+    )
+    intent = Dispatcher().classify("şarkıyı değiştir")
+    assert intent.name == "media_next_track"

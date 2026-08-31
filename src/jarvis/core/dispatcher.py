@@ -59,7 +59,102 @@ _RULES: dict[str, list[tuple[str, re.Pattern]]] = {
         ("en", re.compile(r"\bshut\s?down\b", re.IGNORECASE)),
         ("en", re.compile(r"\bturn (yourself|the system) off\b", re.IGNORECASE)),
     ],
+    # --- 2026-09-01: ses/medya fast-path (bkz. docs/optimizasyon-plani.md) ---
+    # Canli test: qwen2.5:3b bu belirsizlik-tasimayan komutlarda tutarsizdi
+    # ("onceki sarkiya gec" -> media_next_track cunku "gec" yonsuz ve
+    # media_next_track aciklamasindaki "gec" tetikleyicisi baskin; "sesi sifir
+    # yap" -> hicbir arac cunku sayi-kelimesi taninmiyor) + her ses komutu
+    # router'a ~2-5 sn'lik bir LLM cagrisi cikariyordu. Bu regex'ler net
+    # kaliplari router'a HIC gitmeden, %100 isabetle yakalar. Bir sarki ADI
+    # iceren istek ("Iron Man cal") KASITLI eslesmez -> router -> search_music.
+    # `level`/`amount` adli gruplar match_rule'un generic groupdict aktarimiyla
+    # Intent.parameters'a geciyor. TR fiil-kokleri sonuna `[a-z]{0,N}` + cumle
+    # sonu capasi eklendi ki "sesi acil kapat" gibi false-positive'ler dusmesin.
+    "set_volume": [
+        ("tr", re.compile(
+            r"\bses(?:i|\s*seviyesi(?:ni)?)?\s+(?:%|yüzde|yuzde)?\s*"
+            r"(?P<level>\d{1,3}|sıfır|sifir|yüz|yuz|yarıya|yariya|yarım|yarim|yarı|yari)"
+            r"(?:['`’]?[a-zçğıöşü]{0,4})?\s*"
+            r"(?:yap|ayarla|çek|cek|getir|indir|düşür|dusur|çıkar|cikar|yükselt|yukselt|kur|olsun)"
+            r"[a-zçğıöşü]{0,6}(?:\s+(?:mı|mi|mısın|misin|lütfen|lutfen))?\s*[.?!]*\s*$",
+            re.IGNORECASE)),
+        ("tr", re.compile(r"\bses(?:i)?\s+(?P<level>kapat|kes|sustur|sessize)\b", re.IGNORECASE)),
+        ("en", re.compile(
+            r"\b(?:set|make|put|turn)\s+(?:the\s+)?volume\s+(?:to\s+|at\s+|on\s+)?"
+            r"(?P<level>\d{1,3}|zero|half|full|max(?:imum)?)\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bvolume\s+(?:to\s+)?(?P<level>\d{1,3})\s*(?:percent|%)\b", re.IGNORECASE)),
+        ("en", re.compile(r"\b(?P<level>mute)\b", re.IGNORECASE)),
+    ],
+    "media_volume_up": [
+        ("tr", re.compile(
+            r"\bses(?:i)?\s+(?:(?P<amount>biraz|birazcık|birazcik|az|çok|cok|epey|epeyce|baya[ğg]ı?)\s+)?"
+            r"(?:aç|ac|yükselt|yukselt|artır|arttır|artir|arttir)[a-zçğıöşü]{0,4}"
+            r"(?:\s+(?:mı|mi|mısın|misin|lütfen|lutfen))?\s*[.?!]*\s*$", re.IGNORECASE)),
+        ("en", re.compile(
+            r"\b(?:volume\s+up|turn\s+(?:it|the\s+volume)\s+up|louder|crank\s+it\s+up)\b",
+            re.IGNORECASE)),
+    ],
+    "media_volume_down": [
+        ("tr", re.compile(
+            r"\bses(?:i)?\s+(?:(?P<amount>biraz|birazcık|birazcik|az|çok|cok|epey|epeyce|baya[ğg]ı?)\s+)?"
+            r"(?:kıs|kis|azalt|düşür|dusur|alçalt|alcalt)[a-zçğıöşü]{0,4}"
+            r"(?:\s+(?:mı|mi|mısın|misin|lütfen|lutfen))?\s*[.?!]*\s*$", re.IGNORECASE)),
+        ("en", re.compile(
+            r"\b(?:volume\s+down|turn\s+(?:it|the\s+volume)\s+down|quieter|lower\s+the\s+volume)\b",
+            re.IGNORECASE)),
+    ],
+    "media_next_track": [
+        ("tr", re.compile(
+            r"\b(?:sonraki|bir\s+sonraki|sıradaki|siradaki|diğer|diger)\s+"
+            r"(?:şarkı|sarki|parça|parca|müzi|muzi|track)", re.IGNORECASE)),
+        ("en", re.compile(
+            r"\b(?:next\s+(?:track|song|one)|skip\s+(?:this\s+)?(?:track|song))\b", re.IGNORECASE)),
+    ],
+    "media_previous_track": [
+        ("tr", re.compile(
+            r"\b(?:önceki|onceki|evvelki|bir\s+önceki|bir\s+onceki)\s+"
+            r"(?:şarkı|sarki|parça|parca|müzi|muzi|track)", re.IGNORECASE)),
+        ("en", re.compile(
+            r"\b(?:previous\s+(?:track|song)|go\s+back\s+(?:a\s+)?(?:track|song))\b", re.IGNORECASE)),
+    ],
+    "media_play_pause": [
+        ("tr", re.compile(
+            r"\b(?:şarkı|sarki|müzi|muzi|parça|parca)[a-zçğıöşü]*\s+"
+            r"(?:durdur|duraklat|dondur|beklet|başlat|baslat|devam\s+et|sürdür|surdur)",
+            re.IGNORECASE)),
+        ("tr", re.compile(r"\b(?:duraklat|devam\s+ettir)\b", re.IGNORECASE)),
+        ("en", re.compile(
+            r"\b(?:pause|resume|unpause)\s+(?:the\s+)?(?:music|song|track|playback)\b", re.IGNORECASE)),
+        ("en", re.compile(r"\bplay\s*/?\s*pause\b", re.IGNORECASE)),
+    ],
 }
+
+# Parca-yonu isaretleri (2026-09-01): router "gec"/"change" gibi YONSUZ
+# fiillerde next/previous'i sasiriyor. Transkriptte bu isaretlerden SADECE biri
+# gecerse router'in secimi ona gore duzeltilir (bkz. _corrected_track_direction).
+_PREV_TRACK_MARKERS = (
+    "önceki", "onceki", "evvelki", "evvel", "geri", "previous", " prev",
+    "go back", "last track", "last song",
+)
+_NEXT_TRACK_MARKERS = (
+    "sonraki", "sıradaki", "siradaki", "ileri", "next", "skip", "forward", "advance",
+)
+
+
+def _corrected_track_direction(router_choice: str, transcript: str) -> str:
+    """qwen2.5:3b yonsuz bir fiil ("gec", "degistir", "change") gordugunde parca
+    yonunu sasirabiliyor (canli test: "onceki sarkiya gec" -> media_next_track).
+    Transkriptte NET bir yon isareti - ve karsiti YOK - ise router'in secimini
+    ona gore duzeltir; belirsizse router'in secimi korunur. (C2 run_command
+    guard'iyla ayni defense-in-depth deseni.)"""
+    low = transcript.lower()
+    has_prev = any(marker in low for marker in _PREV_TRACK_MARKERS)
+    has_next = any(marker in low for marker in _NEXT_TRACK_MARKERS)
+    if has_prev and not has_next:
+        return "media_previous_track"
+    if has_next and not has_prev:
+        return "media_next_track"
+    return router_choice
 
 # Router'a "gercek bir arac uymuyor" secenegini ACIKCA sunan sentetik bir
 # fonksiyon adi - TOOL_REGISTRY'ye (tools/registry.py) KESINLIKLE eklenmiyor,
@@ -177,7 +272,7 @@ _ROUTER_SYSTEM_PROMPT = (
     "(mentions a terminal, dictates nothing)\n"
     '- "sesi ac" / "biraz ac" / "cok ac" / "louder" -> media_volume_up\n'
     '- "sesi kis" / "biraz kis" / "quieter" -> media_volume_down\n'
-    '- "sesi 84 yap" / "sesi %50 yap" / "set volume to 30" -> set_volume\n'
+    '- "sesi 84 yap" / "sesi %50 yap" / "set volume to 30" / "sesi sifir yap" / "mute" -> set_volume\n'
     '- "siradaki sarki" / "next" / "skip" -> media_next_track   ;   "onceki sarki" -> media_previous_track\n'
     '- "muzigi durdur" / "duraklat" / "sarkiyi devam ettir" -> media_play_pause\n'
     '- "Iron Man cal" / "play Bohemian Rhapsody" -> search_music\n'
@@ -254,9 +349,13 @@ class Dispatcher:
                 if match:
                     logger.info("Dispatcher: kural eslesti (%s, dil=%s).", name, lang)
                     parameters: dict = {"lang": lang}
-                    content = match.groupdict().get("content")
-                    if content:
-                        parameters["content"] = content.strip()
+                    # Adli gruplar (content / level / amount ...) dogrudan
+                    # Intent.parameters'a gecer - eskiden sadece `content`
+                    # tasiniyordu; 2026-09-01 ses fast-path'i `level`/`amount`
+                    # ekledi, jenerik aktarim yeni kural eklerken bogulmasin.
+                    for group_name, value in match.groupdict().items():
+                        if value:
+                            parameters[group_name] = value.strip()
                     return Intent(
                         name=name, confidence=1.0, source="rule", parameters=parameters
                     )
@@ -309,6 +408,19 @@ class Dispatcher:
                 len(response.tool_calls),
             )
         call = response.tool_calls[0]
+        selected_name = call.name
+
+        # 2026-09-01: parca-yonu guard - router "gec" (yonsuz) yuzunden
+        # "onceki sarkiya gec"i media_next_track'e yolluyordu (canli test).
+        # Transkriptte acik bir yon isareti varsa router'in secimini duzelt.
+        if selected_name in ("media_next_track", "media_previous_track"):
+            corrected = _corrected_track_direction(selected_name, text)
+            if corrected != selected_name:
+                logger.info(
+                    "Dispatcher: parca yonu duzeltildi (%s -> %s, transkript: %r).",
+                    selected_name, corrected, text,
+                )
+                selected_name = corrected
 
         if call.name == _NO_TOOL_FUNCTION_NAME:
             # Beklenen, DOGRU sonuc (bkz. _NO_TOOL_FUNCTION_NAME'in dosya-ustu
@@ -345,9 +457,11 @@ class Dispatcher:
                 parameters={"task": task, "lang": detect_language(text)},
             )
 
-        tool = get_tool(call.name)
+        # NOT: buradan itibaren `selected_name` kullaniliyor (parca-yonu guard'i
+        # media_next_track <-> media_previous_track duzeltmesini burada uygular).
+        tool = get_tool(selected_name)
         if tool is None:
-            logger.warning("Dispatcher: router bilinmeyen bir arac secti: %r -> chat.", call.name)
+            logger.warning("Dispatcher: router bilinmeyen bir arac secti: %r -> chat.", selected_name)
             return Intent(name=DEFAULT_INTENT_NAME, confidence=0.3, source="llm")
 
         # Fail-closed semantik dogrulama (bkz. adapters/tool_schema.py:validate_arguments
@@ -367,7 +481,7 @@ class Dispatcher:
         # C2 (2026-08-29): run_command halusinasyon guard'i - router'in urettigi
         # komut transkriptte fiilen dikte edilmediyse reddet (bkz.
         # _command_appears_in_transcript).
-        if call.name == "run_command" and not _command_appears_in_transcript(
+        if selected_name == "run_command" and not _command_appears_in_transcript(
             str(validated_arguments.get("command", "")), text
         ):
             logger.warning(
@@ -381,5 +495,5 @@ class Dispatcher:
         lang = detect_language(text)
         parameters = {**validated_arguments, "lang": lang}
         confidence = _selection_confidence(tool, validated_arguments)
-        logger.info("Dispatcher: router aracı secti (%s, guven=%.2f).", call.name, confidence)
-        return Intent(name=call.name, confidence=confidence, source="llm", parameters=parameters)
+        logger.info("Dispatcher: router aracı secti (%s, guven=%.2f).", selected_name, confidence)
+        return Intent(name=selected_name, confidence=confidence, source="llm", parameters=parameters)

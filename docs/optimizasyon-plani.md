@@ -337,6 +337,57 @@ cümle), `VRAM %98` → TTS ilk-chunk 8.7s.
   gereksiz. Yeni testte TTS spike sürerse: Ollama `keep_alive=0` (tek 8B
   rezident) — XTTS juggling'den iyi. **Önce 4. testi tekrarla.**
 
+### 2026-09-01 5. canlı test (fast-path ses/medya kuralları)
+
+Kullanıcı logu (16:54 + 00:09–00:13): (1) "önceki şarkıya geç" → `media_next_track`
+çalıyor, (2) "sesi sıfır yap" → router hiçbir araç seçmiyor / `media_volume_down
+amount:0` ile %1 kısıyor, (3) "hâlâ yavaş" — her ses komutu router'a ~2-5 sn'lik
+LLM çağrısı.
+
+**Kök neden:**
+- `media_next_track` açıklamasındaki `"gec"` tetikleyicisi yönsüz ("önceki şarkıya
+  **geç**" / "sonraki şarkıya **geç**" ikisi de olur); qwen2.5:3b few-shot'taki
+  `"onceki sarki" -> media_previous_track` kuralını eziyor.
+- `SetVolumeTool` sadece rakam parse ediyordu (`re.sub(r"[^\d]", ...)`) —
+  "sıfır"/"zero"/"yarım" kelimeleri düşüyordu. `_resolve_volume_delta` `0`'ı
+  `max(1, …)` ile 1'e clamp'liyordu.
+- Belirsizlik taşımayan ses/parça komutları gereksiz yere semantic router'a
+  (LLM) gidiyordu.
+
+**Yapıldı (fast-path + guard + kelime-sayı):**
+- ✅ **Fast-path** — `core/dispatcher.py:_RULES`'a `set_volume` / `media_volume_up`
+  / `media_volume_down` / `media_next_track` / `media_previous_track` /
+  `media_play_pause` için TR+EN regex kuralları eklendi. "sesi 50 yap",
+  "sesi sıfır yap", "sesi biraz kıs", "önceki şarkı", "müziği duraklat" vb.
+  **router'a HİÇ gitmeden** (~2-5 sn kazanç), %100 isabetle eşleşir. Bir şarkı
+  ADI içeren istek ("Iron Man çal") KASITLI eşleşmez → router → `search_music`.
+  TR fiil-köklerine `[a-z]{0,N}` + cümle-sonu çapası ("sesi acil kapat" gibi
+  false-positive düşmesin).
+- ✅ **`match_rule` generic groupdict** — adlı regex grupları (`level`/`amount`/
+  `content`…) doğrudan `Intent.parameters`'a geçiyor (eskiden sadece `content`).
+- ✅ **Parça-yönü guard** (`_corrected_track_direction`) — router YİNE çağrıldığında
+  (regex'in yakalamadığı ifadeler) transkriptteki net yön işaretine göre
+  next/previous seçimini düzeltir (C2 run_command guard'ıyla aynı
+  defense-in-depth deseni). Belirsizse ("şarkıyı değiştir") router'ın seçimi
+  korunur.
+- ✅ **`media_tool.py` kelime-sayı** — `_parse_level()` "sıfır"/"zero"/"yarıya"/
+  "half"/"kapat"/"mute" → 0..100 çözer; `SetVolumeTool` bunu kullanıyor.
+  `_resolve_volume_delta` artık `0` döndürebiliyor; `_apply_relative_volume`
+  `amount:0` + kıs komutunu mutlak sustur'a (`target=0`) çeviriyor.
+- ✅ Router few-shot'a `"sesi sifir yap" / "mute" -> set_volume` eklendi (regex'i
+  atlayan ifadeler için).
+
+**Test:** `test_dispatcher_router.py` +11 (fast-path parametrize + yön guard;
+3 mevcut test router-yoluna kalan ifadelere güncellendi), `test_media_tool.py`
++6 (kelime-sayı + amount:0 mute), `test_tools.py` match_rule None-listesi
+güncellendi. Full suite **357 pass / 31 skip**.
+
+**Not:** `JARVIS_ROUTER_BATTERY=1` bataryasındaki ses/parça vakalarının çoğu
+artık fast-path'e düşüyor (router'ı test etmiyor ama doğru aracı döndürdüğü
+için pass) — batarya hâlâ `search_music` / `delegate` / chat ayrımını sınıyor.
+
+**Commit:** `<pending>`
+
 ## Yeni bulgular (backlog)
 
 _(Yeni bug/optimizasyon sorunları buraya tarihli eklenir. Format: `- [YYYY-MM-DD]
